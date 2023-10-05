@@ -1,0 +1,24 @@
+<h1 id="tableLabel">Clients</h1>
+
+<p>This component demonstrates fetching data from the server.</p>
+
+<p *ngIf="!agents?.length"><em>Loading...</em></p>
+
+<table
+  class="table table-striped"
+  aria-labelledby="tableLabel"
+  *ngIf="agents.length"
+>
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Summary</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr *ngFor="let item of agents">
+      <td>{{ item?.serviceName }}</td>
+      <td>{{ item?.machineInformation?.machineName || 'Unknown' }}</td>
+    </tr>
+  </tbody>
+</table>
