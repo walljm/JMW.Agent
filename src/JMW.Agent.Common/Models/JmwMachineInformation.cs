@@ -1,5 +1,4 @@
 ﻿using System.ComponentModel;
-using System.Diagnostics;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
@@ -19,7 +18,7 @@ public class JmwMachineInformation
 
     public JmwIpGlobalProperties? IpGlobalProperties { get; set; }
     public JmwNetworkInterface[]? Interfaces { get; set; }
-    public MSFT_NetNeighbor[]? NetNeighbors { get; set; }
+    public JmwNetNeighbor[]? NetNeighbors { get; set; }
 
     public static JmwMachineInformation GetInfo()
     {
@@ -29,8 +28,6 @@ public class JmwMachineInformation
         var processorLevel = env.Contains("PROCESSOR_LEVEL") ? env["PROCESSOR_LEVEL"]?.ToString() ?? string.Empty : string.Empty;
         var processorRevision = env.Contains("PROCESSOR_REVISION") ? env["PROCESSOR_REVISION"]?.ToString() ?? string.Empty : string.Empty;
         var gcMemoryInfo = GC.GetGCMemoryInfo();
-        var sw = new Stopwatch();
-        sw.Start();
 
         var drives = DriveInfo.GetDrives()?.Select(o => new JmwDrive
         {
@@ -44,8 +41,6 @@ public class JmwMachineInformation
             TotalSize = o.IsReady ? o.TotalSize : null,
             VolumeLabel = o.IsReady ? o.VolumeLabel : null,
         }).ToArray();
-        Debug.WriteLine(sw.Elapsed);
-        sw.Restart();
 
         var ifcs = NetworkInterface.GetAllNetworkInterfaces().Select(o =>
         {
@@ -127,10 +122,9 @@ public class JmwMachineInformation
                 }
             };
         }).ToArray();
-        Debug.WriteLine(sw.Elapsed);
-        sw.Restart();
         var ipProps = IPGlobalProperties.GetIPGlobalProperties();
 
+        var netNeighbors = Array.Empty<JmwNetNeighbor>();
         var printers = Array.Empty<string>();
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
@@ -145,11 +139,23 @@ public class JmwMachineInformation
                 }
             }
             printers = lst.ToArray();
-        }
-        Debug.WriteLine(sw.Elapsed);
-        sw.Restart();
 
-        var netNeighbors = WMI.GetNetNeighbors();
+            netNeighbors = WindowsService.GetNetNeighbors().Select(o => new JmwNetNeighbor
+            {
+                Name = o.Name,
+                IPAddress = o.IPAddress is null ? null : new JmwIpAddress(o.IPAddress),
+                InterfaceIndex = o.InterfaceIndex,
+                InterfaceAlias = o.InterfaceAlias,
+                LinkLayerAddress = PhysicalAddress.TryParse(o.LinkLayerAddress, out var physicalAddress) ? physicalAddress : null,
+                Store = o.Store,
+                State = o.State,
+            }).ToArray();
+        }
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            netNeighbors = LinuxService.ReadArpTable().ToArray();
+        }
+
         var info = new JmwMachineInformation
         {
             MachineName = Environment.MachineName,

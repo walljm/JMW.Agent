@@ -74,9 +74,9 @@ public sealed class ReportingService : BackgroundService
                         InfoJson = JsonSerializer.Serialize(info, SystemTextJsonSerializerSettingsProvider.Default),
                     };
                     var registration = await httpClient.PostAsJsonAsync("/api/v1/server/agent", service, cancellationToken: stoppingToken);
-
                     if (!registration.IsSuccessStatusCode)
                     {
+
                     }
                 }
                 catch (Exception ex)

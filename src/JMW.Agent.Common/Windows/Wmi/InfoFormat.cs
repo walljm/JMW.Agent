@@ -1,0 +1,30 @@
+﻿namespace JMW.Agent.Common.Models;
+
+public enum InfoFormat
+{
+    Other = 1,
+    HostName = 2,
+    IPv4Address = 3,
+    IPv6Address = 4,
+    IPXAddress = 5,
+    DECnetAddress = 6,
+    SNAAddress = 7,
+    AutonomousSystemNumber = 8,
+    MPLSLabel = 9,
+    IPv4SubnetAddress = 10,
+    IPv6SubnetAddress = 11,
+    IPv4AddressRange = 12,
+    IPv6AddressRange = 13,
+    DialString = 100,
+    EthernetAddress = 101,
+    TokenRingAddress = 102,
+    ATMAddress = 103,
+    FrameRelayAddress = 104,
+    URL = 200,
+    FQDN = 201,
+    UserFQDN = 202,
+    DER_ASN1_DN = 203,
+    DER_ASN1_GN = 204,
+    KeyID = 205,
+    ParameterizedURL = 206,
+}
