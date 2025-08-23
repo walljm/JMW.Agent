@@ -72,11 +72,11 @@
           "builder": "@angular-devkit/build-angular:dev-server",
           "configurations": {
             "production": {
-              "browserTarget": "JMW.Agent.Server:build:production"
+              "buildTarget": "JMW.Agent.Server:build:production"
             },
             "development": {
-              "browserTarget": "JMW.Agent.Server:build:development",
-              "proxyConfig": "proxy.conf.js"
+              "proxyConfig": "proxy.conf.js",
+              "buildTarget": "JMW.Agent.Server:build:development"
             }
           },
           "defaultConfiguration": "development"
@@ -84,7 +84,7 @@
         "extract-i18n": {
           "builder": "@angular-devkit/build-angular:extract-i18n",
           "options": {
-            "browserTarget": "JMW.Agent.Server:build"
+            "buildTarget": "JMW.Agent.Server:build"
           }
         },
         "test": {
