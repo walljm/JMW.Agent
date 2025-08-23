@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace JMW.Agent.Common.Serialization;
 
-public class PhysicalAddressConverter : JsonConverter<PhysicalAddress>
+public sealed class PhysicalAddressConverter : JsonConverter<PhysicalAddress>
 {
     public override PhysicalAddress Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
         PhysicalAddress.Parse(reader.GetString());

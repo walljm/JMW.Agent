@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace JMW.Agent.Common.Models;
 
-public class JmwMulticastIpAddressInformation : JmwIpAddressInformation
+public sealed class JmwMulticastIpAddressInformation : JmwIpAddressInformation
 {
     public JmwMulticastIpAddressInformation()
     {
@@ -108,7 +108,7 @@ public class JmwMulticastIpAddressInformation : JmwIpAddressInformation
     public SuffixOrigin? SuffixOrigin { get; set; }
 }
 
-public class JmwUnicastIpAddressInformation : JmwIpAddressInformation
+public sealed class JmwUnicastIpAddressInformation : JmwIpAddressInformation
 {
     public JmwUnicastIpAddressInformation()
     {

@@ -1,6 +1,6 @@
 ﻿namespace JMW.Agent.Common.Models;
 
-public class JmwProcessor
+public sealed class JmwProcessor
 {
     public int? ProcessorCount { get; set; }
     public string? ProcessArchitecture { get; set; }

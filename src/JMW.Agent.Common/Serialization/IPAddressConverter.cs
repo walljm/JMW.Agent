@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace JMW.Agent.Common.Serialization;
 
-public class IPAddressConverter : JsonConverter<IPAddress>
+public sealed class IPAddressConverter : JsonConverter<IPAddress>
 {
     public override IPAddress Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
         IPAddress.Parse(reader.GetString() ?? throw new InvalidOperationException($"IP has no value."));

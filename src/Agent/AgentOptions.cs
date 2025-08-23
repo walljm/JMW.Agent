@@ -1,6 +1,6 @@
 ﻿namespace JMW.Agent.Client;
 
-public class AgentOptions
+public sealed class AgentOptions
 {
     public string? ServerIp { get; set; }
     public int? ServerPort { get; set; } = 443;

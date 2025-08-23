@@ -2,7 +2,7 @@
 
 namespace JMW.Agent.Server.Models;
 
-public class ApplicationUser : IdentityUser
+public sealed class ApplicationUser : IdentityUser
 {
 
 }

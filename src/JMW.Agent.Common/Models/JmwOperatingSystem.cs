@@ -1,6 +1,6 @@
 ﻿namespace JMW.Agent.Common.Models;
 
-public class JmwOperatingSystem
+public sealed class JmwOperatingSystem
 {
     public PlatformID? Platform { get; set; }
     public string? ServicePack { get; set; }

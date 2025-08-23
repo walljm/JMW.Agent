@@ -1,1 +1,26 @@
-<p>{{ message | async }}</p>
+<div class="row">
+  <div class="col-md-6 offset-md-3">
+    <div class="card">
+      <div class="card-header">
+        <h4>Logout</h4>
+      </div>
+      <div class="card-body text-center">
+        <div *ngIf="isLoading" class="mb-3">
+          <div class="spinner-border" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <p class="mt-2">Logging you out...</p>
+        </div>
+
+        <div *ngIf="message && !isLoading" class="alert alert-info" role="alert">
+          {{ message }}
+        </div>
+
+        <div *ngIf="!message && !isLoading">
+          <p>You are being logged out...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+

@@ -2,7 +2,7 @@
 
 namespace JMW.Agent.Common.Models;
 
-public class JmwNetworkInterface
+public sealed class JmwNetworkInterface
 {
     public int? Ipv6LoopbackInterfaceIndex { get; set; }
     public int? LoopbackInterfaceIndex { get; set; }

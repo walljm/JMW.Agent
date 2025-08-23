@@ -1,9 +1,9 @@
+using System.Text.Json;
 using JMW.Agent.Common.Models;
 using JMW.Agent.Common.Serialization;
 using JMW.Agent.Server.Data;
 using JMW.Agent.Server.Models;
 using Microsoft.AspNetCore.Mvc;
-using System.Text.Json;
 
 namespace JMW.Agent;
 
@@ -15,11 +15,11 @@ public static class ServerEndpoints
 
         group.MapGet("agents", GetAll)
            .Produces<IEnumerable<AgentInformation>>()
-           ;
+           .RequireAuthorization();
 
         group.MapPost("agent", Post)
             .Produces(StatusCodes.Status200OK)
-            ;
+            .RequireAuthorization();
 
         return builder;
     }
@@ -49,13 +49,14 @@ public static class ServerEndpoints
     private static IResult GetAll(ApplicationDbContext dbContext)
     {
         var clients = dbContext.AgentServices
-                               .Select(o => new AgentInformation
-                               {
-                                   MachineInformation = o.InfoJson != null
-                                    ? JsonSerializer.Deserialize<JmwMachineInformation>(o.InfoJson, SystemTextJsonSerializerSettingsProvider.Default)
-                                    : null,
-                                   ServiceName = o.Name,
-                               });
+           .Select(static o => new AgentInformation
+                {
+                    MachineInformation = o.InfoJson != null
+                        ? JsonSerializer.Deserialize<JmwMachineInformation>(o.InfoJson, SystemTextJsonSerializerSettingsProvider.Default)
+                        : null,
+                    ServiceName = o.Name,
+                }
+            );
 
         return Results.Ok(clients);
     }

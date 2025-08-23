@@ -2,7 +2,7 @@
 
 namespace JMW.Agent.Common.Models;
 
-public class JmwNetNeighbor
+public sealed class JmwNetNeighbor
 {
     public string? Name { get; set; }
     public Store? Store { get; set; }

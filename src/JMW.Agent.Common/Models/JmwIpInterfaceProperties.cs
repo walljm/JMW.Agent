@@ -1,6 +1,6 @@
 ﻿namespace JMW.Agent.Common.Models;
 
-public class JmwIpInterfaceProperties
+public sealed class JmwIpInterfaceProperties
 {
     public bool? IsDnsEnabled { get; set; }
     public string? DnsSuffix { get; set; }

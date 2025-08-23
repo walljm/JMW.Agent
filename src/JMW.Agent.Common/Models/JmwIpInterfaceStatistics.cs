@@ -1,6 +1,6 @@
 ﻿namespace JMW.Agent.Common.Models;
 
-public class JmwIpInterfaceStatistics
+public sealed class JmwIpInterfaceStatistics
 {
     public long? BytesReceived { get; set; }
     public long? BytesSent { get; set; }

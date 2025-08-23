@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 namespace JMW.Agent.Client;
 
-public class Startup
+public sealed class Startup
 {
     public Startup(IConfiguration configuration)
     {

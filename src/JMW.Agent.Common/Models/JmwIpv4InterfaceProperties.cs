@@ -1,6 +1,6 @@
 ﻿namespace JMW.Agent.Common.Models;
 
-public class JmwIpv4InterfaceProperties
+public sealed class JmwIpv4InterfaceProperties
 {
     public bool? UsesWins { get; set; }
     public bool? IsDhcpEnabled { get; set; }

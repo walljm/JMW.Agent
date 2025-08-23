@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 
 namespace JMW.Agent.Common.Models;
 
-public class JmwMachineInformation
+public sealed class JmwMachineInformation
 {
     public string? MachineName { get; set; }
     public JmwOperatingSystem? OperatingSystem { get; set; }
@@ -29,11 +29,11 @@ public class JmwMachineInformation
         var processorRevision = env.Contains("PROCESSOR_REVISION") ? env["PROCESSOR_REVISION"]?.ToString() ?? string.Empty : string.Empty;
         var gcMemoryInfo = GC.GetGCMemoryInfo();
 
-        var drives = DriveInfo.GetDrives()?.Select(o => new JmwDrive
+        var drives = DriveInfo.GetDrives().Select(static o => new JmwDrive
         {
             Name = o.Name,
             IsReady = o.IsReady,
-            RootDirectory = o.RootDirectory?.FullName,
+            RootDirectory = o.RootDirectory.FullName,
             DriveType = o.DriveType,
             DriveFormat = o.IsReady ? o.DriveFormat : null,
             AvailableFreeSpace = o.IsReady ? o.AvailableFreeSpace : null,
@@ -42,7 +42,7 @@ public class JmwMachineInformation
             VolumeLabel = o.IsReady ? o.VolumeLabel : null,
         }).ToArray();
 
-        var ifcs = NetworkInterface.GetAllNetworkInterfaces().Select(o =>
+        var ifcs = NetworkInterface.GetAllNetworkInterfaces().Select(static o =>
         {
             var stats = o.GetIPStatistics();
             var ipv4stats = o.GetIPv4Statistics();
@@ -64,60 +64,60 @@ public class JmwMachineInformation
                 PhysicalAddress = o.GetPhysicalAddress(),
                 IpInterfaceStatistics = new JmwIpInterfaceStatistics
                 {
-                    BytesReceived = stats?.BytesReceived,
-                    BytesSent = stats?.BytesSent,
-                    IncomingPacketsDiscarded = stats?.IncomingPacketsDiscarded,
-                    IncomingPacketsWithErrors = stats?.IncomingPacketsWithErrors,
-                    IncomingUnknownProtocolPackets = !RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? stats?.IncomingUnknownProtocolPackets : null,
-                    NonUnicastPacketsReceived = stats?.NonUnicastPacketsReceived,
-                    NonUnicastPacketsSent = !RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? stats?.NonUnicastPacketsSent : null,
-                    OutgoingPacketsDiscarded = !RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? stats?.OutgoingPacketsDiscarded : null,
-                    OutgoingPacketsWithErrors = stats?.OutgoingPacketsWithErrors,
-                    OutputQueueLength = stats?.OutputQueueLength,
-                    UnicastPacketsReceived = stats?.UnicastPacketsReceived,
-                    UnicastPacketsSent = stats?.UnicastPacketsSent,
+                    BytesReceived = stats.BytesReceived,
+                    BytesSent = stats.BytesSent,
+                    IncomingPacketsDiscarded = stats.IncomingPacketsDiscarded,
+                    IncomingPacketsWithErrors = stats.IncomingPacketsWithErrors,
+                    IncomingUnknownProtocolPackets = !RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? stats.IncomingUnknownProtocolPackets : null,
+                    NonUnicastPacketsReceived = stats.NonUnicastPacketsReceived,
+                    NonUnicastPacketsSent = !RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? stats.NonUnicastPacketsSent : null,
+                    OutgoingPacketsDiscarded = !RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? stats.OutgoingPacketsDiscarded : null,
+                    OutgoingPacketsWithErrors = stats.OutgoingPacketsWithErrors,
+                    OutputQueueLength = stats.OutputQueueLength,
+                    UnicastPacketsReceived = stats.UnicastPacketsReceived,
+                    UnicastPacketsSent = stats.UnicastPacketsSent,
                 },
                 Ipv4InterfaceStatistics = new JmwIpInterfaceStatistics
                 {
-                    BytesReceived = ipv4stats?.BytesReceived,
-                    BytesSent = ipv4stats?.BytesSent,
-                    IncomingPacketsDiscarded = ipv4stats?.IncomingPacketsDiscarded,
-                    IncomingPacketsWithErrors = ipv4stats?.IncomingPacketsWithErrors,
-                    IncomingUnknownProtocolPackets = ipv4stats?.IncomingUnknownProtocolPackets,
-                    NonUnicastPacketsReceived = ipv4stats?.NonUnicastPacketsReceived,
-                    NonUnicastPacketsSent = ipv4stats?.NonUnicastPacketsSent,
-                    OutgoingPacketsDiscarded = !RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? ipv4stats?.OutgoingPacketsDiscarded : null,
-                    OutgoingPacketsWithErrors = ipv4stats?.OutgoingPacketsWithErrors,
-                    OutputQueueLength = ipv4stats?.OutputQueueLength,
-                    UnicastPacketsReceived = ipv4stats?.UnicastPacketsReceived,
-                    UnicastPacketsSent = ipv4stats?.UnicastPacketsSent,
+                    BytesReceived = ipv4stats.BytesReceived,
+                    BytesSent = ipv4stats.BytesSent,
+                    IncomingPacketsDiscarded = ipv4stats.IncomingPacketsDiscarded,
+                    IncomingPacketsWithErrors = ipv4stats.IncomingPacketsWithErrors,
+                    IncomingUnknownProtocolPackets = ipv4stats.IncomingUnknownProtocolPackets,
+                    NonUnicastPacketsReceived = ipv4stats.NonUnicastPacketsReceived,
+                    NonUnicastPacketsSent = ipv4stats.NonUnicastPacketsSent,
+                    OutgoingPacketsDiscarded = !RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? ipv4stats.OutgoingPacketsDiscarded : null,
+                    OutgoingPacketsWithErrors = ipv4stats.OutgoingPacketsWithErrors,
+                    OutputQueueLength = ipv4stats.OutputQueueLength,
+                    UnicastPacketsReceived = ipv4stats.UnicastPacketsReceived,
+                    UnicastPacketsSent = ipv4stats.UnicastPacketsSent,
                 },
                 IpInterfaceProperties = new JmwIpInterfaceProperties
                 {
-                    IsDnsEnabled = !RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? ifcIpProps?.IsDnsEnabled : null,
-                    DnsSuffix = ifcIpProps?.DnsSuffix,
-                    IsDynamicDnsEnabled = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ifcIpProps?.IsDynamicDnsEnabled : null,
-                    UnicastAddresses = ifcIpProps?.UnicastAddresses?.Select(o => new JmwUnicastIpAddressInformation(o)).ToArray(),
-                    MulticastAddresses = ifcIpProps?.MulticastAddresses?.Select(o => new JmwMulticastIpAddressInformation(o)).ToArray(),
-                    AnycastAddresses = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ifcIpProps?.AnycastAddresses?.Select(o => new JmwIpAddressInformation(o)).ToArray() : null,
-                    DnsAddresses = ifcIpProps?.DnsAddresses?.Select(o => new JmwIpAddress(o)).ToArray(),
-                    GatewayAddresses = ifcIpProps?.GatewayAddresses?.Select(o => new JmwIpAddress(o.Address)).ToArray(),
-                    DhcpServerAddresses = !RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? ifcIpProps?.DhcpServerAddresses?.Select(o => new JmwIpAddress(o)).ToArray() : null,
-                    WinsServersAddresses = !RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? ifcIpProps?.WinsServersAddresses?.Select(o => new JmwIpAddress(o)).ToArray() : null,
+                    IsDnsEnabled = !RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? ifcIpProps.IsDnsEnabled : null,
+                    DnsSuffix = ifcIpProps.DnsSuffix,
+                    IsDynamicDnsEnabled = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ifcIpProps.IsDynamicDnsEnabled : null,
+                    UnicastAddresses = ifcIpProps.UnicastAddresses.Select(static x => new JmwUnicastIpAddressInformation(x)).ToArray(),
+                    MulticastAddresses = ifcIpProps.MulticastAddresses.Select(static x => new JmwMulticastIpAddressInformation(x)).ToArray(),
+                    AnycastAddresses = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ifcIpProps.AnycastAddresses.Select(static x => new JmwIpAddressInformation(x)).ToArray() : null,
+                    DnsAddresses = ifcIpProps.DnsAddresses.Select(static x => new JmwIpAddress(x)).ToArray(),
+                    GatewayAddresses = ifcIpProps.GatewayAddresses.Select(static x => new JmwIpAddress(x.Address)).ToArray(),
+                    DhcpServerAddresses = !RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? ifcIpProps.DhcpServerAddresses.Select(static x => new JmwIpAddress(x)).ToArray() : null,
+                    WinsServersAddresses = !RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? ifcIpProps.WinsServersAddresses.Select(static x => new JmwIpAddress(x)).ToArray() : null,
                     IPv4Properties = new JmwIpv4InterfaceProperties
                     {
-                        UsesWins = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? ifcIpV4Props?.UsesWins : null,
-                        IsDhcpEnabled = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ifcIpV4Props?.IsDhcpEnabled : null,
-                        IsAutomaticPrivateAddressingActive = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ifcIpV4Props?.IsAutomaticPrivateAddressingActive : null,
-                        IsAutomaticPrivateAddressingEnabled = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ifcIpV4Props?.IsAutomaticPrivateAddressingEnabled : null,
-                        Index = ifcIpV4Props?.Index,
-                        IsForwardingEnabled = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? ifcIpV4Props?.IsForwardingEnabled : null,
-                        Mtu = ifcIpV4Props?.Mtu,
+                        UsesWins = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? ifcIpV4Props.UsesWins : null,
+                        IsDhcpEnabled = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ifcIpV4Props.IsDhcpEnabled : null,
+                        IsAutomaticPrivateAddressingActive = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ifcIpV4Props.IsAutomaticPrivateAddressingActive : null,
+                        IsAutomaticPrivateAddressingEnabled = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ifcIpV4Props.IsAutomaticPrivateAddressingEnabled : null,
+                        Index = ifcIpV4Props.Index,
+                        IsForwardingEnabled = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? ifcIpV4Props.IsForwardingEnabled : null,
+                        Mtu = ifcIpV4Props.Mtu,
                     },
                     IPv6Properties = new JmwIpv6InterfaceProperties
                     {
-                        Index = ifcIpV6Props?.Index,
-                        Mtu = ifcIpV6Props?.Mtu,
+                        Index = ifcIpV6Props.Index,
+                        Mtu = ifcIpV6Props.Mtu,
                     }
                 }
             };
@@ -129,18 +129,19 @@ public class JmwMachineInformation
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             var lst = new List<string>();
+            #pragma warning disable CA1416 // Validate platform compatibility
             foreach (var p in System.Drawing.Printing.PrinterSettings.InstalledPrinters)
             {
-                if (p != null)
+                var printerName = p?.ToString();
+                if (!string.IsNullOrEmpty(printerName))
                 {
-#pragma warning disable CS8604 // Possible null reference argument.
-                    lst.Add(p.ToString());
-#pragma warning restore CS8604 // Possible null reference argument.
+                    lst.Add(printerName);
                 }
             }
+            #pragma warning restore CA1416 // Validate platform compatibility
             printers = lst.ToArray();
 
-            netNeighbors = WindowsService.GetNetNeighbors().Select(o => new JmwNetNeighbor
+            netNeighbors = WindowsService.GetNetNeighbors().Select(static o => new JmwNetNeighbor
             {
                 Name = o.Name,
                 IPAddress = o.IPAddress is null ? null : new JmwIpAddress(o.IPAddress),
@@ -289,7 +290,7 @@ public class JmwMachineInformation
         Console.WriteLine();
 
         Console.WriteLine($"{nameof(Interfaces)}");
-        foreach (var ifc in Interfaces?.Select(o => o) ?? Enumerable.Empty<JmwNetworkInterface>())
+        foreach (var ifc in Interfaces?.Select(static o => o) ?? [])
         {
             Console.WriteLine("----------------------------------------------");
 

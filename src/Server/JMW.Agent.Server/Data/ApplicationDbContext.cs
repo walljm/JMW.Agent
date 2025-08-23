@@ -1,17 +1,15 @@
-﻿using Duende.IdentityServer.EntityFramework.Options;
-using JMW.Agent.Server.Models;
-using Microsoft.AspNetCore.ApiAuthorization.IdentityServer;
+﻿using JMW.Agent.Server.Models;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 
 namespace JMW.Agent.Server.Data
 {
-    public class ApplicationDbContext : ApiAuthorizationDbContext<ApplicationUser>
+    public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     {
         public DbSet<AgentService> AgentServices { get; set; }
 
-        public ApplicationDbContext(DbContextOptions options, IOptions<OperationalStoreOptions> operationalStoreOptions)
-        : base(options, operationalStoreOptions)
+        public ApplicationDbContext(DbContextOptions options)
+        : base(options)
         {
         }
     }

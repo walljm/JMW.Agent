@@ -2,7 +2,7 @@
 
 namespace JMW.Agent.Common.Models;
 
-public class JmwIpGlobalProperties
+public sealed class JmwIpGlobalProperties
 {
     /// <summary>
     /// Gets the Dynamic Host Configuration Protocol (DHCP) scope name.

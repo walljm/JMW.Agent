@@ -1,6 +1,6 @@
 ﻿namespace JMW.Agent.Common.Models;
 
-public class JmwDrive
+public sealed class JmwDrive
 {
     public string? Name { get; set; }
     public bool? IsReady { get; set; }

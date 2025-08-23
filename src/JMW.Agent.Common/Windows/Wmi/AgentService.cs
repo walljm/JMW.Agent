@@ -2,7 +2,7 @@
 
 namespace JMW.Agent.Server.Models;
 
-public class AgentService
+public sealed class AgentService
 {
     [Key]
     public string? Name { get; set; }

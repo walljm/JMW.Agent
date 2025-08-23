@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace JMW.Agent.Common.Serialization;
 
-public class IPAddressWithSubnetConverter : JsonConverter<(IPAddress, int)>
+public sealed class IPAddressWithSubnetConverter : JsonConverter<(IPAddress, int)>
 {
     public override (IPAddress, int) Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {

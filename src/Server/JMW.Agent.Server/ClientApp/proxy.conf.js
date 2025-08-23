@@ -7,12 +7,13 @@ const PROXY_CONFIG = [
   {
     context: [
       "/api",
+      "/register",
+      "/login",
+      "/refresh",
+      "/logout",
+      "/manage",
       "/_configuration",
-      "/.well-known",
-      "/Identity",
-      "/connect",
-      "/ApplyDatabaseMigrations",
-      "/_framework"
+      "/ApplyDatabaseMigrations"
    ],
     proxyTimeout: 10000,
     target: target,

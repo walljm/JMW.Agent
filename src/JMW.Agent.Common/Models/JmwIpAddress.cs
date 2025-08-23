@@ -3,7 +3,7 @@ using System.Net.Sockets;
 
 namespace JMW.Agent.Common.Models;
 
-public class JmwIpAddress
+public sealed class JmwIpAddress
 {
     public JmwIpAddress()
     {

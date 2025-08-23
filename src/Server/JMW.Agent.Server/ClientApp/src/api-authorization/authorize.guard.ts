@@ -20,7 +20,7 @@ export class AuthorizeGuard  {
 
   private handleAuthorization(isAuthenticated: boolean, state: RouterStateSnapshot) {
     if (!isAuthenticated) {
-      this.router.navigate(ApplicationPaths.LoginPathComponents, {
+      this.router.navigate([ApplicationPaths.Login], {
         queryParams: {
           [QueryParameterNames.ReturnUrl]: state.url
         }

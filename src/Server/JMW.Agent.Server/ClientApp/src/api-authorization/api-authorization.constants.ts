@@ -29,33 +29,14 @@ let applicationPaths: ApplicationPathsType = {
   LoginCallback: `authentication/${LoginActions.LoginCallback}`,
   Register: `authentication/${LoginActions.Register}`,
   Profile: `authentication/${LoginActions.Profile}`,
-  LogOut: `authentication/${LogoutActions.Logout}`,
+  LogoutCallback: `authentication/${LogoutActions.LogoutCallback}`,
+  Logout: `authentication/${LogoutActions.Logout}`,
   LoggedOut: `authentication/${LogoutActions.LoggedOut}`,
-  LogOutCallback: `authentication/${LogoutActions.LogoutCallback}`,
-  LoginPathComponents: [],
-  LoginFailedPathComponents: [],
-  LoginCallbackPathComponents: [],
-  RegisterPathComponents: [],
-  ProfilePathComponents: [],
-  LogOutPathComponents: [],
-  LoggedOutPathComponents: [],
-  LogOutCallbackPathComponents: [],
   IdentityRegisterPath: 'Identity/Account/Register',
   IdentityManagePath: 'Identity/Account/Manage'
 };
 
-applicationPaths = {
-  ...applicationPaths,
-  LoginPathComponents: applicationPaths.Login.split('/'),
-  LoginFailedPathComponents: applicationPaths.LoginFailed.split('/'),
-  RegisterPathComponents: applicationPaths.Register.split('/'),
-  ProfilePathComponents: applicationPaths.Profile.split('/'),
-  LogOutPathComponents: applicationPaths.LogOut.split('/'),
-  LoggedOutPathComponents: applicationPaths.LoggedOut.split('/'),
-  LogOutCallbackPathComponents: applicationPaths.LogOutCallback.split('/')
-};
-
-interface ApplicationPathsType {
+export interface ApplicationPathsType {
   readonly DefaultLoginRedirectPath: string;
   readonly ApiAuthorizationClientConfigurationUrl: string;
   readonly Login: string;
@@ -63,17 +44,9 @@ interface ApplicationPathsType {
   readonly LoginCallback: string;
   readonly Register: string;
   readonly Profile: string;
-  readonly LogOut: string;
+  readonly LogoutCallback: string;
+  readonly Logout: string;
   readonly LoggedOut: string;
-  readonly LogOutCallback: string;
-  readonly LoginPathComponents: string [];
-  readonly LoginFailedPathComponents: string [];
-  readonly LoginCallbackPathComponents: string [];
-  readonly RegisterPathComponents: string [];
-  readonly ProfilePathComponents: string [];
-  readonly LogOutPathComponents: string [];
-  readonly LoggedOutPathComponents: string [];
-  readonly LogOutCallbackPathComponents: string [];
   readonly IdentityRegisterPath: string;
   readonly IdentityManagePath: string;
 }

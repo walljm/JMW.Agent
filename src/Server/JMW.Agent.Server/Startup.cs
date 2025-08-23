@@ -1,19 +1,21 @@
 using JMW.Agent.Common.Serialization;
 using JMW.Agent.Server.Data;
 using JMW.Agent.Server.Models;
-using Microsoft.AspNetCore.Authentication;
+using JMW.Agent.Server.Services;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 
 namespace JMW.Agent.Server;
 
-public class Startup
+public sealed class Startup
 {
     public Startup(IConfiguration configuration)
     {
-        Configuration = configuration;
+        this.Configuration = configuration;
     }
 
     public IConfiguration Configuration { get; }
@@ -27,15 +29,17 @@ public class Startup
             https://github.com/dotnet/runtime/issues/1560
             https://github.com/dotnet/runtime/issues/1541
         */
-        services.Configure<KestrelServerOptions>(options =>
-        {
-            options.AllowSynchronousIO = true;
-        });
+        services.Configure<KestrelServerOptions>(static options =>
+            {
+                options.AllowSynchronousIO = true;
+            }
+        );
 
-        services.Configure<JsonOptions>(options =>
-        {
-            SystemTextJsonSerializerSettingsProvider.Apply(options.SerializerOptions);
-        });
+        services.Configure<JsonOptions>(static options =>
+            {
+                SystemTextJsonSerializerSettingsProvider.Apply(options.SerializerOptions);
+            }
+        );
 
         services.AddHealthChecks();
         services.AddMetricsCollector();
@@ -45,22 +49,41 @@ public class Startup
         #region Identity
 
         var connectionString = this.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
-        services.AddDbContext<ApplicationDbContext>(options =>
-                options.UseSqlite(connectionString)
+        services.AddDbContext<ApplicationDbContext>(options => options.UseSqlite(connectionString)
         );
 
-        services.AddDefaultIdentity<ApplicationUser>(options => options.SignIn.RequireConfirmedAccount = true)
-            .AddEntityFrameworkStores<ApplicationDbContext>();
+        // Configure Identity for both cookie and JWT authentication
+        services.AddIdentity<ApplicationUser, IdentityRole>(static options =>
+                {
+                    options.SignIn.RequireConfirmedAccount = false;
+                    options.Password.RequireDigit = false;
+                    options.Password.RequiredLength = 6;
+                    options.Password.RequireNonAlphanumeric = false;
+                    options.Password.RequireUppercase = false;
+                    options.Password.RequireLowercase = false;
+                }
+            )
+           .AddEntityFrameworkStores<ApplicationDbContext>()
+           .AddDefaultTokenProviders();
 
-        services.AddIdentityServer()
-            .AddApiAuthorization<ApplicationUser, ApplicationDbContext>();
+        // Configure authentication with bearer token scheme
+        services.AddAuthentication(static options =>
+                {
+                    // Set bearer token as default since we only use API endpoints
+                    options.DefaultAuthenticateScheme = IdentityConstants.BearerScheme;
+                    options.DefaultChallengeScheme = IdentityConstants.BearerScheme;
+                }
+            )
+           .AddBearerToken(IdentityConstants.BearerScheme);
 
-        services.AddAuthentication()
-            .AddIdentityServerJwt()
-            ;
+        // Simple authorization - all authenticated users can access protected endpoints
+        services.AddAuthorization();
+
+        // Register the placeholder email sender for both interfaces
+        services.AddTransient<IEmailSender, EmailSender>();
+        services.AddTransient<IEmailSender<ApplicationUser>, EmailSender>();
 
         services.AddControllersWithViews();
-        services.AddRazorPages();
 
         #endregion Identity
 
@@ -82,26 +105,28 @@ public class Startup
 
         app.UseHttpsRedirection();
         app.UseHttpMethodOverride();
-        app.UseForwardedHeaders(new ForwardedHeadersOptions
-        {
-            ForwardedHeaders = ForwardedHeaders.All,
-            ForwardLimit = 3
-        });
+        app.UseForwardedHeaders(
+            new ForwardedHeadersOptions
+            {
+                ForwardedHeaders = ForwardedHeaders.All,
+                ForwardLimit = 3,
+            }
+        );
 
         app.UseStaticFiles();
         app.UseRouting();
 
-        app.UseIdentityServer();
         app.UseAuthentication();
         app.UseAuthorization();
 
-        app.UseEndpoints(endpoints =>
-        {
-            endpoints.MapRazorPages(); // for identity
+        app.UseEndpoints(static endpoints =>
+            {
+                // api endpoints (protected)
+                endpoints.AddServerEndpoints();
 
-            // api endpoints
-            endpoints.AddServerEndpoints();
-            endpoints.AddOidcEndpoints();
-        });
+                // Map Identity API endpoints without authorization (public endpoints for login/register)
+                endpoints.MapIdentityApi<ApplicationUser>();
+            }
+        );
     }
 }
