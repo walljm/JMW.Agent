@@ -4,11 +4,10 @@
   "scripts": {
     "ng": "ng",
     "prestart": "node aspnetcore-https",
-    "start": "ng serve --port 44482 --ssl --ssl-cert \"%APPDATA%\\ASP.NET\\https\\%npm_package_name%.pem\" --ssl-key \"%APPDATA%\\ASP.NET\\https\\%npm_package_name%.key\"",
+    "start": "ng serve --port 44482 --ssl --ssl-cert \"$HOME/.aspnet/https/$npm_package_name.pem\" --ssl-key \"$HOME/.aspnet/https/$npm_package_name.key\"",
     "build": "ng build",
     "build:ssr": "ng run JMW.Agent.Server:server:dev",
-    "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "watch": "ng build --watch --configuration development"
   },
   "private": true,
   "dependencies": {
@@ -34,15 +33,7 @@
     "@angular-devkit/build-angular": "^18.2.20",
     "@angular/cli": "^18.2.20",
     "@angular/compiler-cli": "^18.2.13",
-    "@types/jasmine": "~4.3.1",
-    "@types/jasminewd2": "~2.0.10",
     "@types/node": "^18.16.3",
-    "jasmine-core": "~4.6.0",
-    "karma": "~6.4.2",
-    "karma-chrome-launcher": "~3.2.0",
-    "karma-coverage": "~2.2.0",
-    "karma-jasmine": "~5.1.0",
-    "karma-jasmine-html-reporter": "^2.0.0",
     "typescript": "~5.4.5"
   },
   "overrides": {
