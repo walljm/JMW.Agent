@@ -6,7 +6,6 @@ import { RouterModule } from '@angular/router';
 
 import { AppComponent } from './app.component';
 import { NavMenuComponent } from './nav-menu/nav-menu.component';
-import { HomeComponent } from './home/home.component';
 import { AgentsComponent } from './agents/agents.component';
 
 import { ApiAuthorizationModule } from 'src/api-authorization/api-authorization.module';
@@ -16,14 +15,13 @@ import { AuthorizeInterceptor } from 'src/api-authorization/authorize.intercepto
 @NgModule({ declarations: [
         AppComponent,
         NavMenuComponent,
-        HomeComponent,
         AgentsComponent,
     ],
     bootstrap: [AppComponent], imports: [BrowserModule.withServerTransition({ appId: 'ng-cli-universal' }),
         FormsModule,
         ApiAuthorizationModule,
         RouterModule.forRoot([
-            { path: '', component: HomeComponent, pathMatch: 'full' },
+            { path: '', redirectTo: '/agents', pathMatch: 'full' },
             {
                 path: 'agents',
                 component: AgentsComponent,

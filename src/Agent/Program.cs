@@ -9,13 +9,13 @@ internal class Program
 
     public static IHostBuilder CreateHostBuilder(string[] args) =>
         Host.CreateDefaultBuilder(args)
-            .ConfigureLogging((context, builder) =>
+            .ConfigureLogging(static (_, builder) =>
             {
                 builder
                     .ClearProviders()
                     .AddConsole();
             })
-            .ConfigureWebHostDefaults(webBuilder =>
+            .ConfigureWebHostDefaults(static webBuilder =>
             {
                 webBuilder
                     .UseStartup<Startup>()

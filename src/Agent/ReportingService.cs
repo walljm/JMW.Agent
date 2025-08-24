@@ -1,18 +1,13 @@
-namespace JMW.Agent.Client;
-
-using JMW.Agent.Common.Models;
-using JMW.Agent.Common.Serialization;
-using JMW.Agent.Server.Models;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using System;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
+using JMW.Agent.Common.Models;
+using JMW.Agent.Common.Serialization;
+using JMW.Agent.Server.Models;
+using Microsoft.Extensions.Options;
+
+namespace JMW.Agent.Client;
 
 public sealed class ReportingService : BackgroundService
 {
@@ -40,28 +35,29 @@ public sealed class ReportingService : BackgroundService
         {
             #region Validations
 
-            if (this.options?.Value is null)
+            if (options.Value is null)
             {
                 throw new InvalidDataException("AgentOptions must be configured.");
             }
 
-            if (string.IsNullOrEmpty(this.options?.Value?.ServerIp) || !IPAddress.TryParse(this.options?.Value?.ServerIp, out var ip))
+            if (string.IsNullOrEmpty(options.Value.ServerIp) || !IPAddress.TryParse(options.Value.ServerIp, out var ip))
             {
                 throw new InvalidDataException("Server IP must be populated.");
             }
-            if (string.IsNullOrEmpty(this.options?.Value?.Token))
+
+            if (string.IsNullOrEmpty(options.Value.Token))
             {
                 throw new InvalidDataException("Token must be populated.");
             }
 
-            if (this.options?.Value?.ServiceName is null)
+            if (options.Value.ServiceName is null)
             {
                 throw new InvalidDataException("Registration must be populated.");
             }
 
             #endregion Validations
 
-            var httpClient = this.GetHttpClient(this.options.Value.Token, $"https://{this.options.Value.ServerIp}:{this.options.Value.ServerPort}");
+            var httpClient = GetHttpClient(options.Value.Token, $"https://{options.Value.ServerIp}:{options.Value.ServerPort}");
 
             while (true)
             {
@@ -70,18 +66,17 @@ public sealed class ReportingService : BackgroundService
                     var info = JmwMachineInformation.GetInfo();
                     var service = new AgentService
                     {
-                        Name = this.options.Value.ServiceName,
+                        Name = options.Value.ServiceName,
                         InfoJson = JsonSerializer.Serialize(info, SystemTextJsonSerializerSettingsProvider.Default),
                     };
                     var registration = await httpClient.PostAsJsonAsync("/api/v1/server/agent", service, cancellationToken: stoppingToken);
                     if (!registration.IsSuccessStatusCode)
                     {
-
                     }
                 }
                 catch (Exception ex)
                 {
-                    this.logger.LogError(ex, "Error occurred trying to post agent update.");
+                    logger.LogError(ex, "Error occurred trying to post agent update.");
                 }
 
                 await Task.Delay(TimeSpan.FromMinutes(60), stoppingToken);
@@ -91,8 +86,8 @@ public sealed class ReportingService : BackgroundService
         {
             Environment.ExitCode = -1;
 
-            this.logger.LogError(e, "Failed to start.");
-            this.hostApplication.StopApplication();
+            logger.LogError(e, "Failed to start.");
+            hostApplication.StopApplication();
 
             return;
         }
@@ -100,11 +95,12 @@ public sealed class ReportingService : BackgroundService
 
     private HttpClient GetHttpClient(string token, string baseAddress)
     {
-        var httpClient = this.clientFactory.CreateClient(nameof(ReportingService));
+        var httpClient = clientFactory.CreateClient(nameof(ReportingService));
 
         httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             scheme: "Basic",
-            parameter: Convert.ToBase64String(Encoding.UTF8.GetBytes($"{token}")));
+            parameter: Convert.ToBase64String(Encoding.UTF8.GetBytes($"{token}"))
+        );
 
         httpClient.BaseAddress = new Uri(baseAddress);
         httpClient.DefaultRequestHeaders.Add("User-Agent", "JMW.Agent");

@@ -25,16 +25,16 @@ public sealed class Startup
             options.AllowSynchronousIO = true;
         });
 
-        services.Configure<JsonOptions>(options =>
+        services.Configure<JsonOptions>(static options =>
         {
             SystemTextJsonSerializerSettingsProvider.Apply(options.SerializerOptions);
         });
 
         services.AddHttpClient(nameof(ReportingService))
             .ConfigurePrimaryHttpMessageHandler(
-                svc => new HttpClientHandler
+                static svc => new HttpClientHandler
                 {
-                    ServerCertificateCustomValidationCallback = (_, _, _, _) => true,
+                    ServerCertificateCustomValidationCallback = static (_, _, _, _) => true,
                     ClientCertificateOptions = ClientCertificateOption.Manual,
                 }
             );
@@ -56,7 +56,7 @@ public sealed class Startup
 
         app.UseRouting();
 
-        app.UseEndpoints(endpoints =>
+        app.UseEndpoints(static endpoints =>
         {
             endpoints.AddAgentEndpoints();
         });
