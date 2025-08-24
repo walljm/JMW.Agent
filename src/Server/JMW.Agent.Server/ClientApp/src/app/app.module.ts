@@ -7,6 +7,7 @@ import { RouterModule } from '@angular/router';
 import { AppComponent } from './app.component';
 import { NavMenuComponent } from './nav-menu/nav-menu.component';
 import { AgentsComponent } from './agents/agents.component';
+import { ActiveAgentsComponent } from './active-agents/active-agents.component';
 
 import { ApiAuthorizationModule } from 'src/api-authorization/api-authorization.module';
 import { AuthorizeGuard } from 'src/api-authorization/authorize.guard';
@@ -16,6 +17,7 @@ import { AuthorizeInterceptor } from 'src/api-authorization/authorize.intercepto
         AppComponent,
         NavMenuComponent,
         AgentsComponent,
+        ActiveAgentsComponent,
     ],
     bootstrap: [AppComponent], imports: [BrowserModule.withServerTransition({ appId: 'ng-cli-universal' }),
         FormsModule,
@@ -25,6 +27,11 @@ import { AuthorizeInterceptor } from 'src/api-authorization/authorize.intercepto
             {
                 path: 'agents',
                 component: AgentsComponent,
+                canActivate: [AuthorizeGuard],
+            },
+            {
+                path: 'active-agents',
+                component: ActiveAgentsComponent,
                 canActivate: [AuthorizeGuard],
             },
         ])], providers: [

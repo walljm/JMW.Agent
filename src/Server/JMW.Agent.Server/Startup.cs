@@ -1,5 +1,6 @@
 using JMW.Agent.Common.Serialization;
 using JMW.Agent.Server.Data;
+using JMW.Agent.Server.Endpoints;
 using JMW.Agent.Server.Models;
 using JMW.Agent.Server.Services;
 using Microsoft.AspNetCore.Http.Json;
@@ -43,6 +44,18 @@ public sealed class Startup
 
         services.AddHealthChecks();
         services.AddMetricsCollector();
+
+        // Add CORS configuration
+        services.AddCors(options =>
+        {
+            options.AddDefaultPolicy(builder =>
+            {
+                builder
+                    .AllowAnyOrigin()
+                    .AllowAnyMethod()
+                    .AllowAnyHeader();
+            });
+        });
 
         #endregion Generic configurations
 
@@ -116,13 +129,26 @@ public sealed class Startup
         app.UseStaticFiles();
         app.UseRouting();
 
+        // Enable CORS
+        app.UseCors();
+
         app.UseAuthentication();
         app.UseAuthorization();
 
+        // Add agent authorization middleware before endpoints
+        app.UseMiddleware<AgentAuthorizationMiddleware>();
+
         app.UseEndpoints(static endpoints =>
             {
-                // api endpoints (protected)
-                endpoints.AddServerEndpoints();
+                // Add agent endpoints (unauthenticated registration/status endpoints)
+                endpoints.AddAgentEndpoints();
+
+                // Add agent data endpoints (includes agent data submission and admin active agents endpoints)
+                endpoints.AddAgentDataEndpoints();
+
+                // Add agent management endpoints (authenticated admin endpoints)
+                endpoints.AddAgentManagementEndpoints();
+
 
                 // Map Identity API endpoints without authorization (public endpoints for login/register)
                 endpoints.MapIdentityApi<ApplicationUser>();

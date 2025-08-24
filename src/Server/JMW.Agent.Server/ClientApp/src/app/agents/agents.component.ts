@@ -1,199 +1,149 @@
-import { Component, Inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { Component, Inject, OnInit } from '@angular/core';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { lastValueFrom } from 'rxjs';
 
 @Component({
   selector: 'app-agents',
   templateUrl: './agents.component.html',
 })
-export class AgentsComponent {
-  public agents: Agent[] = [];
+export class AgentsComponent implements OnInit {
+  public registeredAgents: RegisteredAgent[] = [];
+  public isLoading = true;
+  public error: string | null = null;
 
-  constructor(http: HttpClient, @Inject('BASE_URL') baseUrl: string) {
-    lastValueFrom(http.get<Agent[]>(baseUrl + 'api/v1/server/agents')).then(
-      (result) => {
-        this.agents = result;
-      },
-      (error) => console.error(error)
-    );
+  constructor(
+    private http: HttpClient,
+    @Inject('BASE_URL') private baseUrl: string
+  ) {}
+
+  async ngOnInit() {
+    await this.loadAgents();
+  }
+
+  async loadAgents() {
+    try {
+      this.isLoading = true;
+      this.error = null;
+
+      const token = localStorage.getItem('auth_token'); // Fixed: use correct token key
+      if (!token) {
+        this.error = 'Authentication required. Please log in.';
+        return;
+      }
+
+      const headers = new HttpHeaders().set('Authorization', `Bearer ${token}`);
+
+      this.registeredAgents = await lastValueFrom(
+        this.http.get<RegisteredAgent[]>(
+          this.baseUrl + 'api/v1/admin/agents',
+          { headers }
+        )
+      );
+    } catch (error: any) {
+      console.error('Error loading agents:', error);
+      if (error.status === 401) {
+        this.error = 'Authentication failed. Please log in again.';
+      } else {
+        this.error = 'Failed to load agents. Please try again.';
+      }
+    } finally {
+      this.isLoading = false;
+    }
+  }
+
+  async authorizeAgent(agentId: string) {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers = new HttpHeaders().set('Authorization', `Bearer ${token}`);
+
+      await lastValueFrom(
+        this.http.post(
+          `${this.baseUrl}api/v1/admin/agents/${agentId}/authorize`,
+          {},
+          { headers }
+        )
+      );
+
+      // Reload agents to reflect changes
+      await this.loadAgents();
+    } catch (error) {
+      console.error('Error authorizing agent:', error);
+      this.error = 'Failed to authorize agent. Please try again.';
+    }
+  }
+
+  async deauthorizeAgent(agentId: string) {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers = new HttpHeaders().set('Authorization', `Bearer ${token}`);
+
+      await lastValueFrom(
+        this.http.post(
+          `${this.baseUrl}api/v1/admin/agents/${agentId}/deauthorize`,
+          {},
+          { headers }
+        )
+      );
+
+      // Reload agents to reflect changes
+      await this.loadAgents();
+    } catch (error) {
+      console.error('Error deauthorizing agent:', error);
+      this.error = 'Failed to deauthorize agent. Please try again.';
+    }
+  }
+
+  async deleteAgent(agentId: string) {
+    if (!confirm('Are you sure you want to delete this agent? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers = new HttpHeaders().set('Authorization', `Bearer ${token}`);
+
+      await lastValueFrom(
+        this.http.delete(
+          `${this.baseUrl}api/v1/admin/agents/${agentId}`,
+          { headers }
+        )
+      );
+
+      // Reload agents to reflect changes
+      await this.loadAgents();
+    } catch (error) {
+      console.error('Error deleting agent:', error);
+      this.error = 'Failed to delete agent. Please try again.';
+    }
+  }
+
+  get pendingAgents() {
+    return this.registeredAgents.filter(agent => !agent.isAuthorized);
+  }
+
+  get authorizedAgents() {
+    return this.registeredAgents.filter(agent => agent.isAuthorized);
+  }
+
+  getTimeSinceLastSeen(lastSeenAt: string): string {
+    const lastSeen = new Date(lastSeenAt);
+    const now = new Date();
+    const diffInMinutes = Math.floor((now.getTime() - lastSeen.getTime()) / (1000 * 60));
+
+    if (diffInMinutes < 1) return 'Just now';
+    if (diffInMinutes < 60) return `${diffInMinutes} minutes ago`;
+    if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)} hours ago`;
+    return `${Math.floor(diffInMinutes / 1440)} days ago`;
   }
 }
-interface Agent {
+
+interface RegisteredAgent {
+  agentId: string;
   serviceName: string;
-  machineInformation: MachineInformation;
-}
-
-interface MachineInformation {
-  machineName: string;
-  operatingSystem: OperatingSystem;
-  processor: Processor;
-  systemInfo: SystemInfo;
-  userInfo: UserInfo;
-  dotNetInfo: DotNetInfo;
-  drives: Drive[];
-  printers: string[];
-  ipGlobalProperties: IpGlobalProperties;
-  interfaces: NetworkInterface[];
-}
-interface DotNetInfo {
-  version: Version;
-  frameworkDescription: string;
-  runtimeIdentifier: string;
-}
-
-interface Drive {
-  name: string;
-  isReady: boolean;
-  rootDirectory: string;
-  driveType: string;
-  driveFormat: string;
-  availableFreeSpace: string;
-  totalFreeSpace: string;
-  totalSize: string;
-  volumeLabel: string;
-}
-
-interface IpGlobalProperties {
-  dhcpScopeName: string;
-  domainName: string;
-  hostName: string;
-  isWinsProxy: boolean;
-  nodeType: string;
-}
-
-interface UserInfo {
-  userName: string;
-  userDomainName: string;
-}
-
-interface SystemInfo {
-  systemDateTime: string;
-  systemPageSize: string;
-  totalAvailableMemoryBytes: string;
-}
-
-interface Processor {
-  processorCount: number;
-  processArchitecture: string;
-  is64BitOperatingSystem: boolean;
-  processorIdentity: string;
-  processorLevel: string;
-  processorRevision: string;
-}
-
-interface OperatingSystem {
-  Platform: string;
-  ServicePack: string;
-  Version: Version;
-  VersionString: string;
-  Architecture: string;
-  Description: string;
-}
-
-interface Version {
-  Major: number;
-  Minor: number;
-  Build: number;
-  Revision: number;
-  MajorRevision: number;
-  MinorRevision: number;
-}
-
-interface NetworkInterface {
-  iPv6LoopbackInterfaceIndex: number;
-  loopbackInterfaceIndex: number;
-  id: string;
-  name: string;
-  description: string;
-  physicalAddress: string;
-  operationalStatus: string;
-  speed: string;
-  isReceiveOnly: boolean;
-  supportsMulticast: boolean;
-  networkInterfaceType: string;
-  networkInterfaceTypeDescription: string;
-  iPInterfaceStatistics: IpInterfaceStatistics;
-  iPv4InterfaceStatistics: IpInterfaceStatistics;
-  iPInterfaceProperties: IpInterfaceProperties;
-}
-
-interface IpInterfaceStatistics {
-  bytesReceived: string;
-  bytesSent: string;
-  incomingPacketsDiscarded: string;
-  incomingPacketsWithErrors: string;
-  incomingUnknownProtocolPackets: string;
-  nonUnicastPacketsReceived: string;
-  nonUnicastPacketsSent: string;
-  outgoingPacketsDiscarded: string;
-  outgoingPacketsWithErrors: string;
-  outputQueueLength: string;
-  unicastPacketsReceived: string;
-  unicastPacketsSent: string;
-}
-
-interface IpInterfaceProperties {
-  isDnsEnabled: boolean;
-  dnsSuffix: string;
-  isDynamicDnsEnabled: boolean;
-  unicastAddresses: UnicastIpAddressInformation[];
-  multicastAddresses: MulticastIpAddressInformation[];
-  anycastAddresses: IpAddressInformation[];
-  dnsAddresses: IpAddress[];
-  gatewayAddresses: IpAddress[];
-  dhcpServerAddresses: IpAddress[];
-  winsServersAddresses: IpAddress[];
-  iPv4Properties: Ipv4InterfaceProperties;
-  iPv6Properties: Ipv6InterfaceProperties;
-}
-
-interface Ipv6InterfaceProperties {
-  index: number;
-  mtu: number;
-}
-
-interface Ipv4InterfaceProperties {
-  usesWins: boolean;
-  isDhcpEnabled: boolean;
-  isAutomaticPrivateAddressingActive: boolean;
-  isAutomaticPrivateAddressingEnabled: boolean;
-  index: number;
-  isForwardingEnabled: boolean;
-  mtu: number;
-}
-
-interface MulticastIpAddressInformation extends IpAddressInformation {
-  addressPreferredLifetime: string;
-  addressValidLifetime: string;
-  dhcpLeaseLifetime: string;
-  duplicateAddressDetectionState: string;
-  prefixOrigin: string;
-  suffixOrigin: string;
-}
-
-interface UnicastIpAddressInformation extends IpAddressInformation {
-  addressPreferredLifetime: string;
-  addressValidLifetime: string;
-  dhcpLeaseLifetime: string;
-  duplicateAddressDetectionState: string;
-  prefixOrigin: string;
-  suffixOrigin: string;
-  iPv4Mask: IpAddress;
-}
-
-interface IpAddressInformation {
-  address: IpAddress;
-  isDnsEligible: boolean;
-  isTransient: boolean;
-}
-
-interface IpAddress {
-  address: string;
-  addressFamily: string;
-  isIPv6Multicast: boolean;
-  isIPv6LinkLocal: boolean;
-  isIPv6SiteLocal: boolean;
-  isIPv6Teredo: boolean;
-  isIPv6UniqueLocal: boolean;
-  isIPv4MappedToIPv6: boolean;
+  operatingSystem: string;
+  isAuthorized: boolean;
+  registeredAt: string;
+  lastSeenAt: string;
+  authorizedAt?: string;
+  authorizedBy?: string;
 }

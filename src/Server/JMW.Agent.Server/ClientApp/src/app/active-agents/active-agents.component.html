@@ -1,0 +1,289 @@
+<div class="container-fluid">
+  <h1>Active Agents</h1>
+
+  <div class="alert alert-info" role="alert">
+    <i class="fa fa-info-circle"></i>
+    View and monitor authorized agents that are actively sending data to the server.
+  </div>
+
+  <!-- Error Alert -->
+  <div class="alert alert-danger" role="alert" *ngIf="error">
+    <i class="fa fa-exclamation-triangle"></i>
+    {{ error }}
+    <button type="button" class="btn-close" aria-label="Close" (click)="error = null"></button>
+  </div>
+
+  <!-- Loading Spinner -->
+  <div class="text-center my-4" *ngIf="isLoading">
+    <div class="spinner-border" role="status">
+      <span class="visually-hidden">Loading...</span>
+    </div>
+    <p class="mt-2">Loading active agents...</p>
+  </div>
+
+  <!-- Agent Statistics -->
+  <div class="row mb-4" *ngIf="!isLoading">
+    <div class="col-md-4">
+      <div class="card bg-success text-white">
+        <div class="card-body">
+          <h5 class="card-title">
+            <i class="fa fa-check-circle"></i>
+            Active Agents
+          </h5>
+          <h2 class="card-text">{{ activeAgents.length }}</h2>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card bg-info text-white">
+        <div class="card-body">
+          <h5 class="card-title">
+            <i class="fa fa-database"></i>
+            With Data
+          </h5>
+          <h2 class="card-text">{{ agentsWithData.length }}</h2>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card bg-light">
+        <div class="card-body">
+          <button class="btn btn-primary w-100" (click)="loadActiveAgents()">
+            <i class="fa fa-refresh"></i>
+            Refresh
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Active Agents Table -->
+  <div class="card" *ngIf="!isLoading">
+    <div class="card-header bg-success text-white">
+      <h3 class="mb-0">
+        <i class="fa fa-server"></i>
+        Active Agents ({{ activeAgents.length }})
+      </h3>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive" *ngIf="activeAgents.length > 0; else noActiveAgents">
+        <table class="table table-hover">
+          <thead>
+            <tr>
+              <th>Service Name</th>
+              <th>Machine Name</th>
+              <th>Operating System</th>
+              <th>Last Data Update</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let agent of activeAgents">
+              <td>
+                <strong>{{ agent.serviceName }}</strong>
+                <br>
+                <small class="text-muted">{{ agent.agentId }}</small>
+              </td>
+              <td>
+                <span *ngIf="agent.machineName">{{ agent.machineName }}</span>
+                <span *ngIf="!agent.machineName" class="text-muted">Unknown</span>
+              </td>
+              <td>{{ agent.operatingSystem }}</td>
+              <td>
+                <span *ngIf="agent.lastDataUpdate">
+                  {{ getTimeSinceLastUpdate(agent.lastDataUpdate) }}
+                </span>
+                <span *ngIf="!agent.lastDataUpdate" class="text-muted">No data yet</span>
+              </td>
+              <td>
+                <span class="badge" [ngClass]="getStatusBadgeClass(agent.lastDataUpdate || agent.lastSeenAt)">
+                  <i class="fa fa-circle" *ngIf="agent.hasMachineData"></i>
+                  <i class="fa fa-circle-o" *ngIf="!agent.hasMachineData"></i>
+                  {{ agent.hasMachineData ? 'Active' : 'No Data' }}
+                </span>
+              </td>
+              <td>
+                <button
+                  class="btn btn-primary btn-sm"
+                  [disabled]="!agent.hasMachineData"
+                  (click)="viewAgentDetails(agent.agentId)"
+                  title="View Details">
+                  <i class="fa fa-eye"></i>
+                  View Details
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <ng-template #noActiveAgents>
+        <div class="text-center text-muted py-4">
+          <i class="fa fa-server fa-3x mb-3"></i>
+          <h4>No Active Agents</h4>
+          <p>No authorized agents are currently active. Agents must be authorized before they appear here.</p>
+        </div>
+      </ng-template>
+    </div>
+  </div>
+</div>
+
+<!-- Agent Details Modal -->
+<div class="modal fade show d-block" *ngIf="selectedAgent" style="background-color: rgba(0,0,0,0.5);">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">
+          <i class="fa fa-server"></i>
+          Agent Details: {{ selectedAgent.serviceName }}
+        </h5>
+        <button type="button" class="btn-close" (click)="closeDetails()"></button>
+      </div>
+      <div class="modal-body" *ngIf="!isLoadingDetails">
+        <div class="row">
+          <div class="col-md-6">
+            <h6>Basic Information</h6>
+            <table class="table table-sm">
+              <tr>
+                <th>Agent ID:</th>
+                <td>{{ selectedAgent.agentId }}</td>
+              </tr>
+              <tr>
+                <th>Service Name:</th>
+                <td>{{ selectedAgent.serviceName }}</td>
+              </tr>
+              <tr>
+                <th>Operating System:</th>
+                <td>{{ selectedAgent.operatingSystem }}</td>
+              </tr>
+              <tr>
+                <th>Registered:</th>
+                <td>{{ selectedAgent.registeredAt | date:'medium' }}</td>
+              </tr>
+              <tr>
+                <th>Last Seen:</th>
+                <td>{{ selectedAgent.lastSeenAt | date:'medium' }}</td>
+              </tr>
+              <tr *ngIf="selectedAgent.lastDataUpdate">
+                <th>Last Data Update:</th>
+                <td>{{ selectedAgent.lastDataUpdate | date:'medium' }}</td>
+              </tr>
+            </table>
+          </div>
+          <div class="col-md-6" *ngIf="selectedAgent.machineInformation">
+            <h6>Machine Information</h6>
+            <table class="table table-sm">
+              <tr *ngIf="selectedAgent.machineInformation.machineName">
+                <th>Machine Name:</th>
+                <td>{{ selectedAgent.machineInformation.machineName }}</td>
+              </tr>
+              <tr *ngIf="selectedAgent.machineInformation.processor">
+                <th>Processor:</th>
+                <td>{{ selectedAgent.machineInformation.processor.processorIdentity }}</td>
+              </tr>
+              <tr *ngIf="selectedAgent.machineInformation.processor">
+                <th>Processor Count:</th>
+                <td>{{ selectedAgent.machineInformation.processor.processorCount }}</td>
+              </tr>
+              <tr *ngIf="selectedAgent.machineInformation.systemInfo">
+                <th>Total Memory:</th>
+                <td>{{ selectedAgent.machineInformation.systemInfo.totalAvailableMemoryBytes | number }} bytes</td>
+              </tr>
+            </table>
+          </div>
+        </div>
+
+        <div *ngIf="selectedAgent.machineInformation" class="mt-4">
+          <ul class="nav nav-tabs" id="machineInfoTabs">
+            <li class="nav-item">
+              <a class="nav-link active" data-bs-toggle="tab" href="#drives">Drives</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" data-bs-toggle="tab" href="#network">Network</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" data-bs-toggle="tab" href="#system">System</a>
+            </li>
+          </ul>
+          <div class="tab-content mt-3">
+            <div class="tab-pane fade show active" id="drives">
+              <div class="table-responsive">
+                <table class="table table-sm" *ngIf="selectedAgent.machineInformation.drives?.length">
+                  <thead>
+                    <tr>
+                      <th>Drive</th>
+                      <th>Type</th>
+                      <th>Format</th>
+                      <th>Total Size</th>
+                      <th>Available</th>
+                      <th>Label</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr *ngFor="let drive of selectedAgent.machineInformation.drives">
+                      <td>{{ drive.name }}</td>
+                      <td>{{ drive.driveType }}</td>
+                      <td>{{ drive.driveFormat }}</td>
+                      <td>{{ drive.totalSize | number }} bytes</td>
+                      <td>{{ drive.availableFreeSpace | number }} bytes</td>
+                      <td>{{ drive.volumeLabel || 'N/A' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <p *ngIf="!selectedAgent.machineInformation.drives?.length" class="text-muted">No drive information available</p>
+              </div>
+            </div>
+            <div class="tab-pane fade" id="network">
+              <div class="table-responsive">
+                <table class="table table-sm" *ngIf="selectedAgent.machineInformation.interfaces?.length">
+                  <thead>
+                    <tr>
+                      <th>Interface</th>
+                      <th>Type</th>
+                      <th>Status</th>
+                      <th>Speed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr *ngFor="let interface of selectedAgent.machineInformation.interfaces">
+                      <td>{{ interface.name }}</td>
+                      <td>{{ interface.networkInterfaceType }}</td>
+                      <td>{{ interface.operationalStatus }}</td>
+                      <td>{{ interface.speed | number }} bps</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <p *ngIf="!selectedAgent.machineInformation.interfaces?.length" class="text-muted">No network information available</p>
+              </div>
+            </div>
+            <div class="tab-pane fade" id="system">
+              <table class="table table-sm" *ngIf="selectedAgent.machineInformation.systemInfo">
+                <tr>
+                  <th>System Date/Time:</th>
+                  <td>{{ selectedAgent.machineInformation.systemInfo.systemDateTime }}</td>
+                </tr>
+                <tr>
+                  <th>Page Size:</th>
+                  <td>{{ selectedAgent.machineInformation.systemInfo.systemPageSize }} bytes</td>
+                </tr>
+                <tr>
+                  <th>Available Memory:</th>
+                  <td>{{ selectedAgent.machineInformation.systemInfo.totalAvailableMemoryBytes | number }} bytes</td>
+                </tr>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-body text-center" *ngIf="isLoadingDetails">
+        <div class="spinner-border" role="status">
+          <span class="visually-hidden">Loading details...</span>
+        </div>
+        <p class="mt-2">Loading agent details...</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" (click)="closeDetails()">Close</button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,3 +1,4 @@
+using JMW.Agent.Client.Services;
 using JMW.Agent.Common.Serialization;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
@@ -39,9 +40,24 @@ public sealed class Startup
                 }
             );
 
+        // Add HttpClient for agent registration service
+        services.AddHttpClient<IAgentRegistrationService, AgentRegistrationService>()
+            .ConfigurePrimaryHttpMessageHandler(
+                static svc => new HttpClientHandler
+                {
+                    ServerCertificateCustomValidationCallback = static (_, _, _, _) => true,
+                    ClientCertificateOptions = ClientCertificateOption.Manual,
+                }
+            );
+
         services.AddOptions<AgentOptions>()
             .Bind(this.Configuration.GetSection(nameof(AgentOptions)))
             .ValidateDataAnnotations();
+
+        // Register new agent services
+        services.AddSingleton<IAgentIdentifierService, AgentIdentifierService>();
+        services.AddSingleton<IAgentRegistrationService, AgentRegistrationService>();
+
         services.AddHostedService<ReportingService>();
     }
 
@@ -58,7 +74,7 @@ public sealed class Startup
 
         app.UseEndpoints(static endpoints =>
         {
-            endpoints.AddAgentEndpoints();
+            // No agent endpoints needed - agents now push data to server
         });
     }
 }

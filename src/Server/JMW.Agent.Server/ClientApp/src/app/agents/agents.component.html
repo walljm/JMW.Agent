@@ -1,24 +1,205 @@
-<h1 id="tableLabel">Clients</h1>
+<div class="container-fluid">
+  <h1 id="tableLabel">Agent Management</h1>
 
-<p>This component demonstrates fetching data from the server.</p>
+  <div class="alert alert-info" role="alert">
+    <i class="fa fa-info-circle"></i>
+    Manage agent registrations and authorizations. Agents must be authorized before they can post data.
+  </div>
 
-<p *ngIf="!agents?.length"><em>Loading...</em></p>
+  <!-- Error Alert -->
+  <div class="alert alert-danger" role="alert" *ngIf="error">
+    <i class="fa fa-exclamation-triangle"></i>
+    {{ error }}
+    <button type="button" class="btn-close" aria-label="Close" (click)="error = null"></button>
+  </div>
 
-<table
-  class="table table-striped"
-  aria-labelledby="tableLabel"
-  *ngIf="agents.length"
->
-  <thead>
-    <tr>
-      <th>Name</th>
-      <th>Summary</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr *ngFor="let item of agents">
-      <td>{{ item?.serviceName }}</td>
-      <td>{{ item?.machineInformation?.machineName || 'Unknown' }}</td>
-    </tr>
-  </tbody>
-</table>
+  <!-- Loading Spinner -->
+  <div class="text-center my-4" *ngIf="isLoading">
+    <div class="spinner-border" role="status">
+      <span class="visually-hidden">Loading...</span>
+    </div>
+    <p class="mt-2">Loading agents...</p>
+  </div>
+
+  <!-- Agent Statistics -->
+  <div class="row mb-4" *ngIf="!isLoading">
+    <div class="col-md-3">
+      <div class="card bg-warning text-dark">
+        <div class="card-body">
+          <h5 class="card-title">
+            <i class="fa fa-clock"></i>
+            Pending Authorization
+          </h5>
+          <h2 class="card-text">{{ pendingAgents.length }}</h2>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card bg-success text-white">
+        <div class="card-body">
+          <h5 class="card-title">
+            <i class="fa fa-check"></i>
+            Authorized
+          </h5>
+          <h2 class="card-text">{{ authorizedAgents.length }}</h2>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card bg-info text-white">
+        <div class="card-body">
+          <h5 class="card-title">
+            <i class="fa fa-server"></i>
+            Total Agents
+          </h5>
+          <h2 class="card-text">{{ registeredAgents.length }}</h2>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card bg-light">
+        <div class="card-body">
+          <button class="btn btn-primary w-100" (click)="loadAgents()">
+            <i class="fa fa-refresh"></i>
+            Refresh
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pending Agents Section -->
+  <div class="card mb-4" *ngIf="!isLoading && pendingAgents.length > 0">
+    <div class="card-header bg-warning text-dark">
+      <h3 class="mb-0">
+        <i class="fa fa-clock"></i>
+        Pending Authorization ({{ pendingAgents.length }})
+      </h3>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-hover">
+          <thead>
+            <tr>
+              <th>Service Name</th>
+              <th>Operating System</th>
+              <th>Registered</th>
+              <th>Last Seen</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let agent of pendingAgents">
+              <td>
+                <strong>{{ agent.serviceName }}</strong>
+                <br>
+                <small class="text-muted">{{ agent.agentId }}</small>
+              </td>
+              <td>{{ agent.operatingSystem }}</td>
+              <td>{{ agent.registeredAt | date:'short' }}</td>
+              <td>
+                <span class="badge bg-secondary">
+                  {{ getTimeSinceLastSeen(agent.lastSeenAt) }}
+                </span>
+              </td>
+              <td>
+                <button
+                  class="btn btn-success btn-sm me-2"
+                  (click)="authorizeAgent(agent.agentId)"
+                  title="Authorize Agent">
+                  <i class="fa fa-check"></i>
+                  Authorize
+                </button>
+                <button
+                  class="btn btn-danger btn-sm"
+                  (click)="deleteAgent(agent.agentId)"
+                  title="Delete Agent">
+                  <i class="fa fa-trash"></i>
+                  Delete
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Authorized Agents Section -->
+  <div class="card" *ngIf="!isLoading">
+    <div class="card-header bg-success text-white">
+      <h3 class="mb-0">
+        <i class="fa fa-check"></i>
+        Authorized Agents ({{ authorizedAgents.length }})
+      </h3>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive" *ngIf="authorizedAgents.length > 0; else noAuthorizedAgents">
+        <table class="table table-hover">
+          <thead>
+            <tr>
+              <th>Service Name</th>
+              <th>Operating System</th>
+              <th>Registered</th>
+              <th>Last Seen</th>
+              <th>Authorized</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let agent of authorizedAgents">
+              <td>
+                <strong>{{ agent.serviceName }}</strong>
+                <br>
+                <small class="text-muted">{{ agent.agentId }}</small>
+              </td>
+              <td>{{ agent.operatingSystem }}</td>
+              <td>{{ agent.registeredAt | date:'short' }}</td>
+              <td>
+                <span class="badge bg-secondary">
+                  {{ getTimeSinceLastSeen(agent.lastSeenAt) }}
+                </span>
+              </td>
+              <td>
+                <div>
+                  {{ agent.authorizedAt | date:'short' }}
+                  <br>
+                  <small class="text-muted" *ngIf="agent.authorizedBy">by {{ agent.authorizedBy }}</small>
+                </div>
+              </td>
+              <td>
+                <button
+                  class="btn btn-warning btn-sm me-2"
+                  (click)="deauthorizeAgent(agent.agentId)"
+                  title="Revoke Authorization">
+                  <i class="fa fa-times"></i>
+                  Deauthorize
+                </button>
+                <button
+                  class="btn btn-danger btn-sm"
+                  (click)="deleteAgent(agent.agentId)"
+                  title="Delete Agent">
+                  <i class="fa fa-trash"></i>
+                  Delete
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <ng-template #noAuthorizedAgents>
+        <div class="text-center text-muted py-4">
+          <i class="fa fa-server fa-3x mb-3"></i>
+          <p>No authorized agents yet.</p>
+        </div>
+      </ng-template>
+    </div>
+  </div>
+
+  <!-- No Agents Message -->
+  <div class="text-center text-muted py-5" *ngIf="!isLoading && registeredAgents.length === 0">
+    <i class="fa fa-server fa-3x mb-3"></i>
+    <h4>No Agents Registered</h4>
+    <p>When agents start up and register with the server, they will appear here for authorization.</p>
+  </div>
+</div>

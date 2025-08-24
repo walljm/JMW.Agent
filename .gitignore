@@ -608,3 +608,5 @@ MigrationBackup/
 
 # End of https://www.toptal.com/developers/gitignore/api/windows,macos,linux,visualstudio,visualstudiocode,dotnetcore,aspnetcore,angular
 *.dmp
+src/Server/JMW.Agent.Server/jmw.agent.sqlite-shm
+src/Server/JMW.Agent.Server/jmw.agent.sqlite-wal
