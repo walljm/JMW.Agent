@@ -11,10 +11,10 @@ internal class WindowsService
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            return Array.Empty<MSFT_NetNeighbor>();
+            return [];
         }
 
-        var scope = new ManagementScope($@"\\localhost\root\StandardCimv2");
+        var scope = new ManagementScope(@"\\localhost\root\StandardCimv2");
 
         return QueryCim<MSFT_NetNeighbor>(scope, "MSFT_NetNeighbor").ToArray();
     }

@@ -3,7 +3,7 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 
-namespace JMW.Agent.Common;
+namespace JMW.Agent.Common.Linux;
 
 internal static class LinuxService
 {
@@ -39,7 +39,7 @@ internal static class LinuxService
                 IPAddress = IPAddress.TryParse(fields[0], out var ip) ? new JmwIpAddress(ip) : null,
                 LinkLayerAddress = PhysicalAddress.TryParse(fields[3], out var physicalAddress) ? physicalAddress : null,
                 InterfaceAlias = fields[5],
-                State = flags.ContainsKey(fields[2]) ? flags[fields[2]] : null,
+                State = flags.TryGetValue(fields[2], out var value) ? value : null,
             };
         }
     }

@@ -44,7 +44,7 @@ public sealed class ReportingService : BackgroundService
                 throw new InvalidDataException("AgentOptions must be configured.");
             }
 
-            if (string.IsNullOrEmpty(options.Value.ServerIp) || !IPAddress.TryParse(options.Value.ServerIp, out var ip))
+            if (string.IsNullOrEmpty(options.Value.ServerIp) || !IPAddress.TryParse(options.Value.ServerIp, out var _))
             {
                 throw new InvalidDataException("Server IP must be populated.");
             }

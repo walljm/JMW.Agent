@@ -9,7 +9,7 @@ public sealed class Startup
 {
     public Startup(IConfiguration configuration)
     {
-        Configuration = configuration;
+        this.Configuration = configuration;
     }
 
     public IConfiguration Configuration { get; }
@@ -21,7 +21,7 @@ public sealed class Startup
             https://github.com/dotnet/runtime/issues/1560
             https://github.com/dotnet/runtime/issues/1541
         */
-        services.Configure<KestrelServerOptions>(options =>
+        services.Configure<KestrelServerOptions>(static options =>
         {
             options.AllowSynchronousIO = true;
         });
@@ -33,7 +33,7 @@ public sealed class Startup
 
         services.AddHttpClient(nameof(ReportingService))
             .ConfigurePrimaryHttpMessageHandler(
-                static svc => new HttpClientHandler
+                static _ => new HttpClientHandler
                 {
                     ServerCertificateCustomValidationCallback = static (_, _, _, _) => true,
                     ClientCertificateOptions = ClientCertificateOption.Manual,
@@ -43,7 +43,7 @@ public sealed class Startup
         // Add HttpClient for agent registration service
         services.AddHttpClient<IAgentRegistrationService, AgentRegistrationService>()
             .ConfigurePrimaryHttpMessageHandler(
-                static svc => new HttpClientHandler
+                static _ => new HttpClientHandler
                 {
                     ServerCertificateCustomValidationCallback = static (_, _, _, _) => true,
                     ClientCertificateOptions = ClientCertificateOption.Manual,
@@ -71,10 +71,5 @@ public sealed class Startup
         app.UseHttpsRedirection();
 
         app.UseRouting();
-
-        app.UseEndpoints(static endpoints =>
-        {
-            // No agent endpoints needed - agents now push data to server
-        });
     }
 }

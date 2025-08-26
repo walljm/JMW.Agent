@@ -1,6 +1,5 @@
 using JMW.Agent.Server.Data;
 using JMW.Agent.Server.Models;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace JMW.Agent.Server.Endpoints;
@@ -13,47 +12,49 @@ public static class AgentManagementEndpoints
 
         // These endpoints require authentication (for admin users)
         group.MapGet("", GetAllRegisteredAgents)
-            .Produces<IEnumerable<AgentRegistrationSummary>>()
-            .RequireAuthorization();
+           .Produces<IEnumerable<AgentRegistrationSummary>>()
+           .RequireAuthorization();
 
         group.MapPost("{agentId:guid}/authorize", AuthorizeAgent)
-            .Produces(StatusCodes.Status200OK)
-            .Produces(StatusCodes.Status404NotFound)
-            .RequireAuthorization();
+           .Produces(StatusCodes.Status200OK)
+           .Produces(StatusCodes.Status404NotFound)
+           .RequireAuthorization();
 
         group.MapPost("{agentId:guid}/deauthorize", DeauthorizeAgent)
-            .Produces(StatusCodes.Status200OK)
-            .Produces(StatusCodes.Status404NotFound)
-            .RequireAuthorization();
+           .Produces(StatusCodes.Status200OK)
+           .Produces(StatusCodes.Status404NotFound)
+           .RequireAuthorization();
 
         group.MapDelete("{agentId:guid}", DeleteAgent)
-            .Produces(StatusCodes.Status200OK)
-            .Produces(StatusCodes.Status404NotFound)
-            .RequireAuthorization();
+           .Produces(StatusCodes.Status200OK)
+           .Produces(StatusCodes.Status404NotFound)
+           .RequireAuthorization();
 
         return builder;
     }
 
     private static async Task<IResult> GetAllRegisteredAgents(
         ApplicationDbContext dbContext,
-        ILogger<Program> logger)
+        ILogger<Program> logger
+    )
     {
         try
         {
             var agents = await dbContext.RegisteredAgents
-                .OrderByDescending(a => a.RegisteredAt)
-                .Select(a => new AgentRegistrationSummary
-                {
-                    AgentId = a.AgentId,
-                    ServiceName = a.ServiceName,
-                    OperatingSystem = a.OperatingSystem,
-                    IsAuthorized = a.IsAuthorized,
-                    RegisteredAt = a.RegisteredAt,
-                    LastSeenAt = a.LastSeenAt,
-                    AuthorizedAt = a.AuthorizedAt,
-                    AuthorizedBy = a.AuthorizedBy
-                })
-                .ToListAsync();
+               .OrderByDescending(a => a.RegisteredAt)
+               .Select(a => new AgentRegistrationSummary
+                    {
+                        AgentId = a.AgentId,
+                        ServiceName = a.ServiceName,
+                        OperatingSystem = a.OperatingSystem,
+                        IsAuthorized = a.IsAuthorized,
+                        RegisteredAt = a.RegisteredAt,
+                        LastSeenAt = a.LastSeenAt,
+                        AuthorizedAt = a.AuthorizedAt,
+                        AuthorizedBy = a.AuthorizedBy,
+                    }
+                )
+               .ToListAsync();
 
             return Results.Ok(agents);
         }
@@ -68,12 +69,13 @@ public static class AgentManagementEndpoints
         ApplicationDbContext dbContext,
         Guid agentId,
         HttpContext context,
-        ILogger<Program> logger)
+        ILogger<Program> logger
+    )
     {
         try
         {
             var agent = await dbContext.RegisteredAgents
-                .FirstOrDefaultAsync(a => a.AgentId == agentId);
+               .FirstOrDefaultAsync(a => a.AgentId == agentId);
 
             if (agent == null)
             {
@@ -85,12 +87,16 @@ public static class AgentManagementEndpoints
                 agent.IsAuthorized = true;
                 agent.AuthorizedAt = DateTime.UtcNow;
                 // You could get the current user's name from the auth context if needed
-                agent.AuthorizedBy = context.User?.Identity?.Name ?? "Admin";
+                agent.AuthorizedBy = context.User.Identity?.Name ?? "Admin";
 
                 await dbContext.SaveChangesAsync();
 
-                logger.LogInformation("Agent {AgentId} ({ServiceName}) has been authorized by {AuthorizedBy}",
-                    agentId, agent.ServiceName, agent.AuthorizedBy);
+                logger.LogInformation(
+                    "Agent {AgentId} ({ServiceName}) has been authorized by {AuthorizedBy}",
+                    agentId,
+                    agent.ServiceName,
+                    agent.AuthorizedBy
+                );
             }
 
             return Results.Ok();
@@ -106,12 +112,13 @@ public static class AgentManagementEndpoints
         ApplicationDbContext dbContext,
         Guid agentId,
         HttpContext context,
-        ILogger<Program> logger)
+        ILogger<Program> logger
+    )
     {
         try
         {
             var agent = await dbContext.RegisteredAgents
-                .FirstOrDefaultAsync(a => a.AgentId == agentId);
+               .FirstOrDefaultAsync(a => a.AgentId == agentId);
 
             if (agent == null)
             {
@@ -126,8 +133,11 @@ public static class AgentManagementEndpoints
 
                 await dbContext.SaveChangesAsync();
 
-                logger.LogInformation("Agent {AgentId} ({ServiceName}) has been deauthorized",
-                    agentId, agent.ServiceName);
+                logger.LogInformation(
+                    "Agent {AgentId} ({ServiceName}) has been deauthorized",
+                    agentId,
+                    agent.ServiceName
+                );
             }
 
             return Results.Ok();
@@ -142,12 +152,13 @@ public static class AgentManagementEndpoints
     private static async Task<IResult> DeleteAgent(
         ApplicationDbContext dbContext,
         Guid agentId,
-        ILogger<Program> logger)
+        ILogger<Program> logger
+    )
     {
         try
         {
             var agent = await dbContext.RegisteredAgents
-                .FirstOrDefaultAsync(a => a.AgentId == agentId);
+               .FirstOrDefaultAsync(a => a.AgentId == agentId);
 
             if (agent == null)
             {
@@ -157,8 +168,11 @@ public static class AgentManagementEndpoints
             dbContext.RegisteredAgents.Remove(agent);
             await dbContext.SaveChangesAsync();
 
-            logger.LogInformation("Agent {AgentId} ({ServiceName}) has been deleted",
-                agentId, agent.ServiceName);
+            logger.LogInformation(
+                "Agent {AgentId} ({ServiceName}) has been deleted",
+                agentId,
+                agent.ServiceName
+            );
 
             return Results.Ok();
         }

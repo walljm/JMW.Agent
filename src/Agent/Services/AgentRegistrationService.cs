@@ -14,15 +14,15 @@ public interface IAgentRegistrationService
 
 public sealed class AgentRegistrationService : IAgentRegistrationService
 {
-    private readonly HttpClient _httpClient;
-    private readonly AgentOptions _options;
-    private readonly ILogger<AgentRegistrationService> _logger;
+    private readonly HttpClient httpClient;
+    private readonly AgentOptions options;
+    private readonly ILogger<AgentRegistrationService> logger;
 
     public AgentRegistrationService(HttpClient httpClient, IOptions<AgentOptions> options, ILogger<AgentRegistrationService> logger)
     {
-        _httpClient = httpClient;
-        _options = options?.Value ?? throw new ArgumentNullException(nameof(options), "AgentOptions configuration is missing");
-        _logger = logger;
+        this.httpClient = httpClient;
+        this.options = options.Value ?? throw new ArgumentNullException(nameof(options), "AgentOptions configuration is missing");
+        this.logger = logger;
     }
 
     public async Task<bool> RegisterAgentAsync(Guid agentId, string serviceName, string operatingSystem)
@@ -39,22 +39,22 @@ public sealed class AgentRegistrationService : IAgentRegistrationService
             var json = JsonSerializer.Serialize(registrationData, SystemTextJsonSerializerSettingsProvider.Default);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-            var baseUrl = $"https://{_options.ServerIp}:{_options.ServerPort}";
-            var response = await _httpClient.PostAsync($"{baseUrl}/api/v1/agent/register", content);
+            var baseUrl = $"https://{options.ServerIp}:{options.ServerPort}";
+            var response = await httpClient.PostAsync($"{baseUrl}/api/v1/agent/register", content);
 
             if (response.IsSuccessStatusCode)
             {
-                _logger.LogInformation("Successfully registered agent {AgentId} with service name {ServiceName}", agentId, serviceName);
+                logger.LogInformation("Successfully registered agent {AgentId} with service name {ServiceName}", agentId, serviceName);
                 return true;
             }
 
             var errorContent = await response.Content.ReadAsStringAsync();
-            _logger.LogWarning("Failed to register agent. Status: {StatusCode}, Content: {Content}", response.StatusCode, errorContent);
+            logger.LogWarning("Failed to register agent. Status: {StatusCode}, Content: {Content}", response.StatusCode, errorContent);
             return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error registering agent {AgentId}", agentId);
+            logger.LogError(ex, "Error registering agent {AgentId}", agentId);
             return false;
         }
     }
@@ -63,8 +63,8 @@ public sealed class AgentRegistrationService : IAgentRegistrationService
     {
         try
         {
-            var baseUrl = $"https://{_options.ServerIp}:{_options.ServerPort}";
-            var response = await _httpClient.GetAsync($"{baseUrl}/api/v1/agent/authorization-status/{agentId}");
+            var baseUrl = $"https://{options.ServerIp}:{options.ServerPort}";
+            var response = await httpClient.GetAsync($"{baseUrl}/api/v1/agent/authorization-status/{agentId}");
 
             if (response.IsSuccessStatusCode)
             {
@@ -73,20 +73,20 @@ public sealed class AgentRegistrationService : IAgentRegistrationService
 
                 if (statusResponse?.IsAuthorized == true)
                 {
-                    _logger.LogInformation("Agent {AgentId} is authorized", agentId);
+                    logger.LogInformation("Agent {AgentId} is authorized", agentId);
                     return true;
                 }
 
-                _logger.LogDebug("Agent {AgentId} is not yet authorized: {Message}", agentId, statusResponse?.Message);
+                logger.LogDebug("Agent {AgentId} is not yet authorized: {Message}", agentId, statusResponse?.Message);
                 return false;
             }
 
-            _logger.LogWarning("Failed to check authorization status. Status: {StatusCode}", response.StatusCode);
+            logger.LogWarning("Failed to check authorization status. Status: {StatusCode}", response.StatusCode);
             return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error checking authorization status for agent {AgentId}", agentId);
+            logger.LogError(ex, "Error checking authorization status for agent {AgentId}", agentId);
             return false;
         }
     }
@@ -98,7 +98,7 @@ public sealed class AgentRegistrationService : IAgentRegistrationService
         var backoffMultiplier = 1.5;
         var consecutiveFailures = 0;
 
-        _logger.LogInformation("Waiting for agent {AgentId} to be authorized...", agentId);
+        logger.LogInformation("Waiting for agent {AgentId} to be authorized...", agentId);
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -107,7 +107,7 @@ public sealed class AgentRegistrationService : IAgentRegistrationService
                 var isAuthorized = await CheckAuthorizationStatusAsync(agentId);
                 if (isAuthorized)
                 {
-                    _logger.LogInformation("Agent {AgentId} has been authorized!", agentId);
+                    logger.LogInformation("Agent {AgentId} has been authorized!", agentId);
                     return;
                 }
 
@@ -118,7 +118,7 @@ public sealed class AgentRegistrationService : IAgentRegistrationService
             catch (Exception ex)
             {
                 consecutiveFailures++;
-                _logger.LogWarning(ex, "Failed to check authorization status (attempt {Attempt})", consecutiveFailures);
+                logger.LogWarning(ex, "Failed to check authorization status (attempt {Attempt})", consecutiveFailures);
 
                 // Apply exponential backoff on failures
                 pollInterval = TimeSpan.FromMilliseconds(Math.Min(
@@ -126,7 +126,7 @@ public sealed class AgentRegistrationService : IAgentRegistrationService
                     maxPollInterval.TotalMilliseconds));
             }
 
-            _logger.LogDebug("Waiting {PollInterval} before next authorization check", pollInterval);
+            logger.LogDebug("Waiting {PollInterval} before next authorization check", pollInterval);
             await Task.Delay(pollInterval, cancellationToken);
         }
     }

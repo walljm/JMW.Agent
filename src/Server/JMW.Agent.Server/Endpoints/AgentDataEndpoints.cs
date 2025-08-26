@@ -82,46 +82,45 @@ public static class AgentDataEndpoints
         {
             // First, get the basic agent data with payload information
             var agentsWithPayloads = await dbContext.RegisteredAgents
-                .Where(a => a.IsAuthorized)
+                .Where(static a => a.IsAuthorized)
                 .Select(a => new
                 {
                     Agent = a,
                     Payload = dbContext.AgentDataPayloads
-                        .Where(p => p.AgentId == a.AgentId)
-                        .FirstOrDefault()
+                       .FirstOrDefault(p => p.AgentId == a.AgentId)
                 })
                 .ToListAsync();
 
             // Process the machine information in memory (not in SQL)
-            var activeAgents = agentsWithPayloads.Select(item =>
-            {
-                JmwMachineInformation? machineInfo = null;
-                if (item.Payload?.InfoJson != null)
+            var activeAgents = agentsWithPayloads.Select(static item =>
                 {
-                    try
+                    JmwMachineInformation? machineInfo = null;
+                    if (item.Payload?.InfoJson != null)
                     {
-                        machineInfo = JsonSerializer.Deserialize<JmwMachineInformation>(
-                            item.Payload.InfoJson,
-                            SystemTextJsonSerializerSettingsProvider.Default);
+                        try
+                        {
+                            machineInfo = JsonSerializer.Deserialize<JmwMachineInformation>(
+                                item.Payload.InfoJson,
+                                SystemTextJsonSerializerSettingsProvider.Default);
+                        }
+                        catch
+                        {
+                            // Ignore deserialization errors
+                        }
                     }
-                    catch
-                    {
-                        // Ignore deserialization errors
-                    }
-                }
 
-                return new ActiveAgentSummary
-                {
-                    AgentId = item.Agent.AgentId,
-                    ServiceName = item.Agent.ServiceName,
-                    OperatingSystem = item.Agent.OperatingSystem,
-                    LastSeenAt = item.Agent.LastSeenAt,
-                    LastDataUpdate = item.Payload?.LastUpdated ?? DateTime.MinValue,
-                    HasMachineData = item.Payload != null,
-                    MachineName = machineInfo?.MachineName
-                };
-            })
-            .OrderByDescending(a => a.LastSeenAt)
+                    return new ActiveAgentSummary
+                    {
+                        AgentId = item.Agent.AgentId,
+                        ServiceName = item.Agent.ServiceName,
+                        OperatingSystem = item.Agent.OperatingSystem,
+                        LastSeenAt = item.Agent.LastSeenAt,
+                        LastDataUpdate = item.Payload?.LastUpdated ?? DateTime.MinValue,
+                        HasMachineData = item.Payload != null,
+                        MachineName = machineInfo?.MachineName
+                    };
+                })
+            .OrderByDescending(static a => a.LastSeenAt)
             .ToList();
 
             return Results.Ok(activeAgents);

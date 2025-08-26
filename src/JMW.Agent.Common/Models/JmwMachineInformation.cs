@@ -2,6 +2,7 @@
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
+using JMW.Agent.Common.Linux;
 
 namespace JMW.Agent.Common.Models;
 
@@ -152,7 +153,7 @@ public sealed class JmwMachineInformation
                 State = o.State,
             }).ToArray();
         }
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
             netNeighbors = LinuxService.ReadArpTable().ToArray();
         }
@@ -220,48 +221,48 @@ public sealed class JmwMachineInformation
 
     public void Print()
     {
-        Console.WriteLine($"{nameof(MachineName)}: {MachineName}");
+        Console.WriteLine($"{nameof(this.MachineName)}: {this.MachineName}");
 
-        Console.WriteLine($"{nameof(OperatingSystem)}");
-        Console.WriteLine($"  {nameof(OperatingSystem.Platform)}: {OperatingSystem?.Platform}");
-        Console.WriteLine($"  {nameof(OperatingSystem.Version)}: {OperatingSystem?.Version}");
-        Console.WriteLine($"  {nameof(OperatingSystem.VersionString)}: {OperatingSystem?.VersionString}");
-        Console.WriteLine($"  {nameof(OperatingSystem.ServicePack)}: {OperatingSystem?.ServicePack}");
-        Console.WriteLine($"  {nameof(OperatingSystem.Architecture)}: {OperatingSystem?.Architecture}");
-        Console.WriteLine($"  {nameof(OperatingSystem.Description)}: {OperatingSystem?.Description}");
+        Console.WriteLine($"{nameof(this.OperatingSystem)}");
+        Console.WriteLine($"  {nameof(this.OperatingSystem.Platform)}: {this.OperatingSystem?.Platform}");
+        Console.WriteLine($"  {nameof(this.OperatingSystem.Version)}: {this.OperatingSystem?.Version}");
+        Console.WriteLine($"  {nameof(this.OperatingSystem.VersionString)}: {this.OperatingSystem?.VersionString}");
+        Console.WriteLine($"  {nameof(this.OperatingSystem.ServicePack)}: {this.OperatingSystem?.ServicePack}");
+        Console.WriteLine($"  {nameof(this.OperatingSystem.Architecture)}: {this.OperatingSystem?.Architecture}");
+        Console.WriteLine($"  {nameof(this.OperatingSystem.Description)}: {this.OperatingSystem?.Description}");
         Console.WriteLine();
 
-        Console.WriteLine($"{nameof(UserInfo)}");
-        Console.WriteLine($"  {nameof(UserInfo.UserName)}: {UserInfo?.UserName}");
-        Console.WriteLine($"  {nameof(UserInfo.UserDomainName)}: {UserInfo?.UserDomainName}");
+        Console.WriteLine($"{nameof(this.UserInfo)}");
+        Console.WriteLine($"  {nameof(this.UserInfo.UserName)}: {this.UserInfo?.UserName}");
+        Console.WriteLine($"  {nameof(this.UserInfo.UserDomainName)}: {this.UserInfo?.UserDomainName}");
         Console.WriteLine();
 
-        Console.WriteLine($"{nameof(DotNetInfo)}");
-        Console.WriteLine($"  {nameof(DotNetInfo.Version)}: {DotNetInfo?.Version}");
-        Console.WriteLine($"  {nameof(DotNetInfo.FrameworkDescription)}: {DotNetInfo?.FrameworkDescription}");
-        Console.WriteLine($"  {nameof(DotNetInfo.RuntimeIdentifier)}: {DotNetInfo?.RuntimeIdentifier}");
+        Console.WriteLine($"{nameof(this.DotNetInfo)}");
+        Console.WriteLine($"  {nameof(this.DotNetInfo.Version)}: {this.DotNetInfo?.Version}");
+        Console.WriteLine($"  {nameof(this.DotNetInfo.FrameworkDescription)}: {this.DotNetInfo?.FrameworkDescription}");
+        Console.WriteLine($"  {nameof(this.DotNetInfo.RuntimeIdentifier)}: {this.DotNetInfo?.RuntimeIdentifier}");
         Console.WriteLine();
 
-        Console.WriteLine($"{nameof(Processor)}");
-        Console.WriteLine($"  {nameof(Processor.ProcessorCount)}: {Processor?.ProcessorCount}");
-        Console.WriteLine($"  {nameof(Processor.ProcessArchitecture)}: {Processor?.ProcessArchitecture}");
-        Console.WriteLine($"  {nameof(Processor.Is64BitOperatingSystem)}: {Processor?.Is64BitOperatingSystem}");
-        Console.WriteLine($"  {nameof(Processor.ProcessorIdentity)}: {Processor?.ProcessorIdentity}");
-        Console.WriteLine($"  {nameof(Processor.ProcessorLevel)}: {Processor?.ProcessorLevel}");
-        Console.WriteLine($"  {nameof(Processor.ProcessorRevision)}: {Processor?.ProcessorRevision}");
+        Console.WriteLine($"{nameof(this.Processor)}");
+        Console.WriteLine($"  {nameof(this.Processor.ProcessorCount)}: {this.Processor?.ProcessorCount}");
+        Console.WriteLine($"  {nameof(this.Processor.ProcessArchitecture)}: {this.Processor?.ProcessArchitecture}");
+        Console.WriteLine($"  {nameof(this.Processor.Is64BitOperatingSystem)}: {this.Processor?.Is64BitOperatingSystem}");
+        Console.WriteLine($"  {nameof(this.Processor.ProcessorIdentity)}: {this.Processor?.ProcessorIdentity}");
+        Console.WriteLine($"  {nameof(this.Processor.ProcessorLevel)}: {this.Processor?.ProcessorLevel}");
+        Console.WriteLine($"  {nameof(this.Processor.ProcessorRevision)}: {this.Processor?.ProcessorRevision}");
         Console.WriteLine();
 
-        Console.WriteLine($"{nameof(SystemInfo)}");
-        Console.WriteLine($"  {nameof(SystemInfo.SystemDateTime)}: {SystemInfo?.SystemDateTime}");
-        Console.WriteLine($"  {nameof(SystemInfo.SystemPageSize)}: {SystemInfo?.SystemPageSize}");
-        Console.WriteLine($"  {nameof(SystemInfo.TotalAvailableMemoryBytes)}: {SystemInfo?.TotalAvailableMemoryBytes}");
+        Console.WriteLine($"{nameof(this.SystemInfo)}");
+        Console.WriteLine($"  {nameof(this.SystemInfo.SystemDateTime)}: {this.SystemInfo?.SystemDateTime}");
+        Console.WriteLine($"  {nameof(this.SystemInfo.SystemPageSize)}: {this.SystemInfo?.SystemPageSize}");
+        Console.WriteLine($"  {nameof(this.SystemInfo.TotalAvailableMemoryBytes)}: {this.SystemInfo?.TotalAvailableMemoryBytes}");
         Console.WriteLine();
 
-        if (Drives?.Any() ?? false)
+        if (this.Drives?.Any() ?? false)
         {
-            Console.WriteLine($"{nameof(Drives)}");
+            Console.WriteLine($"{nameof(this.Drives)}");
             Console.WriteLine("-----------------------------------");
-            foreach (var drive in Drives)
+            foreach (var drive in this.Drives)
             {
                 PrintProperties(drive, 4);
                 Console.WriteLine("    -------------------------------");
@@ -269,11 +270,11 @@ public sealed class JmwMachineInformation
             Console.WriteLine();
         }
 
-        if (Printers?.Any() ?? false)
+        if (this.Printers?.Any() ?? false)
         {
-            Console.WriteLine($"{nameof(Printers)}");
+            Console.WriteLine($"{nameof(this.Printers)}");
             Console.WriteLine("-----------------------------------");
-            foreach (var item in Printers)
+            foreach (var item in this.Printers)
             {
                 PrintProperties(item, 4);
                 Console.WriteLine("    -------------------------------");
@@ -281,16 +282,16 @@ public sealed class JmwMachineInformation
             Console.WriteLine();
         }
 
-        Console.WriteLine($"{nameof(IpGlobalProperties)}");
-        Console.WriteLine($"  {nameof(IpGlobalProperties.DhcpScopeName)}: {IpGlobalProperties?.DhcpScopeName}");
-        Console.WriteLine($"  {nameof(IpGlobalProperties.DomainName)}: {IpGlobalProperties?.DomainName}");
-        Console.WriteLine($"  {nameof(IpGlobalProperties.HostName)}: {IpGlobalProperties?.HostName}");
-        Console.WriteLine($"  {nameof(IpGlobalProperties.IsWinsProxy)}: {IpGlobalProperties?.IsWinsProxy}");
-        Console.WriteLine($"  NetBIOS{nameof(IpGlobalProperties.NodeType)}: {IpGlobalProperties?.NodeType}");
+        Console.WriteLine($"{nameof(this.IpGlobalProperties)}");
+        Console.WriteLine($"  {nameof(this.IpGlobalProperties.DhcpScopeName)}: {this.IpGlobalProperties?.DhcpScopeName}");
+        Console.WriteLine($"  {nameof(this.IpGlobalProperties.DomainName)}: {this.IpGlobalProperties?.DomainName}");
+        Console.WriteLine($"  {nameof(this.IpGlobalProperties.HostName)}: {this.IpGlobalProperties?.HostName}");
+        Console.WriteLine($"  {nameof(this.IpGlobalProperties.IsWinsProxy)}: {this.IpGlobalProperties?.IsWinsProxy}");
+        Console.WriteLine($"  NetBIOS{nameof(this.IpGlobalProperties.NodeType)}: {this.IpGlobalProperties?.NodeType}");
         Console.WriteLine();
 
-        Console.WriteLine($"{nameof(Interfaces)}");
-        foreach (var ifc in Interfaces?.Select(static o => o) ?? [])
+        Console.WriteLine($"{nameof(this.Interfaces)}");
+        foreach (var ifc in this.Interfaces?.Select(static o => o) ?? [])
         {
             Console.WriteLine("----------------------------------------------");
 

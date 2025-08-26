@@ -23,5 +23,6 @@ public sealed class RegisteredAgent
 
     public DateTime? AuthorizedAt { get; set; }
 
+    [MaxLength(100)]
     public string? AuthorizedBy { get; set; }
 }

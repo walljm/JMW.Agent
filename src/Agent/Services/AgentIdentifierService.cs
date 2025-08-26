@@ -10,47 +10,47 @@ public interface IAgentIdentifierService
 
 public sealed class AgentIdentifierService : IAgentIdentifierService
 {
-    private readonly AgentOptions _options;
-    private readonly ILogger<AgentIdentifierService> _logger;
+    private readonly AgentOptions options;
+    private readonly ILogger<AgentIdentifierService> logger;
 
     public AgentIdentifierService(IOptions<AgentOptions> options, ILogger<AgentIdentifierService> logger)
     {
-        _options = options?.Value ?? throw new ArgumentNullException(nameof(options), "AgentOptions configuration is missing");
-        _logger = logger;
+        this.options = options.Value ?? throw new ArgumentNullException(nameof(options), "AgentOptions configuration is missing");
+        this.logger = logger;
     }
 
     public async Task<Guid> GetOrCreateAgentIdAsync()
     {
         try
         {
-            if (File.Exists(_options.AgentIdFilePath))
+            if (File.Exists(options.AgentIdFilePath))
             {
-                var content = await File.ReadAllTextAsync(_options.AgentIdFilePath);
+                var content = await File.ReadAllTextAsync(options.AgentIdFilePath);
                 if (Guid.TryParse(content.Trim(), out var existingId))
                 {
-                    _logger.LogInformation("Loaded existing agent ID: {AgentId}", existingId);
+                    logger.LogInformation("Loaded existing agent ID: {AgentId}", existingId);
                     return existingId;
                 }
 
-                _logger.LogWarning("Invalid agent ID in file, generating new one");
+                logger.LogWarning("Invalid agent ID in file, generating new one");
             }
 
             // Generate new secure identifier
             var newId = Guid.NewGuid();
-            await File.WriteAllTextAsync(_options.AgentIdFilePath, newId.ToString());
+            await File.WriteAllTextAsync(options.AgentIdFilePath, newId.ToString());
 
             // Set restrictive file permissions (owner read/write only)
             if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
             {
-                await SetUnixFilePermissions(_options.AgentIdFilePath);
+                await SetUnixFilePermissions(options.AgentIdFilePath);
             }
 
-            _logger.LogInformation("Generated new agent ID: {AgentId}", newId);
+            logger.LogInformation("Generated new agent ID: {AgentId}", newId);
             return newId;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get or create agent ID");
+            logger.LogError(ex, "Failed to get or create agent ID");
             throw;
         }
     }
