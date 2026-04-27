@@ -2,22 +2,41 @@
 {{template "navbar" .}}
 <main class="container">
   <h1>Discovered devices</h1>
-  {{if .Devices}}
+  {{if .Groups}}
   <table class="data">
-    <thead><tr><th>Hostname</th><th>IP</th><th>MAC</th><th>Vendor</th><th>Kind</th><th>First seen</th><th>Last seen</th><th>Via</th></tr></thead>
+    <thead><tr><th>Hostname</th><th>IP</th><th>MAC</th><th>Vendor</th><th>Kind</th><th>Description</th><th>Tags</th><th>First seen</th><th>Last seen</th><th>Via</th></tr></thead>
     <tbody>
-    {{range .Devices}}
+    {{range .Groups}}
+      {{$p := .Primary}}
       <tr>
-        <td><a href="/devices/{{.ID}}">{{if .Hostname}}{{.Hostname}}{{else}}<span class="muted">unknown</span>{{end}}</a></td>
-        <td>{{.IP}}</td>
-        <td>{{.MAC}}</td>
-        <td>{{.Vendor}}</td>
-        <td>{{.Kind}}</td>
-        <td>{{shortTime .FirstSeenAt}}</td>
+        <td>
+          <a href="/devices/{{$p.ID}}">{{if $p.Hostname}}{{$p.Hostname}}{{else}}<span class="muted">unknown</span>{{end}}</a>
+        </td>
+        <td>
+          {{$p.IP}}
+          {{if gt .ExtraIPs 0}}<span class="muted small">+{{.ExtraIPs}}</span>{{end}}
+        </td>
+        <td>
+          <span class="mono small">{{$p.MAC}}</span>
+          {{if gt .ExtraMACs 0}}<span class="muted small">+{{.ExtraMACs}} NIC{{if gt .ExtraMACs 1}}s{{end}}</span>{{end}}
+        </td>
+        <td>{{$p.Vendor}}</td>
+        <td>{{$p.Kind}}</td>
+        <td>
+          {{- $desc := index $.GroupDesc $p.ID -}}
+          {{- if $desc -}}<span class="desc-cell" title="{{$desc}}">{{$desc}}</span>{{- else -}}<span class="muted">—</span>{{- end -}}
+        </td>
+        <td>
+          {{- $ts := index $.GroupTags $p.ID -}}
+          {{- if $ts -}}
+            <span class="tag-list">{{range $ts}}<span class="tag">{{.}}</span>{{end}}</span>
+          {{- else -}}<span class="muted">—</span>{{- end -}}
+        </td>
+        <td>{{shortTime $p.FirstSeenAt}}</td>
         <td>{{shortTime .LastSeenAt}}</td>
         <td>
-          {{- $aid := .AgentID -}}
-          {{- if not $aid}}{{$aid = .SeenByAgent}}{{end -}}
+          {{- $aid := $p.AgentID -}}
+          {{- if not $aid}}{{$aid = $p.SeenByAgent}}{{end -}}
           {{- if $aid -}}
             <a href="/clients/{{$aid}}">{{with index $.AgentNames $aid}}{{.}}{{else}}{{$aid}}{{end}}</a>
           {{- end -}}
@@ -29,3 +48,4 @@
   {{else}}<p class="muted">No devices discovered yet. Agents will report ARP/mDNS sightings during their normal cycle.</p>{{end}}
 </main>
 {{template "foot" .}}
+

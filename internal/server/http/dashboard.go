@@ -3,6 +3,7 @@ package httpsrv
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -40,12 +41,14 @@ func (s *Server) dashboardGet(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) clientsList(w http.ResponseWriter, r *http.Request) {
 	agents, _ := s.Store.ListAgents(r.Context(), store.AgentStatusApproved)
+	tags, _ := s.Store.ListTagsForTargets(r.Context(), store.TagTargetAgent)
 	csrf := s.ensureCSRF(w, r)
 	s.render(w, r, "clients.html", map[string]any{
 		"CSRFToken": csrf,
 		"Title":     "Clients",
 		"Active":    "clients",
 		"Agents":    agents,
+		"Tags":      tags,
 	})
 }
 
@@ -65,17 +68,49 @@ func (s *Server) clientDetail(w http.ResponseWriter, r *http.Request) {
 			inv = &parsed
 		}
 	}
+	tags, _ := s.Store.ListTagsForTarget(r.Context(), store.TagTargetAgent, id)
 	csrf := s.ensureCSRF(w, r)
 	s.render(w, r, "client_detail.html", map[string]any{
-		"CSRFToken":     csrf,
-		"Title":         a.Hostname,
-		"Active":        "clients",
-		"Agent":         a,
-		"Latest":        latest,
-		"Inventory":     inv,
-		"InventoryAt":   invAt,
-		"HasInventory":  inv != nil,
+		"CSRFToken":    csrf,
+		"Title":        a.Hostname,
+		"Active":       "clients",
+		"Agent":        a,
+		"Latest":       latest,
+		"Inventory":    inv,
+		"InventoryAt":  invAt,
+		"HasInventory": inv != nil,
+		"Tags":         tags,
+		"TagsCSV":      strings.Join(tags, ", "),
 	})
+}
+
+// clientEdit handles POST /clients/{id}/edit — updates description (notes)
+// and tags for a managed agent.
+func (s *Server) clientEdit(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	a, err := s.Store.GetAgent(r.Context(), id)
+	if err != nil || a == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	notes := strings.TrimSpace(r.FormValue("description"))
+	if len(notes) > 2000 {
+		notes = notes[:2000]
+	}
+	tags := store.ParseTagInput(r.FormValue("tags"))
+	if err := s.Store.UpdateAgentNotes(r.Context(), id, notes); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := s.Store.SetTagsForTarget(r.Context(), store.TagTargetAgent, id, tags); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/clients/"+id, http.StatusSeeOther)
 }
 
 func (s *Server) pendingList(w http.ResponseWriter, r *http.Request) {

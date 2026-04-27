@@ -204,6 +204,15 @@ func (s *Server) agentDiscoveries(w http.ResponseWriter, r *http.Request) {
 		for src, name := range sn.HostnameSources {
 			_ = s.Store.AddHostname(r.Context(), dev.ID, name, src, sn.SeenAt)
 		}
+		// Best-effort grouping: an mDNS responder typically replies with the
+		// same hostname across every interface on the host, so devices that
+		// share an mDNS name almost certainly are the same machine. Agent
+		// grouping wins (SetDeviceGroup is sticky for agent: groups).
+		if mdns := sn.HostnameSources["mdns"]; mdns != "" {
+			if g := mdnsGroupID(mdns); g != "" {
+				_ = s.Store.SetDeviceGroup(r.Context(), dev.ID, g)
+			}
+		}
 		accepted++
 	}
 	writeJSON(w, http.StatusOK, proto.DiscoveryResponse{Accepted: accepted})
@@ -273,6 +282,7 @@ func (s *Server) agentInventory(w http.ResponseWriter, r *http.Request) {
 			SeenByAgent:    req.AgentID,
 			FirstSeenAt:    now,
 			LastSeenAt:     now,
+			GroupID:        "agent:" + req.AgentID,
 		})
 		_ = s.Store.AddHostname(r.Context(), strings.ToLower(ifc.MAC), a.Hostname, "agent", now)
 	}
@@ -314,6 +324,19 @@ func pickBestHostname(srcs map[string]string) (string, string) {
 		}
 	}
 	return "", ""
+}
+
+// mdnsGroupID normalizes an mDNS hostname into a device group ID. Returns
+// "" if the name is empty after normalization. Strips the trailing ".local"
+// (with or without final dot) and lowercases — so "Macbook.local." and
+// "macbook.local" collapse onto the same group.
+func mdnsGroupID(name string) string {
+	n := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(name)), ".")
+	n = strings.TrimSuffix(n, ".local")
+	if n == "" {
+		return ""
+	}
+	return "mdns:" + n
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

@@ -14,8 +14,18 @@
   <section>
     <h2>Identity</h2>
     <table class="kv">
-      <tr><th>IP</th><td>{{.Device.IP}}</td></tr>
-      <tr><th>MAC</th><td>{{.Device.MAC}}</td></tr>
+      <tr><th>Primary IP</th><td>{{.Device.IP}}</td></tr>
+      <tr><th>Primary MAC</th><td><span class="mono">{{.Device.MAC}}</span></td></tr>
+      {{if gt (len .AllIPs) 1}}
+      <tr><th>All current IPs</th><td>
+        {{range $i, $ip := .AllIPs}}{{if $i}}, {{end}}{{$ip}}{{end}}
+      </td></tr>
+      {{end}}
+      {{if gt (len .AllMACs) 1}}
+      <tr><th>All MACs</th><td class="mono small">
+        {{range $i, $m := .AllMACs}}{{if $i}}, {{end}}{{$m}}{{end}}
+      </td></tr>
+      {{end}}
       <tr><th>Vendor</th><td>{{if .Device.Vendor}}{{.Device.Vendor}}{{else}}<span class="muted">unknown</span>{{end}}</td></tr>
       <tr><th>Kind</th><td>{{if .Device.Kind}}{{.Device.Kind}}{{else}}<span class="muted">unclassified</span>{{end}}</td></tr>
       <tr><th>First seen</th><td>{{shortTime .Device.FirstSeenAt}}</td></tr>
@@ -29,6 +39,47 @@
       </td></tr>
     </table>
   </section>
+
+  <section>
+    <h2>Description &amp; tags</h2>
+    {{if .Device.Notes}}<p>{{.Device.Notes}}</p>{{end}}
+    {{if .Tags}}<p class="tag-list">{{range .Tags}}<span class="tag">{{.}}</span>{{end}}</p>{{end}}
+    <details>
+      <summary>Edit</summary>
+      <form class="edit-form" method="POST" action="/devices/{{.Device.ID}}/edit">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+        <label for="description">Description</label>
+        <textarea id="description" name="description" maxlength="2000" placeholder="Free-form notes about this device">{{.Device.Notes}}</textarea>
+        <label for="tags">Tags</label>
+        <input type="text" id="tags" name="tags" value="{{.TagsCSV}}" placeholder="comma-separated, e.g. printer, lobby, vlan-10" />
+        <p class="help">Tags are normalized to lowercase. Allowed: letters, digits, <code>-_./:</code>. Saved on this NIC row; the device list aggregates tags across all NICs in the same group.</p>
+        <div><button class="primary" type="submit">Save</button></div>
+      </form>
+    </details>
+  </section>
+
+  {{if gt (len .Members) 1}}
+  <section>
+    <h2>Interfaces ({{len .Members}})</h2>
+    <p class="muted">Multiple MAC addresses observed for this device. They may be physical NICs (Ethernet + Wi-Fi), virtual interfaces, or both.</p>
+    <table class="data">
+      <thead><tr><th>MAC</th><th>IP</th><th>Vendor</th><th>Hostname</th><th>Source</th><th>First seen</th><th>Last seen</th></tr></thead>
+      <tbody>
+      {{range .Members}}
+        <tr>
+          <td class="mono small"><a href="/devices/{{.ID}}">{{.MAC}}</a>{{if eq .ID $.Device.ID}} <span class="muted">(viewing)</span>{{end}}</td>
+          <td>{{.IP}}</td>
+          <td>{{.Vendor}}</td>
+          <td>{{.Hostname}}</td>
+          <td>{{.HostnameSource}}</td>
+          <td>{{shortTime .FirstSeenAt}}</td>
+          <td>{{shortTime .LastSeenAt}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </section>
+  {{end}}
 
   {{if .MDNS}}
   <section>

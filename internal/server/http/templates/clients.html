@@ -4,7 +4,7 @@
   <h1>Clients</h1>
   {{if .Agents}}
   <table class="data">
-    <thead><tr><th>Hostname</th><th>IP</th><th>OS</th><th>Version</th><th>Last heartbeat</th><th></th></tr></thead>
+    <thead><tr><th>Hostname</th><th>IP</th><th>OS</th><th>Version</th><th>Description</th><th>Tags</th><th>Last heartbeat</th><th></th></tr></thead>
     <tbody>
     {{range .Agents}}
       <tr>
@@ -12,6 +12,13 @@
         <td>{{if .PrimaryIP}}{{.PrimaryIP}}{{else}}<span class="muted">—</span>{{end}}</td>
         <td>{{.OS}}/{{.Arch}}</td>
         <td>{{.Version}}</td>
+        <td>{{if .Notes}}<span class="desc-cell" title="{{.Notes}}">{{.Notes}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+        <td>
+          {{- $ts := index $.Tags .ID -}}
+          {{- if $ts -}}
+            <span class="tag-list">{{range $ts}}<span class="tag">{{.}}</span>{{end}}</span>
+          {{- else -}}<span class="muted">—</span>{{- end -}}
+        </td>
         <td>{{sinceShort .LastHeartbeatAt}}</td>
         <td>
           <form method="POST" action="/clients/{{.ID}}/deregister" onsubmit="return confirm('Deregister {{.Hostname}}?')">

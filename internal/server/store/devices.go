@@ -6,10 +6,13 @@ import (
 	"errors"
 	"net"
 	"sort"
+	"strings"
 	"time"
 )
 
-// Device is a network-discovered device.
+// Device is a network-discovered device. A single physical machine may have
+// multiple Device rows (one per NIC); rows that share GroupID represent the
+// same machine. GroupID == "" means "ungrouped, treat as its own group".
 type Device struct {
 	ID             string
 	MAC            string
@@ -24,6 +27,7 @@ type Device struct {
 	Notes          string
 	AgentID        string // if this device is one of our agents, the agent.id
 	ServicesJSON   string // JSON: {hostname, services:[], txt:{}} from latest mDNS
+	GroupID        string // logical-device group; "" means ungrouped
 }
 
 // HostnameSourcePriority ranks a hostname source. Higher = more authoritative.
@@ -54,8 +58,8 @@ func (s *Store) UpsertDevice(ctx context.Context, d *Device) error {
 	}
 	incomingPri := HostnameSourcePriority(d.HostnameSource)
 	_, err := s.DB.ExecContext(ctx,
-		`INSERT INTO devices(id, mac, ip, hostname, hostname_source, vendor, first_seen_at, last_seen_at, seen_by_agent, kind, notes, agent_id, services_json)
-		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+		`INSERT INTO devices(id, mac, ip, hostname, hostname_source, vendor, first_seen_at, last_seen_at, seen_by_agent, kind, notes, agent_id, services_json, device_group_id)
+		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		 ON CONFLICT(id) DO UPDATE SET
 		   mac = excluded.mac,
 		   ip = excluded.ip,
@@ -76,12 +80,34 @@ func (s *Store) UpsertDevice(ctx context.Context, d *Device) error {
 		   last_seen_at = excluded.last_seen_at,
 		   seen_by_agent = excluded.seen_by_agent,
 		   agent_id = COALESCE(NULLIF(excluded.agent_id,''), devices.agent_id),
-		   services_json = COALESCE(NULLIF(excluded.services_json,''), devices.services_json)`,
+		   services_json = COALESCE(NULLIF(excluded.services_json,''), devices.services_json),
+		   device_group_id = COALESCE(NULLIF(excluded.device_group_id,''), devices.device_group_id)`,
 		d.ID, d.MAC, d.IP, d.Hostname, d.HostnameSource, d.Vendor,
 		d.FirstSeenAt.Format(time.RFC3339),
 		d.LastSeenAt.Format(time.RFC3339),
-		d.SeenByAgent, d.Kind, d.Notes, d.AgentID, d.ServicesJSON,
+		d.SeenByAgent, d.Kind, d.Notes, d.AgentID, d.ServicesJSON, d.GroupID,
 		incomingPri, incomingPri)
+	return err
+}
+
+// SetDeviceGroup assigns a device to a group. Setting groupID to "" clears
+// the assignment. Agent-source groups ("agent:...") are sticky: once a row
+// belongs to an agent group, it cannot be reassigned via this call (so a
+// stray mDNS sighting can't unstick a managed NIC, and we never silently
+// reassign a NIC between two agent groups).
+func (s *Store) SetDeviceGroup(ctx context.Context, deviceID, groupID string) error {
+	if groupID == "" {
+		_, err := s.DB.ExecContext(ctx,
+			`UPDATE devices SET device_group_id = NULL WHERE id = ?`, deviceID)
+		return err
+	}
+	_, err := s.DB.ExecContext(ctx,
+		`UPDATE devices SET device_group_id = ?
+		 WHERE id = ?
+		   AND (device_group_id IS NULL
+		        OR device_group_id = ?
+		        OR device_group_id NOT LIKE 'agent:%')`,
+		groupID, deviceID, groupID)
 	return err
 }
 
@@ -163,7 +189,8 @@ func (s *Store) ListDevices(ctx context.Context) ([]*Device, error) {
 		        COALESCE(hostname_source,''),
 		        COALESCE(vendor,''), first_seen_at, last_seen_at,
 		        COALESCE(seen_by_agent,''), COALESCE(kind,''), COALESCE(notes,''),
-		        COALESCE(agent_id,''), COALESCE(services_json,'')
+		        COALESCE(agent_id,''), COALESCE(services_json,''),
+		        COALESCE(device_group_id,'')
 		 FROM devices`)
 	if err != nil {
 		return nil, err
@@ -174,7 +201,7 @@ func (s *Store) ListDevices(ctx context.Context) ([]*Device, error) {
 		var d Device
 		var fs, ls string
 		if err := rows.Scan(&d.ID, &d.MAC, &d.IP, &d.Hostname, &d.HostnameSource, &d.Vendor,
-			&fs, &ls, &d.SeenByAgent, &d.Kind, &d.Notes, &d.AgentID, &d.ServicesJSON); err != nil {
+			&fs, &ls, &d.SeenByAgent, &d.Kind, &d.Notes, &d.AgentID, &d.ServicesJSON, &d.GroupID); err != nil {
 			return nil, err
 		}
 		d.FirstSeenAt, _ = time.Parse(time.RFC3339, fs)
@@ -239,12 +266,13 @@ func (s *Store) GetDevice(ctx context.Context, id string) (*Device, error) {
 		        COALESCE(hostname_source,''),
 		        COALESCE(vendor,''), first_seen_at, last_seen_at,
 		        COALESCE(seen_by_agent,''), COALESCE(kind,''), COALESCE(notes,''),
-		        COALESCE(agent_id,''), COALESCE(services_json,'')
+		        COALESCE(agent_id,''), COALESCE(services_json,''),
+		        COALESCE(device_group_id,'')
 		 FROM devices WHERE id = ?`, id)
 	var d Device
 	var fs, ls string
 	if err := row.Scan(&d.ID, &d.MAC, &d.IP, &d.Hostname, &d.HostnameSource, &d.Vendor,
-		&fs, &ls, &d.SeenByAgent, &d.Kind, &d.Notes, &d.AgentID, &d.ServicesJSON); err != nil {
+		&fs, &ls, &d.SeenByAgent, &d.Kind, &d.Notes, &d.AgentID, &d.ServicesJSON, &d.GroupID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -253,6 +281,51 @@ func (s *Store) GetDevice(ctx context.Context, id string) (*Device, error) {
 	d.FirstSeenAt, _ = time.Parse(time.RFC3339, fs)
 	d.LastSeenAt, _ = time.Parse(time.RFC3339, ls)
 	return &d, nil
+}
+
+// ListGroupMembers returns all device rows that share the given group ID,
+// ordered by IP. If groupID is empty, returns just the row whose id matches
+// fallbackID (i.e., the device is its own group). Group members are returned
+// in IP order so callers can pick a deterministic primary.
+func (s *Store) ListGroupMembers(ctx context.Context, groupID, fallbackID string) ([]*Device, error) {
+	if groupID == "" {
+		d, err := s.GetDevice(ctx, fallbackID)
+		if err != nil || d == nil {
+			return nil, err
+		}
+		return []*Device{d}, nil
+	}
+	rows, err := s.DB.QueryContext(ctx,
+		`SELECT id, COALESCE(mac,''), COALESCE(ip,''), COALESCE(hostname,''),
+		        COALESCE(hostname_source,''),
+		        COALESCE(vendor,''), first_seen_at, last_seen_at,
+		        COALESCE(seen_by_agent,''), COALESCE(kind,''), COALESCE(notes,''),
+		        COALESCE(agent_id,''), COALESCE(services_json,''),
+		        COALESCE(device_group_id,'')
+		 FROM devices WHERE device_group_id = ?`, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Device
+	for rows.Next() {
+		var d Device
+		var fs, ls string
+		if err := rows.Scan(&d.ID, &d.MAC, &d.IP, &d.Hostname, &d.HostnameSource, &d.Vendor,
+			&fs, &ls, &d.SeenByAgent, &d.Kind, &d.Notes, &d.AgentID, &d.ServicesJSON, &d.GroupID); err != nil {
+			return nil, err
+		}
+		d.FirstSeenAt, _ = time.Parse(time.RFC3339, fs)
+		d.LastSeenAt, _ = time.Parse(time.RFC3339, ls)
+		out = append(out, &d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return compareIP(out[i].IP, out[j].IP) < 0
+	})
+	return out, nil
 }
 
 // Sighting is one bucketed observation: a unique tuple of
@@ -292,6 +365,79 @@ func (s *Store) ListSightings(ctx context.Context, deviceID string, limit int) (
 		sg.FirstSeenAt, _ = time.Parse(time.RFC3339, fs)
 		sg.LastSeenAt, _ = time.Parse(time.RFC3339, ls)
 		out = append(out, &sg)
+	}
+	return out, rows.Err()
+}
+
+// ListSightingsForDevices returns bucketed sightings for any of the given
+// device IDs, most-recently-seen first, capped at `limit` total rows. Used to
+// merge sightings across all members of a device group.
+func (s *Store) ListSightingsForDevices(ctx context.Context, deviceIDs []string, limit int) ([]*Sighting, error) {
+	if len(deviceIDs) == 0 {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 200
+	}
+	placeholders := make([]string, len(deviceIDs))
+	args := make([]any, 0, len(deviceIDs)+1)
+	for i, id := range deviceIDs {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+	args = append(args, limit)
+	q := `SELECT seen_by_agent, ip, mac, method, first_seen_at, last_seen_at, count
+	      FROM device_sightings WHERE device_id IN (` + strings.Join(placeholders, ",") + `)
+	      ORDER BY last_seen_at DESC LIMIT ?`
+	rows, err := s.DB.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Sighting
+	for rows.Next() {
+		var sg Sighting
+		var fs, ls string
+		if err := rows.Scan(&sg.SeenByAgent, &sg.IP, &sg.MAC, &sg.Method, &fs, &ls, &sg.Count); err != nil {
+			return nil, err
+		}
+		sg.FirstSeenAt, _ = time.Parse(time.RFC3339, fs)
+		sg.LastSeenAt, _ = time.Parse(time.RFC3339, ls)
+		out = append(out, &sg)
+	}
+	return out, rows.Err()
+}
+
+// ListHostnamesForDevices returns the union of hostname aliases across the
+// given device IDs, most-recently-seen first.
+func (s *Store) ListHostnamesForDevices(ctx context.Context, deviceIDs []string) ([]*HostnameAlias, error) {
+	if len(deviceIDs) == 0 {
+		return nil, nil
+	}
+	placeholders := make([]string, len(deviceIDs))
+	args := make([]any, 0, len(deviceIDs))
+	for i, id := range deviceIDs {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+	q := `SELECT name, source, MIN(first_seen_at), MAX(last_seen_at), SUM(count)
+	      FROM device_hostnames WHERE device_id IN (` + strings.Join(placeholders, ",") + `)
+	      GROUP BY name, source ORDER BY MAX(last_seen_at) DESC`
+	rows, err := s.DB.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*HostnameAlias
+	for rows.Next() {
+		var a HostnameAlias
+		var fs, ls string
+		if err := rows.Scan(&a.Name, &a.Source, &fs, &ls, &a.Count); err != nil {
+			return nil, err
+		}
+		a.FirstSeenAt, _ = time.Parse(time.RFC3339, fs)
+		a.LastSeenAt, _ = time.Parse(time.RFC3339, ls)
+		out = append(out, &a)
 	}
 	return out, rows.Err()
 }

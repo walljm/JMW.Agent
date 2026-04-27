@@ -4,6 +4,24 @@
   <h1>{{.Agent.Hostname}}</h1>
   <p class="muted">{{.Agent.OS}}/{{.Agent.Arch}} · v{{.Agent.Version}} · {{sinceShort .Agent.LastHeartbeatAt}}</p>
 
+  <section>
+    <h2>Description &amp; tags</h2>
+    {{if .Agent.Notes}}<p>{{.Agent.Notes}}</p>{{end}}
+    {{if .Tags}}<p class="tag-list">{{range .Tags}}<span class="tag">{{.}}</span>{{end}}</p>{{end}}
+    <details>
+      <summary>Edit</summary>
+      <form class="edit-form" method="POST" action="/clients/{{.Agent.ID}}/edit">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+        <label for="description">Description</label>
+        <textarea id="description" name="description" maxlength="2000" placeholder="Free-form notes about this client">{{.Agent.Notes}}</textarea>
+        <label for="tags">Tags</label>
+        <input type="text" id="tags" name="tags" value="{{.TagsCSV}}" placeholder="comma-separated, e.g. prod, web, us-east" />
+        <p class="help">Tags are normalized to lowercase. Allowed: letters, digits, <code>-_./:</code>.</p>
+        <div><button class="primary" type="submit">Save</button></div>
+      </form>
+    </details>
+  </section>
+
   <section class="cards">
     {{with .Latest}}
     <div class="card">

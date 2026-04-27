@@ -125,6 +125,8 @@ func (s *Server) Router() http.Handler {
 		// Dashboard mutations (require both session + CSRF).
 		pr.With(s.requireCSRF).Post("/clients/{id}/approve", s.clientApprove)
 		pr.With(s.requireCSRF).Post("/clients/{id}/deregister", s.clientDeregister)
+		pr.With(s.requireCSRF).Post("/clients/{id}/edit", s.clientEdit)
+		pr.With(s.requireCSRF).Post("/devices/{id}/edit", s.deviceEdit)
 		pr.With(s.requireCSRF).Post("/alerts", s.alertCreate)
 		pr.With(s.requireCSRF).Post("/alerts/{id}/delete", s.alertDelete)
 		pr.With(s.requireCSRF).Post("/channels", s.channelCreate)
