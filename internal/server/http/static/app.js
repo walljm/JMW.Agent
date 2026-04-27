@@ -1,0 +1,127 @@
+// JMW Agent UI - vanilla JS
+
+// CSRF helper: read token from cookie and attach to fetch().
+function getCookie(name) {
+  const m = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
+  return m ? decodeURIComponent(m[2]) : '';
+}
+
+async function apiFetch(url, opts = {}) {
+  opts.headers = opts.headers || {};
+  opts.headers['X-CSRF-Token'] = getCookie('jmw_csrf');
+  opts.credentials = 'same-origin';
+  return fetch(url, opts);
+}
+
+// Theme toggle (persisted)
+function applyTheme(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  try { localStorage.setItem('jmw_theme', t); } catch (e) {}
+}
+(function initTheme() {
+  let t = 'dark';
+  try { t = localStorage.getItem('jmw_theme') || 'dark'; } catch (e) {}
+  applyTheme(t);
+})();
+
+// CPU chart on client_detail.html
+async function renderCpuChart() {
+  const c = document.getElementById('cpu-chart');
+  if (!c) return;
+  const id = c.getAttribute('data-agent');
+  const res = await apiFetch('/api/v1/ui/clients/' + encodeURIComponent(id) + '/metrics?since=1h');
+  if (!res.ok) return;
+  const data = await res.json();
+  drawLineChart(c, (data.snapshots || []).map(s => ({ x: new Date(s.ts), y: s.cpu_pct || 0 })), { yMax: 100, label: 'CPU %' });
+}
+
+function drawLineChart(canvas, points, opts) {
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.width = canvas.clientWidth * dpr;
+  const h = canvas.height = canvas.clientHeight * dpr;
+  ctx.clearRect(0, 0, w, h);
+
+  const css = getComputedStyle(document.documentElement);
+  const fg = css.getPropertyValue('--fg').trim() || '#e6edf3';
+  const muted = css.getPropertyValue('--fg-muted').trim() || '#8b949e';
+  const accent = css.getPropertyValue('--accent').trim() || '#2f81f7';
+
+  const padL = 40 * dpr, padR = 16 * dpr, padT = 16 * dpr, padB = 28 * dpr;
+  const pw = w - padL - padR;
+  const ph = h - padT - padB;
+
+  ctx.strokeStyle = muted;
+  ctx.fillStyle = muted;
+  ctx.font = (12 * dpr) + 'px system-ui, sans-serif';
+  ctx.lineWidth = dpr;
+  ctx.beginPath();
+  ctx.moveTo(padL, padT); ctx.lineTo(padL, padT + ph); ctx.lineTo(padL + pw, padT + ph);
+  ctx.stroke();
+
+  if (!points.length) {
+    ctx.fillStyle = muted;
+    ctx.fillText('No data', padL + 10, padT + ph / 2);
+    return;
+  }
+
+  const xs = points.map(p => +p.x);
+  const xMin = Math.min(...xs), xMax = Math.max(...xs) || (xMin + 1);
+  const yMax = opts.yMax || Math.max(...points.map(p => p.y), 1);
+
+  // y-axis labels (0, 25, 50, 75, 100)
+  for (let i = 0; i <= 4; i++) {
+    const v = (yMax / 4) * i;
+    const y = padT + ph - (v / yMax) * ph;
+    ctx.fillText(v.toFixed(0), 4 * dpr, y + 4 * dpr);
+    ctx.strokeStyle = '#30363d';
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + pw, y); ctx.stroke();
+  }
+
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 2 * dpr;
+  ctx.beginPath();
+  points.forEach((p, i) => {
+    const x = padL + ((+p.x - xMin) / (xMax - xMin || 1)) * pw;
+    const y = padT + ph - (p.y / yMax) * ph;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  ctx.fillStyle = fg;
+  ctx.fillText(opts.label || '', padL, 12 * dpr);
+}
+
+// Tabs (deep-linkable via URL hash)
+function initTabs() {
+  document.querySelectorAll('[data-tabs]').forEach((root) => {
+    const tabs = root.querySelectorAll('.tab');
+    const panels = root.querySelectorAll('.tabpanel');
+    function activate(name, push) {
+      let found = false;
+      tabs.forEach((t) => {
+        const match = t.dataset.tab === name;
+        t.setAttribute('aria-selected', match ? 'true' : 'false');
+        if (match) found = true;
+      });
+      panels.forEach((p) => { p.hidden = p.dataset.panel !== name; });
+      if (found && push) {
+        history.replaceState(null, '', '#' + name);
+      }
+      return found;
+    }
+    tabs.forEach((t) => {
+      t.addEventListener('click', () => activate(t.dataset.tab, true));
+    });
+    const initial = (location.hash || '').replace(/^#/, '');
+    if (!initial || !activate(initial, false)) {
+      const first = tabs[0];
+      if (first) activate(first.dataset.tab, false);
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderCpuChart();
+  initTabs();
+});

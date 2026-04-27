@@ -1,0 +1,51 @@
+{{define "head"}}<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>{{.Title}} · JMW Agent</title>
+<link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+{{end}}
+
+{{define "navbar"}}
+<nav class="navbar">
+  <div class="brand"><a href="/">JMW Agent</a></div>
+  <ul class="navlinks">
+    <li class="{{if eq .Active "dashboard"}}active{{end}}"><a href="/">Dashboard</a></li>
+    <li class="{{if eq .Active "clients"}}active{{end}}"><a href="/clients">Clients</a></li>
+    <li class="{{if eq .Active "devices"}}active{{end}}"><a href="/devices">Devices</a></li>
+    <li class="{{if eq .Active "containers"}}active{{end}}"><a href="/containers">Containers</a></li>
+    <li class="{{if eq .Active "alerts"}}active{{end}}"><a href="/alerts">Alerts</a></li>
+    <li class="{{if eq .Active "pending"}}active{{end}}"><a href="/pending">Pending</a></li>
+    <li class="{{if eq .Active "events"}}active{{end}}"><a href="/events">Events</a></li>
+  </ul>
+  <div class="navright">
+    {{if .User}}<span class="user">{{.User.Username}}</span>{{end}}
+    {{if .CSRFToken}}
+    <form method="POST" action="/logout" class="logout-form">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+      <button type="submit" class="link-btn">Logout</button>
+    </form>
+    {{end}}
+  </div>
+</nav>
+{{end}}
+
+{{define "foot"}}
+<script src="/static/app.js" defer></script>
+</body>
+</html>
+{{end}}
+
+{{define "authhead"}}<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>{{.Title}}JMW Agent</title>
+<link rel="stylesheet" href="/static/app.css" />
+</head>
+<body class="auth-body">
+{{end}}

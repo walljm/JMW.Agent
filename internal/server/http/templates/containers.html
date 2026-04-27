@@ -1,0 +1,54 @@
+{{template "head" .}}
+{{template "navbar" .}}
+<main class="container">
+  <h1>Containers</h1>
+
+  <div class="card-row">
+    <div class="card"><div class="card-num">{{.Stats.Total}}</div><div class="card-label">Total</div></div>
+    <div class="card"><div class="card-num">{{.Stats.Running}}</div><div class="card-label">Running</div></div>
+    <div class="card"><div class="card-num">{{.Stats.Exited}}</div><div class="card-label">Exited</div></div>
+    <div class="card"><div class="card-num">{{.Stats.Paused}}</div><div class="card-label">Paused</div></div>
+    <div class="card"><div class="card-num">{{.Stats.Unhealthy}}</div><div class="card-label">Unhealthy</div></div>
+  </div>
+
+  <form method="GET" action="/containers" class="filter-row">
+    <input type="search" name="q" value="{{.Filter.Search}}" placeholder="name or image..." />
+    <select name="state">
+      <option value="">All states</option>
+      {{range $s := (slice "running" "exited" "paused" "restarting" "created" "dead")}}
+        <option value="{{$s}}" {{if eq $.Filter.State $s}}selected{{end}}>{{$s}}</option>
+      {{end}}
+    </select>
+    <select name="project">
+      <option value="">All projects</option>
+      {{range .Projects}}
+        <option value="{{.}}" {{if eq $.Filter.ComposeProject .}}selected{{end}}>{{.}}</option>
+      {{end}}
+    </select>
+    <button type="submit">Filter</button>
+    <a href="/containers" class="link-btn">Clear</a>
+  </form>
+
+  {{if .Containers}}
+  <table class="data">
+    <thead><tr>
+      <th>Name</th><th>State</th><th>Health</th><th>Image</th>
+      <th>Project / Service</th><th>Host</th><th>Started</th>
+    </tr></thead>
+    <tbody>
+    {{range .Containers}}
+      <tr>
+        <td><a href="/containers/{{.AgentID}}/{{.ID}}">{{.Name}}</a></td>
+        <td><span class="badge state-{{.State}}">{{.State}}</span></td>
+        <td>{{if .Health}}<span class="badge health-{{.Health}}">{{.Health}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="mono">{{.Image}}</td>
+        <td>{{if .ComposeProject}}{{.ComposeProject}}{{if .ComposeService}} / {{.ComposeService}}{{end}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td><a href="/clients/{{.AgentID}}">{{if .HostHostname}}{{.HostHostname}}{{else}}{{.AgentID}}{{end}}</a></td>
+        <td>{{if .StartedAt.IsZero}}<span class="muted">—</span>{{else}}{{shortTime .StartedAt}}{{end}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="muted">No containers reported. Hosts running Docker will populate this list on their next inventory cycle.</p>{{end}}
+</main>
+{{template "foot" .}}

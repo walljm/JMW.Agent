@@ -1,0 +1,56 @@
+{{template "head" .}}
+{{template "navbar" .}}
+<main class="container">
+  <h1>Dashboard</h1>
+
+  <section class="cards">
+    <div class="card">
+      <div class="card-label">Online</div>
+      <div class="card-value">{{.OnlineCount}}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Stale</div>
+      <div class="card-value">{{.StaleCount}}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Pending</div>
+      <div class="card-value">{{.PendingCount}}</div>
+      {{if gt .PendingCount 0}}<a class="card-link" href="/pending">Review →</a>{{end}}
+    </div>
+  </section>
+
+  <section>
+    <h2>Approved clients</h2>
+    {{if .Approved}}
+    <table class="data">
+      <thead><tr><th>Hostname</th><th>IP</th><th>OS</th><th>Version</th><th>Last heartbeat</th><th></th></tr></thead>
+      <tbody>
+      {{range .Approved}}
+        <tr>
+          <td><a href="/clients/{{.ID}}">{{.Hostname}}</a></td>
+          <td>{{if .PrimaryIP}}{{.PrimaryIP}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td>{{.OS}}/{{.Arch}}</td>
+          <td>{{.Version}}</td>
+          <td>{{sinceShort .LastHeartbeatAt}}</td>
+          <td></td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="muted">No approved clients yet. Install an agent and approve it on the Pending page.</p>
+    {{end}}
+  </section>
+
+  <section>
+    <h2>Recent activity</h2>
+    {{if .Events}}
+    <ul class="event-list">
+    {{range .Events}}
+      <li class="evt evt-{{.Severity}}"><span class="evt-time">{{shortTime .Timestamp}}</span> <span class="evt-summary">{{.Summary}}</span></li>
+    {{end}}
+    </ul>
+    {{else}}<p class="muted">No events yet.</p>{{end}}
+  </section>
+</main>
+{{template "foot" .}}

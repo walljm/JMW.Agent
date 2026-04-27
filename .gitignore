@@ -1,6 +1,26 @@
 out/
 .backup
 
+# Go
+bin/
+*.test
+coverage.out
+coverage.html
+go.work
+go.work.sum
+
+# Local data + secrets
+data/
+*.db
+*.db-shm
+*.db-wal
+agent.id
+server.toml
+agent.toml
+*.crt
+*.key
+*.pem
+
 # Created by https://www.toptal.com/developers/gitignore/api/windows,macos,linux,visualstudio,visualstudiocode,dotnetcore,aspnetcore,angular
 # Edit at https://www.toptal.com/developers/gitignore?templates=windows,macos,linux,visualstudio,visualstudiocode,dotnetcore,aspnetcore,angular
 
@@ -610,3 +630,4 @@ MigrationBackup/
 *.dmp
 src/Server/JMW.Agent.Server/jmw.agent.sqlite-shm
 src/Server/JMW.Agent.Server/jmw.agent.sqlite-wal
+.sdev/

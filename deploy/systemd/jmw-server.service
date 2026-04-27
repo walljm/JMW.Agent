@@ -1,0 +1,20 @@
+[Unit]
+Description=JMW Agent Server
+After=network.target
+
+[Service]
+Type=simple
+User=jmw
+Group=jmw
+WorkingDirectory=/var/lib/jmw
+ExecStart=/usr/local/bin/jmw-server -config /etc/jmw/server.toml
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/jmw
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

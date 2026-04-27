@@ -1,0 +1,31 @@
+{{template "head" .}}
+{{template "navbar" .}}
+<main class="container">
+  <h1>Discovered devices</h1>
+  {{if .Devices}}
+  <table class="data">
+    <thead><tr><th>Hostname</th><th>IP</th><th>MAC</th><th>Vendor</th><th>Kind</th><th>First seen</th><th>Last seen</th><th>Via</th></tr></thead>
+    <tbody>
+    {{range .Devices}}
+      <tr>
+        <td><a href="/devices/{{.ID}}">{{if .Hostname}}{{.Hostname}}{{else}}<span class="muted">unknown</span>{{end}}</a></td>
+        <td>{{.IP}}</td>
+        <td>{{.MAC}}</td>
+        <td>{{.Vendor}}</td>
+        <td>{{.Kind}}</td>
+        <td>{{shortTime .FirstSeenAt}}</td>
+        <td>{{shortTime .LastSeenAt}}</td>
+        <td>
+          {{- $aid := .AgentID -}}
+          {{- if not $aid}}{{$aid = .SeenByAgent}}{{end -}}
+          {{- if $aid -}}
+            <a href="/clients/{{$aid}}">{{with index $.AgentNames $aid}}{{.}}{{else}}{{$aid}}{{end}}</a>
+          {{- end -}}
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="muted">No devices discovered yet. Agents will report ARP/mDNS sightings during their normal cycle.</p>{{end}}
+</main>
+{{template "foot" .}}

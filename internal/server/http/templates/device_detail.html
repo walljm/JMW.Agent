@@ -1,0 +1,115 @@
+{{template "head" .}}
+{{template "navbar" .}}
+<main class="container">
+  <h1>{{if .Device.Hostname}}{{.Device.Hostname}}{{else}}<span class="muted">unknown device</span>{{end}}</h1>
+
+  {{if .Device.AgentID}}
+  <div class="callout">
+    <strong>Managed client.</strong> This device is one of our agents:
+    <a href="/clients/{{.Device.AgentID}}">{{if .ManagedHostname}}{{.ManagedHostname}}{{else}}{{.Device.AgentID}}{{end}}</a>
+    &mdash; full inventory and metrics on the client page.
+  </div>
+  {{end}}
+
+  <section>
+    <h2>Identity</h2>
+    <table class="kv">
+      <tr><th>IP</th><td>{{.Device.IP}}</td></tr>
+      <tr><th>MAC</th><td>{{.Device.MAC}}</td></tr>
+      <tr><th>Vendor</th><td>{{if .Device.Vendor}}{{.Device.Vendor}}{{else}}<span class="muted">unknown</span>{{end}}</td></tr>
+      <tr><th>Kind</th><td>{{if .Device.Kind}}{{.Device.Kind}}{{else}}<span class="muted">unclassified</span>{{end}}</td></tr>
+      <tr><th>First seen</th><td>{{shortTime .Device.FirstSeenAt}}</td></tr>
+      <tr><th>Last seen</th><td>{{shortTime .Device.LastSeenAt}}</td></tr>
+      <tr><th>Discovered by</th><td>
+        {{- $aid := .Device.AgentID -}}
+        {{- if not $aid}}{{$aid = .Device.SeenByAgent}}{{end -}}
+        {{- if $aid -}}
+          <a href="/clients/{{$aid}}">{{with index $.AgentNames $aid}}{{.}}{{else}}{{$aid}}{{end}}</a>
+        {{- else -}}<span class="muted">none</span>{{- end -}}
+      </td></tr>
+    </table>
+  </section>
+
+  {{if .MDNS}}
+  <section>
+    <h2>mDNS</h2>
+    {{if .MDNS.Hostname}}<p><strong>Advertised hostname:</strong> {{.MDNS.Hostname}}</p>{{end}}
+    {{if .MDNS.Services}}
+      <h3>Services</h3>
+      <ul>
+        {{range .MDNS.Services}}<li><code>{{.}}</code></li>{{end}}
+      </ul>
+    {{end}}
+    {{if .MDNS.TXT}}
+      <h3>TXT records</h3>
+      <table class="data">
+        <thead><tr><th>Key</th><th>Value</th></tr></thead>
+        <tbody>
+        {{range $k, $v := .MDNS.TXT}}<tr><td><code>{{$k}}</code></td><td>{{$v}}</td></tr>{{end}}
+        </tbody>
+      </table>
+    {{end}}
+    {{if and (not .MDNS.Services) (not .MDNS.TXT) (not .MDNS.Hostname)}}
+      <p class="muted">No mDNS data captured.</p>
+    {{end}}
+  </section>
+  {{else}}
+  <section>
+    <h2>mDNS</h2>
+    <p class="muted">No mDNS profile recorded for this device yet.</p>
+  </section>
+  {{end}}
+
+  <section>
+    <h2>Hostname aliases</h2>
+    {{if .Aliases}}
+    <table class="data">
+      <thead><tr><th>Name</th><th>Source</th><th>First seen</th><th>Last seen</th><th>Count</th></tr></thead>
+      <tbody>
+      {{range .Aliases}}
+        <tr>
+          <td>{{.Name}}{{if and $.Device.Hostname (eq .Name $.Device.Hostname)}} <span class="muted">(primary)</span>{{end}}</td>
+          <td>{{.Source}}</td>
+          <td>{{shortTime .FirstSeenAt}}</td>
+          <td>{{shortTime .LastSeenAt}}</td>
+          <td>{{.Count}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="muted">No alternate hostnames observed.</p>
+    {{end}}
+  </section>
+
+  <section>
+    <h2>Sightings</h2>
+    {{if .Sightings}}
+    <table class="data">
+      <thead><tr><th>By</th><th>IP</th><th>MAC</th><th>Method</th><th>First seen</th><th>Last seen</th><th>Count</th></tr></thead>
+      <tbody>
+      {{range .Sightings}}
+        <tr>
+          <td>
+            {{- if .SeenByAgent -}}
+              <a href="/clients/{{.SeenByAgent}}">{{with index $.AgentNames .SeenByAgent}}{{.}}{{else}}{{.SeenByAgent}}{{end}}</a>
+            {{- else -}}<span class="muted">—</span>{{- end -}}
+          </td>
+          <td>{{.IP}}</td>
+          <td>{{.MAC}}</td>
+          <td>{{.Method}}</td>
+          <td>{{shortTime .FirstSeenAt}}</td>
+          <td>{{shortTime .LastSeenAt}}</td>
+          <td>{{.Count}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="muted">No sightings recorded.</p>
+    {{end}}
+  </section>
+
+  <p><a href="/devices">&larr; All devices</a></p>
+</main>
+{{template "foot" .}}
