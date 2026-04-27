@@ -154,17 +154,6 @@
     </div>
   </section>
 
-  <section>
-    <h2>Recent activity</h2>
-    {{if .Events}}
-    <ul class="event-list">
-    {{range .Events}}
-      <li class="evt evt-{{.Severity}}"><span class="evt-time">{{shortTime .Timestamp}}</span> <span class="evt-summary">{{.Summary}}</span></li>
-    {{end}}
-    </ul>
-    {{else}}<p class="muted">No events yet.</p>{{end}}
-  </section>
-
   <!-- Server self-health. Quiet panel — nothing to act on day-to-day. -->
   <section class="server-health">
     <h2>Server</h2>
