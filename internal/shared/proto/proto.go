@@ -94,7 +94,9 @@ type Sighting struct {
 	IP              string            `json:"ip"`
 	MAC             string            `json:"mac"`
 	Hostname        string            `json:"hostname,omitempty"`
-	Method          string            `json:"method"` // arp | mdns | ping
+	Vendor          string            `json:"vendor,omitempty"`
+	Kind            string            `json:"kind,omitempty"` // e.g. "container" when seen on docker0/br-*
+	Method          string            `json:"method"`         // arp | mdns | ping
 	SeenAt          time.Time         `json:"seen_at"`
 	Services        []string          `json:"services,omitempty"`
 	TXT             map[string]string `json:"txt,omitempty"`

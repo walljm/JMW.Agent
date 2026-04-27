@@ -211,6 +211,9 @@ func (s *Store) UpsertDockerEngine(ctx context.Context, agentID string, info *pr
 	return err
 }
 
+// ContainerStats summarizes the containers table for dashboard KPIs.
+// (Detailed per-state counts live in ContainersSummary below.)
+
 // GetDockerEngine returns the engine record for one agent, or nil.
 func (s *Store) GetDockerEngine(ctx context.Context, agentID string) (*DockerEngine, error) {
 	row := s.DB.QueryRowContext(ctx,

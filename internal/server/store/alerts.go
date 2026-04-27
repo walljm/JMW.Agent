@@ -148,6 +148,25 @@ func (s *Store) MarkFiringNotified(ctx context.Context, id int64) error {
 	return err
 }
 
+// AlertStats summarizes alert firings for dashboard KPIs.
+type AlertStats struct {
+	Open     int // firings with resolved_at IS NULL
+	Last24h  int // firings whose started_at is within the last 24h
+}
+
+// AlertStats returns aggregate firing counts in a single round trip.
+func (s *Store) AlertStats(ctx context.Context) (AlertStats, error) {
+	var st AlertStats
+	cutoff := time.Now().UTC().Add(-24 * time.Hour).Format(time.RFC3339)
+	err := s.DB.QueryRowContext(ctx,
+		`SELECT
+		   COALESCE(SUM(CASE WHEN resolved_at IS NULL THEN 1 ELSE 0 END), 0),
+		   COALESCE(SUM(CASE WHEN started_at >= ? THEN 1 ELSE 0 END), 0)
+		 FROM alert_firings`, cutoff).
+		Scan(&st.Open, &st.Last24h)
+	return st, err
+}
+
 // ListFirings returns recent firings (open + resolved).
 func (s *Store) ListFirings(ctx context.Context, limit int) ([]*AlertFiring, error) {
 	if limit <= 0 {

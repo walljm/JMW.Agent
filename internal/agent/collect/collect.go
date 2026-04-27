@@ -3,10 +3,10 @@ package collect
 
 import (
 	"net"
-	"os"
 	"runtime"
 	"time"
 
+	"github.com/walljm/jmwagent/internal/agent/hostfs"
 	"github.com/walljm/jmwagent/internal/shared/proto"
 )
 
@@ -32,14 +32,10 @@ func Snapshot() proto.MetricSnapshot {
 	return sn
 }
 
-// Hostname returns the local hostname (best-effort).
-func Hostname() string {
-	h, err := os.Hostname()
-	if err != nil {
-		return "unknown"
-	}
-	return h
-}
+// Hostname returns the local hostname (best-effort). Delegates to hostfs so
+// containerized agents (HA add-on, NAS docker) report the host's hostname
+// rather than the container's generated name (e.g. `local-jmw-agent`).
+func Hostname() string { return hostfs.Hostname() }
 
 // OS returns the GOOS string.
 func OS() string { return runtime.GOOS }

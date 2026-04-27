@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -18,6 +19,7 @@ import (
 	"github.com/walljm/jmwagent/internal/server/alerting"
 	"github.com/walljm/jmwagent/internal/server/config"
 	"github.com/walljm/jmwagent/internal/server/store"
+	"github.com/walljm/jmwagent/internal/shared/version"
 )
 
 //go:embed templates/*.html templates/partials/*.html
@@ -32,8 +34,15 @@ type Server struct {
 	Store         *store.Store
 	templates     *template.Template
 	ServerCertSHA string
+	StartedAt     time.Time
 
 	heartbeatInterval int
+
+	// ingestCount is the total number of agent API requests served since
+	// process start (heartbeats + metrics + discoveries + inventory).
+	// Read with atomic.LoadInt64; the dashboard derives a recent rate by
+	// snapshotting at known intervals.
+	ingestCount atomic.Int64
 }
 
 // New constructs a server.
@@ -47,16 +56,31 @@ func New(cfg *config.Config, st *store.Store, certSHA string) (*Server, error) {
 		Store:             st,
 		templates:         tmpl,
 		ServerCertSHA:     certSHA,
+		StartedAt:         time.Now().UTC(),
 		heartbeatInterval: 30,
 	}, nil
 }
 
+// countIngest counts each agent-API request so the dashboard can show an
+// ingestion rate. Cheap, lock-free; not persisted across restarts.
+func (s *Server) countIngest(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.ingestCount.Add(1)
+		next.ServeHTTP(w, r)
+	})
+}
+
+// IngestCount returns the running total of agent API requests served.
+func (s *Server) IngestCount() int64 { return s.ingestCount.Load() }
+
 func loadTemplates() (*template.Template, error) {
 	root := template.New("").Funcs(template.FuncMap{
-		"humanBytes": humanBytes,
-		"shortTime":  shortTime,
-		"sinceShort": sinceShort,
-		"divf":       divf,
+		"humanBytes":    humanBytes,
+		"humanDuration": humanDuration,
+		"shortTime":     shortTime,
+		"sinceShort":    sinceShort,
+		"divf":          divf,
+		"deref":         derefBool,
 	})
 	// First, parse all partials so layouts can reference them by name.
 	partials, err := fs.Glob(templateFS, "templates/partials/*.html")
@@ -99,6 +123,7 @@ func (s *Server) Router() http.Handler {
 	// Agent (machine-to-machine) API: PSK-authenticated, no session/CSRF.
 	r.Route("/api/v1/agent", func(ar chi.Router) {
 		ar.Use(s.requireAgentPSK)
+		ar.Use(s.countIngest)
 		ar.Post("/register", s.agentRegister)
 		ar.Post("/heartbeat", s.agentHeartbeat)
 		ar.Post("/metrics", s.agentMetrics)
@@ -176,6 +201,10 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string, dat
 	}
 	if u := userFrom(r); u != nil {
 		data["User"] = u
+	}
+	// Always available to every template.
+	if _, ok := data["ServerVersion"]; !ok {
+		data["ServerVersion"] = version.Version
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.templates.ExecuteTemplate(w, name, data); err != nil {
@@ -258,6 +287,54 @@ func divf(num any, div float64) float64 {
 	default:
 		return 0
 	}
+}
+
+// humanDuration formats an integer second count as a compact "3d 4h 12m"
+// string, picking the two largest non-zero units. Renders "<1m" for very
+// short uptimes so we don't surface raw seconds in the UI.
+func humanDuration(secs any) string {
+	var s int64
+	switch v := secs.(type) {
+	case int64:
+		s = v
+	case int:
+		s = int64(v)
+	case uint64:
+		s = int64(v)
+	case float64:
+		s = int64(v)
+	default:
+		return "—"
+	}
+	if s <= 0 {
+		return "—"
+	}
+	days := s / 86400
+	hours := (s % 86400) / 3600
+	mins := (s % 3600) / 60
+	switch {
+	case days > 0:
+		if hours > 0 {
+			return fmt.Sprintf("%dd %dh", days, hours)
+		}
+		return fmt.Sprintf("%dd", days)
+	case hours > 0:
+		if mins > 0 {
+			return fmt.Sprintf("%dh %dm", hours, mins)
+		}
+		return fmt.Sprintf("%dh", hours)
+	case mins > 0:
+		return fmt.Sprintf("%dm", mins)
+	}
+	return "<1m"
+}
+
+// derefBool dereferences a *bool for templates; nil renders as false.
+func derefBool(b *bool) bool {
+	if b == nil {
+		return false
+	}
+	return *b
 }
 
 func sinceShort(t *time.Time) string {

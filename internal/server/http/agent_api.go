@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -192,6 +193,8 @@ func (s *Server) agentDiscoveries(w http.ResponseWriter, r *http.Request) {
 			IP:             sn.IP,
 			Hostname:       bestName,
 			HostnameSource: bestSource,
+			Vendor:         sn.Vendor,
+			Kind:           sn.Kind,
 			LastSeenAt:     sn.SeenAt,
 			SeenByAgent:    req.AgentID,
 			ServicesJSON:   servicesJSON,
@@ -204,21 +207,32 @@ func (s *Server) agentDiscoveries(w http.ResponseWriter, r *http.Request) {
 		for src, name := range sn.HostnameSources {
 			_ = s.Store.AddHostname(r.Context(), dev.ID, name, src, sn.SeenAt)
 		}
-		// Best-effort grouping: a host's name (via mDNS, NBNS, or rDNS)
+		// Best-effort grouping: a host's name (via mDNS, NBNS, rDNS, etc.)
 		// almost always identifies the same physical machine across all of
-		// its NICs, so devices that share a name almost certainly belong
-		// together. SetDeviceGroup is priority-aware (agent > mdns > nbns >
-		// rdns), so a later, lower-priority sighting can't steal a NIC away
-		// from a higher-priority group.
-		for _, src := range []string{"mdns", "nbns", "rdns"} {
+		// its NICs. SetDeviceGroup is priority-aware (agent > mdns > nbns >
+		// rdns > ...), so a later, lower-priority sighting can't steal a
+		// NIC away from a higher-priority group. We try sources in priority
+		// order and stop at the first hit.
+		grouped := false
+		for _, src := range hostnameSourcesByPriority() {
 			name := sn.HostnameSources[src]
 			if name == "" {
 				continue
 			}
 			if g := hostnameGroupID(src, name); g != "" {
 				_ = s.Store.SetDeviceGroup(r.Context(), dev.ID, g)
+				grouped = true
 				break
 			}
+		}
+		// Container/VM sightings classified by the reporting agent (e.g. an
+		// ARP entry seen on docker0, br-<id>, virbr*, lxcbr*, or a podman
+		// bridge) belong to that agent's host: the bridge is per-host and
+		// addresses on it can only be reached via the host. Roll them up
+		// into the agent's group so 172.17.0.x rows merge with their host
+		// instead of appearing as orphan strangers on the device list.
+		if !grouped && (sn.Kind == "container" || sn.Kind == "vm") {
+			_ = s.Store.SetDeviceGroup(r.Context(), dev.ID, "agent:"+req.AgentID)
 		}
 		accepted++
 	}
@@ -293,6 +307,10 @@ func (s *Server) agentInventory(w http.ResponseWriter, r *http.Request) {
 		})
 		_ = s.Store.AddHostname(r.Context(), strings.ToLower(ifc.MAC), a.Hostname, "agent", now)
 	}
+	// Catch up any prior NIC rows for this agent (e.g. transient virtual
+	// interfaces no longer in the report) so they remain merged under the
+	// agent's group instead of drifting back into ungrouped singletons.
+	_ = s.Store.BackfillAgentGroup(r.Context(), req.AgentID, a.Hostname)
 	// Sync Docker containers and engine info reported alongside inventory.
 	// Containers are first-class entities (their own list/detail views) but
 	// their lifecycle follows this host: containers absent from the report
@@ -308,6 +326,34 @@ func (s *Server) agentInventory(w http.ResponseWriter, r *http.Request) {
 					Summary: fmt.Sprintf("Containers on %s: +%d / -%d", a.Hostname, added, removed),
 					Detail:  map[string]any{"added": added, "removed": removed},
 				})
+			}
+			// Register each container's network attachment as a Device keyed
+			// by its container MAC, owned by the host's agent group. That way
+			// when another agent (or this agent running in-cluster) ARPs the
+			// docker bridge subnet and sees those container MACs, the rows
+			// merge into the host's group instead of appearing as orphaned
+			// 172.x strangers on the discovered-devices list.
+			for _, dc := range di.Containers {
+				cname := dc.Name
+				for _, n := range dc.Networks {
+					mac := strings.ToLower(strings.TrimSpace(n.MAC))
+					if mac == "" {
+						continue
+					}
+					_ = s.Store.UpsertDevice(r.Context(), &store.Device{
+						ID:             mac,
+						MAC:            mac,
+						IP:             n.IPv4,
+						Hostname:       cname,
+						HostnameSource: "agent",
+						Kind:           "container",
+						AgentID:        req.AgentID,
+						SeenByAgent:    req.AgentID,
+						FirstSeenAt:    now,
+						LastSeenAt:     now,
+						GroupID:        "agent:" + req.AgentID,
+					})
+				}
 			}
 		}
 	} else {
@@ -325,12 +371,23 @@ func (s *Server) agentInventory(w http.ResponseWriter, r *http.Request) {
 // pickBestHostname returns the highest-priority (name, source) from a
 // per-source map, mirroring store.HostnameSourcePriority.
 func pickBestHostname(srcs map[string]string) (string, string) {
-	for _, src := range []string{"agent", "mdns", "nbns", "rdns"} {
+	for _, src := range hostnameSourcesByPriority() {
 		if v, ok := srcs[src]; ok && v != "" {
 			return v, src
 		}
 	}
 	return "", ""
+}
+
+// hostnameSourcesByPriority returns known hostname source names ordered
+// most-to-least authoritative according to store.HostnameSourcePriority.
+// Mirrors discover.sourcesByPriority on the agent side.
+func hostnameSourcesByPriority() []string {
+	srcs := []string{"agent", "mdns", "llmnr", "smb", "nbns", "snmp", "wsd", "ssdp", "tls", "rdns", "http", "ssh"}
+	sort.Slice(srcs, func(i, j int) bool {
+		return store.HostnameSourcePriority(srcs[i]) > store.HostnameSourcePriority(srcs[j])
+	})
+	return srcs
 }
 
 // hostnameGroupID normalizes a (source, hostname) pair into a device group

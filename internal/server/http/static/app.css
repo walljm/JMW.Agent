@@ -149,6 +149,7 @@ canvas { background: var(--bg-elev); border: 1px solid var(--border); border-rad
 .tag-list { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 500; background: var(--bg-elev); border: 1px solid var(--border); color: var(--fg); }
 .desc-cell { max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); font-size: 12px; }
+table.data.clients th:first-child, table.data.clients td:first-child { min-width: 22ch; white-space: nowrap; }
 .edit-form { display: grid; gap: 12px; max-width: 640px; margin-top: 8px; }
 .edit-form label { font-size: 12px; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .edit-form textarea { display: block; padding: 8px 10px; width: 100%; min-height: 72px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius); color: var(--fg); font: inherit; resize: vertical; }
@@ -165,3 +166,43 @@ table.compact th, table.compact td { padding: 4px 8px; font-size: 12px; }
 .data { width: 100%; border-collapse: collapse; margin-top: 8px; }
 .data th, .data td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
 .data th { color: var(--fg-muted); font-size: 12px; font-weight: 600; }
+
+.site-footer { margin-top: 32px; padding: 12px 24px; border-top: 1px solid var(--border); text-align: right; }
+.site-footer .small { font-size: 11px; }
+
+/* Dashboard KPIs: clickable cards with status accents on the left edge.
+   Default cards are neutral; coloring only fires when there's something
+   to look at, so the page reads at a glance. */
+.kpi .kpi-link { text-decoration: none; color: inherit; display: block;
+  border-left: 3px solid transparent; transition: border-color 0.15s ease; }
+.kpi .kpi-link:hover { background: var(--bg-elev-2); }
+.kpi-ok    { border-left-color: var(--ok) !important; }
+.kpi-warn  { border-left-color: var(--warn) !important; }
+.kpi-attn  { border-left-color: var(--accent) !important; }
+.kpi-danger{ border-left-color: var(--danger) !important; }
+
+/* Two-column layout for dashboard side-by-side panels. Collapses on
+   narrow viewports — tables get cramped quickly so we collapse early. */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px; }
+@media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+/* "Needs attention" tiles. Each tile is self-contained with its own
+   status accent so admins can scan severity. */
+.attn-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--gap); margin-top: 8px; }
+.attn-card { background: var(--bg-elev); border: 1px solid var(--border);
+  border-left: 3px solid var(--accent); border-radius: var(--radius); padding: 12px 16px; }
+.attn-card.attn-warn   { border-left-color: var(--warn); }
+.attn-card.attn-danger { border-left-color: var(--danger); }
+.attn-title { font-weight: 600; margin-bottom: 6px; }
+.attn-list { list-style: none; padding: 0; margin: 0; }
+.attn-list li { padding: 2px 0; }
+
+.badge-warn { display: inline-block; padding: 1px 6px; border-radius: 10px;
+  background: rgba(210, 153, 34, 0.18); color: var(--warn);
+  font-size: 11px; font-weight: 600; }
+
+/* Server self-health: quiet, definition-list style. */
+.server-health { margin-top: 32px; padding-top: 16px; border-top: 1px dashed var(--border); }
+.server-health .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; }
+.server-health dt { color: var(--fg-muted); }

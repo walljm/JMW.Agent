@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/walljm/jmwagent/internal/agent/collect"
@@ -13,11 +14,8 @@ func main() {
 	t := time.Now()
 	ctx := context.Background()
 	inv := collect.Inventory(ctx, false)
-	fmt.Println("elapsed:", time.Since(t))
-	b, _ := json.Marshal(inv)
-	fmt.Println("bytes:", len(b))
-	fmt.Println("interfaces:")
-	for _, i := range inv.Network.Interfaces {
-		fmt.Printf("  %s mac=%s up=%v ipv4=%v\n", i.Name, i.MAC, i.IsUp, i.IPv4)
-	}
+	fmt.Fprintln(os.Stderr, "elapsed:", time.Since(t))
+	b, _ := json.MarshalIndent(inv, "", "  ")
+	fmt.Fprintln(os.Stderr, "bytes:", len(b))
+	os.Stdout.Write(b)
 }

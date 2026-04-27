@@ -3,6 +3,7 @@ package httpsrv
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -13,29 +14,77 @@ import (
 )
 
 func (s *Server) dashboardGet(w http.ResponseWriter, r *http.Request) {
-	approved, _ := s.Store.ListAgents(r.Context(), store.AgentStatusApproved)
-	pending, _ := s.Store.ListAgents(r.Context(), store.AgentStatusPending)
-	events, _ := s.Store.ListEvents(r.Context(), 25)
+	ctx := r.Context()
+	approved, _ := s.Store.ListAgents(ctx, store.AgentStatusApproved)
+	pending, _ := s.Store.ListAgents(ctx, store.AgentStatusPending)
+	events, _ := s.Store.ListEvents(ctx, 25)
 	csrf := s.ensureCSRF(w, r)
-	online := 0
-	stale := 0
+
+	// Agent online/stale + recently-stale (online → offline within last hour).
+	now := time.Now()
+	online, stale := 0, 0
+	var recentlyStale []*store.Agent
 	for _, a := range approved {
-		if a.LastHeartbeatAt != nil && time.Since(*a.LastHeartbeatAt) < 2*time.Minute {
-			online++
-		} else {
+		if a.LastHeartbeatAt == nil {
 			stale++
+			continue
+		}
+		gap := now.Sub(*a.LastHeartbeatAt)
+		switch {
+		case gap < 2*time.Minute:
+			online++
+		default:
+			stale++
+			if gap < time.Hour {
+				recentlyStale = append(recentlyStale, a)
+			}
 		}
 	}
+	// Newest stale first.
+	sort.SliceStable(recentlyStale, func(i, j int) bool {
+		return recentlyStale[i].LastHeartbeatAt.After(*recentlyStale[j].LastHeartbeatAt)
+	})
+
+	// Aggregate KPIs (one round trip each, all cheap).
+	devStats, _ := s.Store.DeviceStats(ctx)
+	conStats, _ := s.Store.ContainersSummary(ctx)
+	alertStats, _ := s.Store.AlertStats(ctx)
+	dbSize, _ := s.Store.DBSize(ctx)
+
+	// Top-N panels.
+	topSources, _ := s.Store.TopEventSources(ctx, 24*time.Hour, 5)
+	recentDevices, _ := s.Store.ListRecentDevices(ctx, 5)
+
+	// Pending preview (first 3) — surfaced inline so admins don't have to
+	// click through if there's nothing else demanding attention.
+	pendingPreview := pending
+	if len(pendingPreview) > 3 {
+		pendingPreview = pendingPreview[:3]
+	}
+
+	// Server self-health.
+	uptime := time.Since(s.StartedAt).Round(time.Second)
+
 	s.render(w, r, "dashboard.html", map[string]any{
-		"CSRFToken":    csrf,
-		"Title":        "Dashboard",
-		"Active":       "dashboard",
-		"Approved":     approved,
-		"Pending":      pending,
-		"Events":       events,
-		"OnlineCount":  online,
-		"StaleCount":   stale,
-		"PendingCount": len(pending),
+		"CSRFToken":      csrf,
+		"Title":          "Dashboard",
+		"Active":         "dashboard",
+		"Approved":       approved,
+		"Pending":        pending,
+		"PendingPreview": pendingPreview,
+		"Events":         events,
+		"OnlineCount":    online,
+		"StaleCount":     stale,
+		"PendingCount":   len(pending),
+		"RecentlyStale":  recentlyStale,
+		"DeviceStats":    devStats,
+		"ContainerStats": conStats,
+		"AlertStats":     alertStats,
+		"TopSources":     topSources,
+		"RecentDevices":  recentDevices,
+		"Uptime":         uptime.String(),
+		"DBSize":         dbSize,
+		"IngestCount":    s.IngestCount(),
 	})
 }
 

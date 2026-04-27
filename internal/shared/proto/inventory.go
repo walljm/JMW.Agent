@@ -8,36 +8,197 @@ import "time"
 type Inventory struct {
 	CollectedAt time.Time `json:"collected_at"`
 
-	Hardware  HardwareInfo     `json:"hardware"`
-	OS        OSInfo           `json:"os"`
-	Disks     []DiskDevice     `json:"disks,omitempty"`
-	Network   NetworkInfo      `json:"network"`
-	Routes    []RouteEntry     `json:"routes,omitempty"`
-	Users     []UserSession    `json:"users,omitempty"`
-	Listening []ListeningPort  `json:"listening_ports,omitempty"`
-	Processes []ProcessSummary `json:"processes,omitempty"` // top-N by CPU/mem
-	Docker    *DockerInfo      `json:"docker,omitempty"`
-	Reboots   []BootRecord     `json:"reboot_history,omitempty"`
+	Hardware  HardwareInfo      `json:"hardware"`
+	OS        OSInfo            `json:"os"`
+	Disks     []DiskDevice      `json:"disks,omitempty"`
+	Network   NetworkInfo       `json:"network"`
+	Routes    []RouteEntry      `json:"routes,omitempty"`
+	Users     []UserSession     `json:"users,omitempty"`
+	Listening []ListeningPort   `json:"listening_ports,omitempty"`
+	Processes []ProcessSummary  `json:"processes,omitempty"` // top-N by CPU/mem
+	Docker    *DockerInfo       `json:"docker,omitempty"`
+	Reboots   []BootRecord      `json:"reboot_history,omitempty"`
 	Packages  *PackageInventory `json:"packages,omitempty"`
+	// Hassio is populated only when the agent runs as a Home Assistant add-on
+	// (detected by the SUPERVISOR_TOKEN env var). Lets the device detail view
+	// show HA Core / Supervisor / OS versions and the installed add-ons.
+	Hassio *HassioInfo `json:"hassio,omitempty"`
+
+	// Filesystems is per-mountpoint usage at inventory time. Lets the server
+	// trend fill rate and alert on near-full volumes without sampling the
+	// heartbeat-rate disk snapshots.
+	Filesystems []FilesystemUsage `json:"filesystems,omitempty"`
+
+	// Updates is the patch posture: pending packages, security count, and
+	// "reboot required" flag. One of the top operational questions.
+	Updates *UpdateStatus `json:"updates,omitempty"`
+
+	// Services lists units of interest — by default only failed/abnormal ones
+	// to keep payload size bounded. Empty slice means "checked, all good".
+	Services []ServiceStatus `json:"services,omitempty"`
+
+	// Security collects firewall, AV/EDR, TPM, SecureBoot, and disk-encryption
+	// state. Compliance and audit signal.
+	Security *SecurityPosture `json:"security,omitempty"`
+
+	// GPUs is a list of installed graphics adapters.
+	GPUs []GPU `json:"gpus,omitempty"`
+
+	// Chassis describes the physical form factor (laptop / desktop / server /
+	// VM / SBC) plus battery facts when present.
+	Chassis *ChassisInfo `json:"chassis,omitempty"`
+
+	// LocalUsers is the list of local accounts (distinct from currently
+	// logged-in `Users`). IAM/audit signal.
+	LocalUsers []LocalUser `json:"local_users,omitempty"`
+}
+
+// FilesystemUsage is one mounted filesystem with size accounting.
+type FilesystemUsage struct {
+	Mountpoint string `json:"mountpoint"`
+	Device     string `json:"device,omitempty"`
+	FSType     string `json:"fs_type,omitempty"`
+	TotalBytes uint64 `json:"total_bytes,omitempty"`
+	UsedBytes  uint64 `json:"used_bytes,omitempty"`
+	FreeBytes  uint64 `json:"free_bytes,omitempty"`
+	InodesUsed uint64 `json:"inodes_used,omitempty"`
+	InodesFree uint64 `json:"inodes_free,omitempty"`
+}
+
+// UpdateStatus describes pending OS / package updates.
+type UpdateStatus struct {
+	Manager        string          `json:"manager,omitempty"` // apt|dnf|yum|brew|softwareupdate|windowsupdate
+	Pending        int             `json:"pending"`
+	Security       int             `json:"security,omitempty"` // subset of Pending that are security
+	RebootRequired bool            `json:"reboot_required,omitempty"`
+	CheckedAt      time.Time       `json:"checked_at,omitempty"`
+	Updates        []PendingUpdate `json:"updates,omitempty"` // capped list (top N)
+}
+
+// PendingUpdate is one package or KB awaiting install.
+type PendingUpdate struct {
+	Name           string `json:"name"`
+	CurrentVersion string `json:"current_version,omitempty"`
+	NewVersion     string `json:"new_version,omitempty"`
+	Source         string `json:"source,omitempty"`   // repo / channel
+	Security       bool   `json:"security,omitempty"`
+}
+
+// ServiceStatus is one OS service / unit. Only abnormal entries are reported
+// by default (failed, auto-but-stopped) to bound payload size.
+type ServiceStatus struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name,omitempty"`
+	State       string `json:"state,omitempty"`        // running|stopped|failed|...
+	StartMode   string `json:"start_mode,omitempty"`   // auto|manual|disabled
+	SubState    string `json:"sub_state,omitempty"`    // systemd: running|dead|exited|...
+	ExitCode    int    `json:"exit_code,omitempty"`
+}
+
+// SecurityPosture aggregates firewall, AV, TPM, SecureBoot, encryption.
+type SecurityPosture struct {
+	Firewall       *FirewallStatus    `json:"firewall,omitempty"`
+	AntiVirus      []AVProduct        `json:"antivirus,omitempty"`
+	TPMPresent     *bool              `json:"tpm_present,omitempty"`
+	TPMVersion     string             `json:"tpm_version,omitempty"`
+	SecureBoot     *bool              `json:"secure_boot,omitempty"`
+	DiskEncryption []EncryptedVolume  `json:"disk_encryption,omitempty"`
+	SELinuxMode    string             `json:"selinux_mode,omitempty"`   // enforcing|permissive|disabled|""
+	AppArmorMode   string             `json:"apparmor_mode,omitempty"`  // enforce|complain|""
+}
+
+// FirewallStatus describes the host firewall.
+type FirewallStatus struct {
+	Provider string   `json:"provider,omitempty"` // ufw|firewalld|nftables|iptables|pf|windows
+	Enabled  bool     `json:"enabled"`
+	Default  string   `json:"default,omitempty"` // default policy: allow|deny|reject
+	Profiles []string `json:"profiles,omitempty"` // windows: domain/private/public state
+}
+
+// AVProduct is one antivirus / EDR registration.
+type AVProduct struct {
+	Name              string    `json:"name"`
+	Enabled           bool      `json:"enabled"`
+	RealtimeProtected bool      `json:"realtime,omitempty"`
+	UpToDate          bool      `json:"up_to_date,omitempty"`
+	SignatureVersion  string    `json:"signature_version,omitempty"`
+	SignatureAge      string    `json:"signature_age,omitempty"` // human ("3d")
+	LastScan          time.Time `json:"last_scan,omitempty"`
+}
+
+// EncryptedVolume is one volume protected by full-disk encryption.
+type EncryptedVolume struct {
+	Mountpoint string `json:"mountpoint,omitempty"`
+	Device     string `json:"device,omitempty"`
+	Type       string `json:"type,omitempty"` // bitlocker|luks|filevault|apfs-encrypted
+	Status     string `json:"status,omitempty"` // on|off|partial|suspended
+}
+
+// GPU is one graphics adapter.
+type GPU struct {
+	Vendor        string `json:"vendor,omitempty"`
+	Model         string `json:"model,omitempty"`
+	DriverVersion string `json:"driver_version,omitempty"`
+	VRAMBytes     uint64 `json:"vram_bytes,omitempty"`
+}
+
+// ChassisInfo describes the physical form factor and (if a laptop) battery.
+type ChassisInfo struct {
+	Type    string   `json:"type,omitempty"` // laptop|desktop|server|vm|sbc|tablet|other
+	Battery *Battery `json:"battery,omitempty"`
+}
+
+// Battery describes the primary battery on portable hardware.
+type Battery struct {
+	DesignCapacityWh  float64 `json:"design_capacity_wh,omitempty"`
+	CurrentCapacityWh float64 `json:"current_capacity_wh,omitempty"`
+	HealthPercent     float64 `json:"health_pct,omitempty"`   // current / design * 100
+	CycleCount        int     `json:"cycle_count,omitempty"`
+	State             string  `json:"state,omitempty"`        // charging|discharging|full|...
+	ChargePercent     float64 `json:"charge_pct,omitempty"`
+}
+
+// LocalUser is one local account on the host.
+type LocalUser struct {
+	Name        string    `json:"name"`
+	UID         string    `json:"uid,omitempty"`     // string for cross-platform (Windows uses SIDs)
+	GID         string    `json:"gid,omitempty"`
+	HomeDir     string    `json:"home_dir,omitempty"`
+	Shell       string    `json:"shell,omitempty"`
+	IsAdmin     bool      `json:"is_admin,omitempty"`     // sudo / wheel / Administrators
+	Disabled    bool      `json:"disabled,omitempty"`
+	LastLogin   time.Time `json:"last_login,omitempty"`
+	PasswordAge int       `json:"password_age_days,omitempty"`
 }
 
 // HardwareInfo is static-ish hardware facts.
 type HardwareInfo struct {
-	CPUModel        string `json:"cpu_model,omitempty"`
-	CPUVendor       string `json:"cpu_vendor,omitempty"`
-	CPUCores        int    `json:"cpu_cores,omitempty"`        // physical cores
-	CPULogicalCores int    `json:"cpu_logical_cores,omitempty"` // hyperthreads
+	CPUModel        string  `json:"cpu_model,omitempty"`
+	CPUVendor       string  `json:"cpu_vendor,omitempty"`
+	CPUCores        int     `json:"cpu_cores,omitempty"`         // physical cores
+	CPULogicalCores int     `json:"cpu_logical_cores,omitempty"` // hyperthreads
 	CPUMHz          float64 `json:"cpu_mhz,omitempty"`
-	TotalMemBytes   uint64 `json:"total_mem_bytes,omitempty"`
-	BoardVendor     string `json:"board_vendor,omitempty"`
-	BoardModel      string `json:"board_model,omitempty"`
-	SystemVendor    string `json:"system_vendor,omitempty"`
-	SystemModel     string `json:"system_model,omitempty"`
-	SystemSerial    string `json:"system_serial,omitempty"`
-	BIOSVendor      string `json:"bios_vendor,omitempty"`
-	BIOSVersion     string `json:"bios_version,omitempty"`
-	BIOSDate        string `json:"bios_date,omitempty"`
-	Virtualization  string `json:"virtualization,omitempty"` // none|kvm|vmware|docker|wsl|...
+	TotalMemBytes   uint64  `json:"total_mem_bytes,omitempty"`
+	BoardVendor     string  `json:"board_vendor,omitempty"`
+	BoardModel      string  `json:"board_model,omitempty"`
+	SystemVendor    string  `json:"system_vendor,omitempty"`
+	SystemModel     string  `json:"system_model,omitempty"`
+	SystemSerial    string  `json:"system_serial,omitempty"`
+	BIOSVendor      string  `json:"bios_vendor,omitempty"`
+	BIOSVersion     string  `json:"bios_version,omitempty"`
+	BIOSDate        string  `json:"bios_date,omitempty"`
+	Virtualization  string  `json:"virtualization,omitempty"` // none|kvm|vmware|docker|wsl|...
+	// Temperatures is a point-in-time thermal reading taken at inventory time.
+	// Important on ARM SBCs (RPi, HA Green, Jetson) where the SoC throttles
+	// when these climb. Empty on hardware without thermal sensors.
+	Temperatures []TempReading `json:"temperatures,omitempty"`
+}
+
+// TempReading is one thermal sensor sample.
+type TempReading struct {
+	Name    string  `json:"name"`              // e.g. "soc-thermal", "cpu_thermal"
+	Type    string  `json:"type,omitempty"`    // kernel-reported zone type
+	Celsius float64 `json:"celsius"`
 }
 
 // OSInfo describes the operating system.
@@ -63,6 +224,25 @@ type DiskDevice struct {
 	Type       string         `json:"type,omitempty"`   // hdd|ssd|nvme|virtual|unknown
 	Removable  bool           `json:"removable,omitempty"`
 	Partitions []DiskPartition `json:"partitions,omitempty"`
+	SMART      *SMARTHealth    `json:"smart,omitempty"`
+}
+
+// SMARTHealth is a curated subset of S.M.A.R.T. attributes that actually
+// indicate impending failure. Full attribute dumps are huge and noisy; we
+// only carry what an operator looks at.
+type SMARTHealth struct {
+	OverallHealth        string  `json:"overall_health,omitempty"` // PASSED|FAILED|UNKNOWN
+	TemperatureCelsius   float64 `json:"temperature_c,omitempty"`
+	PowerOnHours         uint64  `json:"power_on_hours,omitempty"`
+	PowerCycleCount      uint64  `json:"power_cycle_count,omitempty"`
+	ReallocatedSectors   uint64  `json:"reallocated_sectors,omitempty"` // SAS/SATA
+	PendingSectors       uint64  `json:"pending_sectors,omitempty"`
+	UncorrectableErrors  uint64  `json:"uncorrectable_errors,omitempty"`
+	MediaWearoutPercent  float64 `json:"media_wearout_pct,omitempty"`   // SSD wear (0=new, 100=spent)
+	PercentageUsed       float64 `json:"percentage_used,omitempty"`     // NVMe (0=new, 100=spent)
+	AvailableSparePct    float64 `json:"available_spare_pct,omitempty"` // NVMe
+	DataUnitsReadGB      float64 `json:"data_units_read_gb,omitempty"`  // NVMe
+	DataUnitsWrittenGB   float64 `json:"data_units_written_gb,omitempty"`
 }
 
 // DiskPartition is one partition on a DiskDevice.
@@ -320,6 +500,33 @@ type Package struct {
 	Name    string `json:"name"`
 	Version string `json:"version,omitempty"`
 	Arch    string `json:"arch,omitempty"`
+}
+
+// HassioInfo holds Home Assistant Supervisor facts collected via the
+// http://supervisor/* API. Populated only when running as an HA add-on
+// (SUPERVISOR_TOKEN env var is set by Supervisor on container start).
+type HassioInfo struct {
+	SupervisorVersion string        `json:"supervisor_version,omitempty"`
+	CoreVersion       string        `json:"core_version,omitempty"`
+	OSVersion         string        `json:"os_version,omitempty"` // HAOS / HA Green firmware
+	Channel           string        `json:"channel,omitempty"`    // stable | beta | dev
+	Arch              string        `json:"arch,omitempty"`       // aarch64 | amd64 | armv7
+	Machine           string        `json:"machine,omitempty"`    // e.g. "green", "yellow", "raspberrypi4"
+	Hostname          string        `json:"hostname,omitempty"`   // host's real hostname (Supervisor's view)
+	HostOS            string        `json:"host_os,omitempty"`    // e.g. "Home Assistant OS 14.2"
+	HostKernel        string        `json:"host_kernel,omitempty"`
+	Chassis           string        `json:"chassis,omitempty"`    // embedded | desktop | server | vm
+	BootTime          time.Time     `json:"boot_time,omitempty"`
+	Addons            []HassioAddon `json:"addons,omitempty"`
+}
+
+// HassioAddon is one installed add-on.
+type HassioAddon struct {
+	Slug    string `json:"slug"`
+	Name    string `json:"name,omitempty"`
+	Version string `json:"version,omitempty"`
+	State   string `json:"state,omitempty"`  // started | stopped | error
+	Update  bool   `json:"update,omitempty"` // update_available
 }
 
 // InventoryRequest is what the agent posts.

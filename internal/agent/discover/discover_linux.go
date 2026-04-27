@@ -11,6 +11,14 @@ import (
 )
 
 // scanARP reads /proc/net/arp.
+//
+// The kernel format is whitespace-separated:
+//
+//	IP address  HW type  Flags  HW address  Mask  Device
+//
+// We capture the device column so neighbors seen on a container/VM bridge
+// (docker0, br-<id>, virbr*, ...) can be classified at the source instead
+// of being reported as anonymous locally-administered MACs.
 func scanARP() []Sighting {
 	f, err := os.Open(hostfs.Path("/proc/net/arp"))
 	if err != nil {
@@ -31,10 +39,16 @@ func scanARP() []Sighting {
 		}
 		ip := fields[0]
 		mac := fields[3]
+		iface := fields[5]
 		if mac == "00:00:00:00:00:00" {
 			continue
 		}
-		out = append(out, Sighting{IP: ip, MAC: strings.ToLower(mac)})
+		s := Sighting{IP: ip, MAC: strings.ToLower(mac)}
+		if vendor, kind := classifyBridge(iface); kind != "" {
+			s.Vendor = vendor
+			s.Kind = kind
+		}
+		out = append(out, s)
 	}
 	return out
 }

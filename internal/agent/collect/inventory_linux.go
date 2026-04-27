@@ -80,8 +80,136 @@ func collectHardware(ctx context.Context) proto.HardwareInfo {
 	hw.BIOSVendor = readDmi("/sys/class/dmi/id/bios_vendor")
 	hw.BIOSVersion = readDmi("/sys/class/dmi/id/bios_version")
 	hw.BIOSDate = readDmi("/sys/class/dmi/id/bios_date")
+
+	// ARM SBCs (Raspberry Pi, HA Green, Jetson, ODROID, etc.) have no DMI
+	// table but expose the same kind of facts via the device tree. Populate
+	// any fields the DMI path didn't fill.
+	deviceTreeFallback(&hw)
+
 	hw.Virtualization = detectVirt(ctx)
+	hw.Temperatures = collectTemperatures()
 	return hw
+}
+
+// deviceTreeFallback fills empty hardware fields from /proc/device-tree on
+// platforms without DMI/SMBIOS (i.e. ARM/RISC-V SBCs).
+func deviceTreeFallback(hw *proto.HardwareInfo) {
+	dt := hostfs.Path("/proc/device-tree")
+	// /proc/device-tree/model is a NUL-terminated string like
+	// "Home Assistant Green" or "Raspberry Pi 4 Model B Rev 1.4".
+	if hw.SystemModel == "" {
+		if s := readDTString(dt + "/model"); s != "" {
+			hw.SystemModel = s
+		}
+	}
+	if hw.SystemSerial == "" {
+		if s := readDTString(dt + "/serial-number"); s != "" {
+			hw.SystemSerial = s
+		}
+	}
+	// /proc/device-tree/compatible is NUL-separated, most-specific first:
+	// e.g. "radxa,cm3\0rockchip,rk3566\0". First token is the board, last is
+	// usually the SoC family — both useful as a vendor hint.
+	if hw.SystemVendor == "" || hw.BoardVendor == "" {
+		toks := readDTStringList(dt + "/compatible")
+		if len(toks) > 0 {
+			// "vendor,product" → vendor is the comma-prefix of the first token.
+			if i := strings.IndexByte(toks[0], ','); i > 0 {
+				v := toks[0][:i]
+				if hw.SystemVendor == "" {
+					hw.SystemVendor = v
+				}
+				if hw.BoardVendor == "" {
+					hw.BoardVendor = v
+				}
+			}
+			if hw.BoardModel == "" {
+				hw.BoardModel = toks[0]
+			}
+		}
+	}
+	// CPU model: device-tree CPU node's "compatible" (e.g. "arm,cortex-a55").
+	if hw.CPUModel == "" {
+		if s := readDTString(dt + "/cpus/cpu@0/compatible"); s != "" {
+			hw.CPUModel = s
+		}
+	}
+	// True max frequency from cpufreq (in kHz). cpuinfo's "cpu MHz" is empty
+	// on ARM and on x86 reflects the current DVFS state, not the spec value.
+	if hw.CPUMHz == 0 {
+		if b, err := os.ReadFile(hostfs.Path("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq")); err == nil {
+			if khz, err := strconv.ParseUint(strings.TrimSpace(string(b)), 10, 64); err == nil {
+				hw.CPUMHz = float64(khz) / 1000.0
+			}
+		}
+	}
+}
+
+// readDTString reads a single NUL-terminated device-tree property string.
+func readDTString(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	// Trim trailing NULs and whitespace.
+	return strings.TrimRight(strings.TrimRight(string(b), "\x00"), " \t\r\n")
+}
+
+// readDTStringList reads a NUL-separated device-tree string list (e.g.
+// /proc/device-tree/compatible).
+func readDTStringList(path string) []string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	parts := strings.Split(strings.TrimRight(string(b), "\x00"), "\x00")
+	out := parts[:0]
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// collectTemperatures samples every kernel thermal zone. Returns nil when no
+// /sys/class/thermal/thermal_zone* nodes exist (most VMs, containers without
+// /sys mounted, x86 servers without lm-sensors style zones).
+func collectTemperatures() []proto.TempReading {
+	entries, err := os.ReadDir(hostfs.Path("/sys/class/thermal"))
+	if err != nil {
+		return nil
+	}
+	var out []proto.TempReading
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasPrefix(name, "thermal_zone") {
+			continue
+		}
+		base := hostfs.Path("/sys/class/thermal/" + name)
+		raw, err := os.ReadFile(base + "/temp")
+		if err != nil {
+			continue
+		}
+		// Kernel reports millidegrees Celsius.
+		milli, err := strconv.ParseInt(strings.TrimSpace(string(raw)), 10, 64)
+		if err != nil {
+			continue
+		}
+		// Filter implausible values: many SoC zones report 0 or huge sentinels
+		// when their sensor is uninitialized.
+		c := float64(milli) / 1000.0
+		if c <= 0 || c > 150 {
+			continue
+		}
+		t := proto.TempReading{
+			Name:    name,
+			Type:    strings.TrimSpace(readSafe(base + "/type")),
+			Celsius: c,
+		}
+		out = append(out, t)
+	}
+	return out
 }
 
 func readDmi(path string) string {
@@ -165,19 +293,9 @@ func collectOS(ctx context.Context) proto.OSInfo {
 	return o
 }
 
-// hostHostname returns the host's hostname, falling back to the container's
-// own hostname when the host filesystem is not mounted.
-func hostHostname() string {
-	if hostfs.Active() {
-		if b, err := os.ReadFile(hostfs.Path("/etc/hostname")); err == nil {
-			if h := strings.TrimSpace(string(b)); h != "" {
-				return h
-			}
-		}
-	}
-	h, _ := os.Hostname()
-	return h
-}
+// hostHostname is retained for call-site clarity; it now delegates to
+// hostfs.Hostname() so the container-aware logic lives in one place.
+func hostHostname() string { return hostfs.Hostname() }
 
 func parseKVPairs(s string) map[string]string {
 	out := map[string]string{}

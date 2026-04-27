@@ -25,6 +25,50 @@ type Event struct {
 	Detail     map[string]any
 }
 
+// EventSourceCount is one row of TopEventSources.
+type EventSourceCount struct {
+	SourceKind string
+	SourceID   string
+	Hostname   string // resolved from agents table when SourceKind="agent"; "" otherwise
+	Count      int
+	WarnCount  int
+}
+
+// TopEventSources returns the loudest event sources in the given window
+// (since now-window), highest count first. Joins the agents table so the
+// dashboard can show hostnames instead of opaque IDs for agent sources.
+func (s *Store) TopEventSources(ctx context.Context, window time.Duration, limit int) ([]*EventSourceCount, error) {
+	if limit <= 0 {
+		limit = 5
+	}
+	cutoff := time.Now().UTC().Add(-window).Format(time.RFC3339)
+	rows, err := s.DB.QueryContext(ctx,
+		`SELECT e.source_kind, e.source_id,
+		        COALESCE(a.hostname, ''),
+		        COUNT(*) AS n,
+		        SUM(CASE WHEN e.severity IN ('warning','critical') THEN 1 ELSE 0 END) AS warn
+		 FROM events e
+		 LEFT JOIN agents a ON e.source_kind = 'agent' AND a.id = e.source_id
+		 WHERE e.ts >= ?
+		   AND COALESCE(e.source_id,'') <> ''
+		 GROUP BY e.source_kind, e.source_id
+		 ORDER BY n DESC, warn DESC
+		 LIMIT ?`, cutoff, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*EventSourceCount
+	for rows.Next() {
+		var c EventSourceCount
+		if err := rows.Scan(&c.SourceKind, &c.SourceID, &c.Hostname, &c.Count, &c.WarnCount); err != nil {
+			return nil, err
+		}
+		out = append(out, &c)
+	}
+	return out, rows.Err()
+}
+
 // LogEvent writes an event to the activity log.
 func (s *Store) LogEvent(ctx context.Context, e *Event) error {
 	if e.Timestamp.IsZero() {

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/walljm/jmwagent/internal/agent/containercache"
 	"github.com/walljm/jmwagent/internal/shared/proto"
 )
 
@@ -362,7 +363,37 @@ func collectDocker(ctx context.Context) *proto.DockerInfo {
 		}
 	}
 
+	publishContainerCache(di.Containers)
 	return di
+}
+
+// publishContainerCache pushes a MAC -> container snapshot into
+// containercache so the discover package can label ARP sightings with the
+// owning container's name + runtime. We extract one entry per (container,
+// network) so multi-homed containers are matched on whichever NIC the ARP
+// table observed.
+func publishContainerCache(containers []proto.DockerContainer) {
+	entries := make(map[string]containercache.Entry, len(containers))
+	for _, dc := range containers {
+		// Only running containers have live MACs in the host ARP table.
+		// Stopped containers keep their last config but no neighbour entry,
+		// so caching them would risk mislabelling a recycled MAC.
+		if dc.State != "" && dc.State != "running" {
+			continue
+		}
+		for _, n := range dc.Networks {
+			if n.MAC == "" {
+				continue
+			}
+			entries[n.MAC] = containercache.Entry{
+				Name:    dc.Name,
+				Image:   dc.Image,
+				Network: n.Name,
+				Runtime: "docker",
+			}
+		}
+	}
+	containercache.Replace(entries)
 }
 
 // containerFromSummary fills the fields available from /containers/json.

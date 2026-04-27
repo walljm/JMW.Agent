@@ -10,7 +10,8 @@
       {{$p := .Primary}}
       <tr>
         <td>
-          <a href="/devices/{{$p.ID}}">{{if $p.Hostname}}{{$p.Hostname}}{{else}}<span class="muted">unknown</span>{{end}}</a>
+          <a href="/devices/{{$p.ID}}">{{if $p.Hostname}}{{$p.Hostname}}{{else if $p.IP}}{{$p.IP}}{{else if $p.MAC}}{{$p.MAC}}{{else}}unknown{{end}}</a>
+          {{if not $p.Hostname}}<span class="muted small">(no hostname)</span>{{end}}
         </td>
         <td>
           {{$p.IP}}

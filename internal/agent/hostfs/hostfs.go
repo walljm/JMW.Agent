@@ -39,3 +39,21 @@ func Path(p string) string {
 	}
 	return root + p
 }
+
+// Hostname returns the host's hostname, preferring ${JMW_HOST_ROOT}/etc/hostname
+// when running in container-observes-host mode. Falls back to os.Hostname().
+// Returns "unknown" if both fail.
+func Hostname() string {
+	if Active() {
+		if b, err := os.ReadFile(Path("/etc/hostname")); err == nil {
+			if h := strings.TrimSpace(string(b)); h != "" {
+				return h
+			}
+		}
+	}
+	h, err := os.Hostname()
+	if err != nil || h == "" {
+		return "unknown"
+	}
+	return h
+}

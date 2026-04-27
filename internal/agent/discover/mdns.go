@@ -156,7 +156,17 @@ func mdnsLookup(timeout time.Duration) map[string]MDNSInfo {
 			continue
 		}
 		info := out[ip]
-		if info.Hostname == "" {
+		// Hostname preference (best to worst):
+		//   1. TXT friendly-name key (e.g. _googlecast._tcp uses "fn")
+		//   2. The instance label itself, when it isn't a bare UUID
+		//   3. The SRV target hostname (often a UUID for cast/IoT devices)
+		friendly := friendlyNameFromTXT(instanceTXT[instance])
+		if friendly == "" {
+			friendly = friendlyNameFromInstance(instance)
+		}
+		if friendly != "" && (info.Hostname == "" || looksLikeUUIDHost(info.Hostname)) {
+			info.Hostname = friendly
+		} else if info.Hostname == "" {
 			h := strings.TrimSuffix(target, ".")
 			h = strings.TrimSuffix(h, ".local")
 			info.Hostname = h
@@ -336,4 +346,66 @@ func contains(ss []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// friendlyNameFromTXT picks the user-facing device name out of TXT KV pairs.
+// Common keys across Google Cast (`fn`), some IoT vendors (`n`, `nm`), and
+// AirPlay-style services (`am`).
+func friendlyNameFromTXT(txt map[string]string) string {
+	if len(txt) == 0 {
+		return ""
+	}
+	for _, k := range []string{"fn", "n", "nm", "FN"} {
+		if v, ok := txt[k]; ok {
+			v = strings.TrimSpace(v)
+			if v != "" && !looksLikeUUIDHost(v) {
+				return v
+			}
+		}
+	}
+	return ""
+}
+
+// friendlyNameFromInstance returns the first label of an mDNS instance name
+// (the part before the service type), e.g. "Living Room" from
+// "Living Room._googlecast._tcp.local.". Empty if the label is UUID-shaped or
+// otherwise unhelpful.
+func friendlyNameFromInstance(instance string) string {
+	instance = strings.TrimSuffix(instance, ".")
+	// Find the first "._" boundary that starts the service type.
+	idx := strings.Index(instance, "._")
+	if idx <= 0 {
+		return ""
+	}
+	label := instance[:idx]
+	// mDNS escapes spaces as "\ " and dots as "\.".
+	label = strings.ReplaceAll(label, `\ `, " ")
+	label = strings.ReplaceAll(label, `\.`, ".")
+	label = strings.TrimSpace(label)
+	if label == "" || looksLikeUUIDHost(label) {
+		return ""
+	}
+	return label
+}
+
+// looksLikeUUIDHost reports whether s looks like a bare UUID/hex identifier
+// rather than a human-meaningful name. Matches 32-hex strings (with or
+// without dashes) and the common cast-device pattern of long hex blobs.
+func looksLikeUUIDHost(s string) bool {
+	s = strings.TrimSuffix(s, ".local")
+	s = strings.TrimSuffix(s, ".")
+	bare := strings.ReplaceAll(s, "-", "")
+	if len(bare) < 16 {
+		return false
+	}
+	hex := 0
+	for _, r := range bare {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'f', r >= 'A' && r <= 'F':
+			hex++
+		default:
+			return false
+		}
+	}
+	return hex == len(bare)
 }

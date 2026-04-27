@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -31,18 +32,76 @@ type Device struct {
 }
 
 // HostnameSourcePriority ranks a hostname source. Higher = more authoritative.
+// Keep in sync with the agent's discover.sourcePriority — both sides must
+// agree on ordering for priority-aware updates to behave consistently.
 func HostnameSourcePriority(src string) int {
 	switch src {
 	case "agent":
-		return 5 // self-reported by a running agent (inventory)
+		return 100 // self-reported by a running agent (inventory)
+	case "docker":
+		return 95 // local container runtime is authoritative for its containers
 	case "mdns":
-		return 4
+		return 90
+	case "llmnr":
+		return 85
+	case "smb":
+		return 80
 	case "nbns":
-		return 3
+		return 70
+	case "snmp":
+		return 65
+	case "wsd":
+		return 60
+	case "ssdp":
+		return 50
+	case "tls":
+		return 40
 	case "rdns":
-		return 2
+		return 30
+	case "http":
+		return 20
+	case "ssh":
+		return 15
 	}
 	return 0
+}
+
+// hostnameSourceSQLCase returns a SQL CASE expression that maps the column
+// name (assumed to be a hostname source) to its numeric priority. Callers
+// embed this directly in SQL strings so the priority table lives in one
+// place (HostnameSourcePriority above) and is mirrored into SQL on the fly
+// instead of being hand-maintained in every query.
+func hostnameSourceSQLCase(col string) string {
+	knownSources := []string{"agent", "docker", "mdns", "llmnr", "smb", "nbns", "snmp", "wsd", "ssdp", "tls", "rdns", "http", "ssh"}
+	var b strings.Builder
+	b.WriteString("CASE ")
+	b.WriteString(col)
+	for _, s := range knownSources {
+		b.WriteString(" WHEN '")
+		b.WriteString(s)
+		b.WriteString("' THEN ")
+		b.WriteString(strconv.Itoa(HostnameSourcePriority(s)))
+	}
+	b.WriteString(" ELSE 0 END")
+	return b.String()
+}
+
+// groupSourceSQLCase returns a SQL CASE expression that maps a group_id
+// column (e.g. 'agent:abc') to the priority of its source prefix.
+func groupSourceSQLCase(col string) string {
+	knownSources := []string{"agent", "docker", "mdns", "llmnr", "smb", "nbns", "snmp", "wsd", "ssdp", "tls", "rdns", "http", "ssh"}
+	var b strings.Builder
+	b.WriteString("CASE")
+	for _, s := range knownSources {
+		b.WriteString(" WHEN ")
+		b.WriteString(col)
+		b.WriteString(" LIKE '")
+		b.WriteString(s)
+		b.WriteString(":%' THEN ")
+		b.WriteString(strconv.Itoa(HostnameSourcePriority(s)))
+	}
+	b.WriteString(" ELSE 0 END")
+	return b.String()
 }
 
 // UpsertDevice inserts or updates a device by ID. Hostname overwrite is
@@ -57,6 +116,7 @@ func (s *Store) UpsertDevice(ctx context.Context, d *Device) error {
 		d.LastSeenAt, _ = time.Parse(time.RFC3339, now)
 	}
 	incomingPri := HostnameSourcePriority(d.HostnameSource)
+	storedCase := hostnameSourceSQLCase("devices.hostname_source")
 	_, err := s.DB.ExecContext(ctx,
 		`INSERT INTO devices(id, mac, ip, hostname, hostname_source, vendor, first_seen_at, last_seen_at, seen_by_agent, kind, notes, agent_id, services_json, device_group_id)
 		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -65,15 +125,11 @@ func (s *Store) UpsertDevice(ctx context.Context, d *Device) error {
 		   ip = excluded.ip,
 		   hostname = CASE
 		     WHEN excluded.hostname = '' THEN devices.hostname
-		     WHEN ? >= CASE devices.hostname_source
-		       WHEN 'agent' THEN 5 WHEN 'mdns' THEN 4 WHEN 'nbns' THEN 3 WHEN 'rdns' THEN 2 ELSE 0 END
-		       THEN excluded.hostname
+		     WHEN ? >= `+storedCase+` THEN excluded.hostname
 		     ELSE devices.hostname END,
 		   hostname_source = CASE
 		     WHEN excluded.hostname = '' THEN devices.hostname_source
-		     WHEN ? >= CASE devices.hostname_source
-		       WHEN 'agent' THEN 5 WHEN 'mdns' THEN 4 WHEN 'nbns' THEN 3 WHEN 'rdns' THEN 2 ELSE 0 END
-		       THEN excluded.hostname_source
+		     WHEN ? >= `+storedCase+` THEN excluded.hostname_source
 		     ELSE devices.hostname_source END,
 		   vendor = COALESCE(NULLIF(excluded.vendor,''), devices.vendor),
 		   kind = COALESCE(NULLIF(excluded.kind,''), devices.kind),
@@ -95,15 +151,8 @@ func (s *Store) UpsertDevice(ctx context.Context, d *Device) error {
 // over an NBNS-derived group, etc. Unknown / legacy prefixes return 0 so any
 // sourced group can replace them.
 func GroupSourcePriority(groupID string) int {
-	switch {
-	case strings.HasPrefix(groupID, "agent:"):
-		return 5
-	case strings.HasPrefix(groupID, "mdns:"):
-		return 4
-	case strings.HasPrefix(groupID, "nbns:"):
-		return 3
-	case strings.HasPrefix(groupID, "rdns:"):
-		return 2
+	if i := strings.IndexByte(groupID, ':'); i > 0 {
+		return HostnameSourcePriority(groupID[:i])
 	}
 	return 0
 }
@@ -121,22 +170,74 @@ func (s *Store) SetDeviceGroup(ctx context.Context, deviceID, groupID string) er
 		return err
 	}
 	incoming := GroupSourcePriority(groupID)
+	storedCase := groupSourceSQLCase("device_group_id")
 	_, err := s.DB.ExecContext(ctx,
 		`UPDATE devices SET device_group_id = ?
 		 WHERE id = ?
 		   AND (device_group_id IS NULL
 		        OR device_group_id = ?
-		        OR ? >= CASE
-		             WHEN device_group_id LIKE 'agent:%' THEN 5
-		             WHEN device_group_id LIKE 'mdns:%'  THEN 4
-		             WHEN device_group_id LIKE 'nbns:%'  THEN 3
-		             WHEN device_group_id LIKE 'rdns:%'  THEN 2
-		             ELSE 0 END)`,
+		        OR ? >= `+storedCase+`)`,
 		groupID, deviceID, groupID, incoming)
 	return err
 }
 
-// AddHostname records (device, name, source) as an alias bucket. Bumps
+// BackfillAgentGroup ensures every device row associated with the given
+// agent is assigned to that agent's canonical group ("agent:<agentID>").
+// It catches two classes of stale rows that the per-NIC inventory upsert
+// loop would otherwise miss:
+//
+//  1. Rows already attributed to this agent (devices.agent_id = agentID)
+//     whose group was never set — typically transient virtual NICs
+//     (utun*, awdl0, llw0, …) that the agent reported once but no longer
+//     reports.
+//  2. Rows for the agent's own hostname that were originally created by
+//     another agent's discovery (kind/source = mdns/nbns/rdns) and so
+//     never touched the inventory upsert path. macOS per-SSID MAC
+//     randomization makes this common: another agent ARPs the macbook's
+//     current Wi-Fi MAC and tags it `mdns:<hostname>`, while the macbook
+//     agent itself reports a different (or rotated) MAC in inventory.
+//
+// Group-overwrite respects source priority (agent > mdns > nbns > rdns):
+// existing higher-priority groups are never clobbered.
+func (s *Store) BackfillAgentGroup(ctx context.Context, agentID, hostname string) error {
+	if agentID == "" {
+		return nil
+	}
+	target := "agent:" + agentID
+	// (1) Rows tagged with this agent_id and no group.
+	if _, err := s.DB.ExecContext(ctx,
+		`UPDATE devices
+		    SET device_group_id = ?
+		  WHERE agent_id = ?
+		    AND (device_group_id IS NULL OR device_group_id = '')`,
+		target, agentID); err != nil {
+		return err
+	}
+	// (2) Rows whose hostname matches the agent's hostname and whose
+	// current group has lower priority than 'agent:' (5). We compare on
+	// normalized hostname (lowercased, trailing '.' and '.local' stripped)
+	// so "Walljm-Macbook-2.local" and "walljm-macbook-2" match.
+	if hostname == "" {
+		return nil
+	}
+	norm := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(hostname)), ".")
+	norm = strings.TrimSuffix(norm, ".local")
+	if norm == "" {
+		return nil
+	}
+	_, err := s.DB.ExecContext(ctx,
+		`UPDATE devices
+		    SET device_group_id = ?,
+		        agent_id = COALESCE(NULLIF(agent_id,''), ?)
+		  WHERE LOWER(REPLACE(REPLACE(IFNULL(hostname,''), '.local', ''), '.', '')) =
+		        REPLACE(?, '.', '')
+		    AND (device_group_id IS NULL
+		         OR device_group_id = ''
+		         OR device_group_id = ?
+		         OR (device_group_id NOT LIKE 'agent:%'))`,
+		target, agentID, norm, target)
+	return err
+}
 // last_seen_at and count on collision.
 func (s *Store) AddHostname(ctx context.Context, deviceID, name, source string, t time.Time) error {
 	if name == "" || source == "" {
@@ -282,6 +383,66 @@ func compareIP(a, b string) int {
 		}
 	}
 	return 0
+}
+
+// ListRecentDevices returns the most recently first-seen devices, newest
+// first, limited. Useful for "newly discovered" dashboard panels.
+func (s *Store) ListRecentDevices(ctx context.Context, limit int) ([]*Device, error) {
+	if limit <= 0 {
+		limit = 5
+	}
+	rows, err := s.DB.QueryContext(ctx,
+		`SELECT id, COALESCE(mac,''), COALESCE(ip,''), COALESCE(hostname,''),
+		        COALESCE(hostname_source,''),
+		        COALESCE(vendor,''), first_seen_at, last_seen_at,
+		        COALESCE(seen_by_agent,''), COALESCE(kind,''), COALESCE(notes,''),
+		        COALESCE(agent_id,''), COALESCE(services_json,''),
+		        COALESCE(device_group_id,'')
+		 FROM devices
+		 ORDER BY first_seen_at DESC, id ASC
+		 LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Device
+	for rows.Next() {
+		var d Device
+		var fs, ls string
+		if err := rows.Scan(&d.ID, &d.MAC, &d.IP, &d.Hostname, &d.HostnameSource, &d.Vendor,
+			&fs, &ls, &d.SeenByAgent, &d.Kind, &d.Notes, &d.AgentID, &d.ServicesJSON, &d.GroupID); err != nil {
+			return nil, err
+		}
+		d.FirstSeenAt, _ = time.Parse(time.RFC3339, fs)
+		d.LastSeenAt, _ = time.Parse(time.RFC3339, ls)
+		out = append(out, &d)
+	}
+	return out, rows.Err()
+}
+
+// DeviceStats summarizes the devices table for dashboard KPIs.
+type DeviceStats struct {
+	Total            int // distinct device rows
+	Groups           int // distinct logical machines (grouped + each ungrouped row)
+	NewLast24h       int // rows whose first_seen_at is within the last 24h
+	UngroupedNoAgent int // rows with no group AND not attributed to an agent
+}
+
+// DeviceStats returns aggregate counts for the devices table. All counts
+// come from a single round trip.
+func (s *Store) DeviceStats(ctx context.Context) (DeviceStats, error) {
+	var st DeviceStats
+	cutoff := time.Now().UTC().Add(-24 * time.Hour).Format(time.RFC3339)
+	err := s.DB.QueryRowContext(ctx,
+		`SELECT
+		   COUNT(*),
+		   COUNT(DISTINCT COALESCE(NULLIF(device_group_id,''), '_ungrouped:' || id)),
+		   COALESCE(SUM(CASE WHEN first_seen_at >= ? THEN 1 ELSE 0 END), 0),
+		   COALESCE(SUM(CASE WHEN (device_group_id IS NULL OR device_group_id = '')
+		                      AND (agent_id IS NULL OR agent_id = '') THEN 1 ELSE 0 END), 0)
+		 FROM devices`, cutoff).
+		Scan(&st.Total, &st.Groups, &st.NewLast24h, &st.UngroupedNoAgent)
+	return st, err
 }
 
 // GetDevice returns a single device.

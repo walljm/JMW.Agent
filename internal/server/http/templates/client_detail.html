@@ -38,7 +38,7 @@
     </div>
     <div class="card">
       <div class="card-label">Uptime</div>
-      <div class="card-value">{{.UptimeSeconds}}s</div>
+      <div class="card-value">{{humanDuration .UptimeSeconds}}</div>
     </div>
     {{else}}
     <p class="muted">No metrics received yet.</p>
@@ -56,11 +56,12 @@
     <div class="tabs" data-tabs>
       <div class="tablist" role="tablist">
         <button type="button" class="tab" role="tab" data-tab="overview" aria-selected="true">Overview</button>
-        {{if .Disks}}<button type="button" class="tab" role="tab" data-tab="storage" aria-selected="false">Storage</button>{{end}}
+        {{if or .Disks .Filesystems}}<button type="button" class="tab" role="tab" data-tab="storage" aria-selected="false">Storage</button>{{end}}
         <button type="button" class="tab" role="tab" data-tab="network" aria-selected="false">Network</button>
+        {{if .Security}}<button type="button" class="tab" role="tab" data-tab="security" aria-selected="false">Security</button>{{end}}
         {{if .Docker}}{{if .Docker.Reachable}}<button type="button" class="tab" role="tab" data-tab="docker" aria-selected="false">Docker</button>{{end}}{{end}}
-        {{if or .Users (or .Listening .Processes)}}<button type="button" class="tab" role="tab" data-tab="activity" aria-selected="false">Activity</button>{{end}}
-        {{if or .Reboots .Packages}}<button type="button" class="tab" role="tab" data-tab="system" aria-selected="false">System</button>{{end}}
+        {{if or .Users (or .Listening (or .Processes .LocalUsers))}}<button type="button" class="tab" role="tab" data-tab="activity" aria-selected="false">Activity</button>{{end}}
+        {{if or .Reboots (or .Packages (or .Updates .Services))}}<button type="button" class="tab" role="tab" data-tab="system" aria-selected="false">System</button>{{end}}
       </div>
 
       <div class="tabpanel" role="tabpanel" data-panel="overview">
@@ -75,6 +76,33 @@
           <tr><th>Virtualization</th><td>{{.Hardware.Virtualization}}</td></tr>
         </table>
 
+        {{if .Chassis}}
+        <h3>Chassis</h3>
+        <table class="kv">
+          <tr><th>Form factor</th><td>{{.Chassis.Type}}</td></tr>
+          {{with .Chassis.Battery}}
+          <tr><th>Battery</th><td>
+            {{if gt .ChargePercent 0.0}}{{printf "%.0f%%" .ChargePercent}} charged · {{end}}
+            {{if .State}}{{.State}}{{end}}
+            {{if gt .HealthPercent 0.0}} · health {{printf "%.0f%%" .HealthPercent}}{{end}}
+            {{if gt .CycleCount 0}} · {{.CycleCount}} cycles{{end}}
+          </td></tr>
+          {{end}}
+        </table>
+        {{end}}
+
+        {{if .GPUs}}
+        <h3>Graphics ({{len .GPUs}})</h3>
+        <table>
+          <thead><tr><th>Vendor</th><th>Model</th><th>Driver</th><th>VRAM</th></tr></thead>
+          <tbody>
+          {{range .GPUs}}
+            <tr><td>{{.Vendor}}</td><td>{{.Model}}</td><td>{{.DriverVersion}}</td><td>{{if gt .VRAMBytes 0}}{{humanBytes .VRAMBytes}}{{end}}</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{end}}
+
         <h3>Operating System</h3>
         <table class="kv">
           <tr><th>Distro</th><td>{{.OS.Distro}} {{.OS.Version}} {{if .OS.Build}}(build {{.OS.Build}}){{end}}</td></tr>
@@ -86,11 +114,12 @@
         </table>
       </div>
 
-      {{if .Disks}}
+      {{if or .Disks .Filesystems}}
       <div class="tabpanel" role="tabpanel" data-panel="storage" hidden>
+        {{if .Disks}}
         <h3>Disks ({{len .Disks}})</h3>
         <table>
-          <thead><tr><th>Device</th><th>Model</th><th>Size</th><th>Type</th><th>Partitions</th></tr></thead>
+          <thead><tr><th>Device</th><th>Model</th><th>Size</th><th>Type</th><th>Health</th><th>Partitions</th></tr></thead>
           <tbody>
           {{range .Disks}}
             <tr>
@@ -98,6 +127,16 @@
               <td>{{.Model}}{{if .Serial}}<br><span class="muted">S/N {{.Serial}}</span>{{end}}</td>
               <td>{{humanBytes .SizeBytes}}</td>
               <td>{{.Type}}</td>
+              <td>
+                {{with .SMART}}
+                  <span class="badge state-{{if eq .OverallHealth "PASSED"}}running{{else if eq .OverallHealth "FAILED"}}exited{{else}}created{{end}}">{{.OverallHealth}}</span>
+                  {{if gt .TemperatureCelsius 0.0}}<br><span class="muted">{{printf "%.0f°C" .TemperatureCelsius}}</span>{{end}}
+                  {{if gt .PowerOnHours 0}}<br><span class="muted">{{.PowerOnHours}} hrs on</span>{{end}}
+                  {{if gt .PercentageUsed 0.0}}<br><span class="muted">NVMe used {{printf "%.0f%%" .PercentageUsed}}</span>{{end}}
+                  {{if gt .MediaWearoutPercent 0.0}}<br><span class="muted">wear {{printf "%.0f%%" .MediaWearoutPercent}}</span>{{end}}
+                  {{if gt .ReallocatedSectors 0}}<br><span class="muted">realloc {{.ReallocatedSectors}}</span>{{end}}
+                {{else}}<span class="muted">—</span>{{end}}
+              </td>
               <td>
                 {{range .Partitions}}
                   <div>{{.Name}}{{if .Mountpoint}} → {{.Mountpoint}} ({{.FSType}}){{end}} · {{humanBytes .SizeBytes}}</div>
@@ -107,6 +146,27 @@
           {{end}}
           </tbody>
         </table>
+        {{end}}
+
+        {{if .Filesystems}}
+        <h3>Filesystems ({{len .Filesystems}})</h3>
+        <table>
+          <thead><tr><th>Mount</th><th>Device</th><th>Type</th><th>Used</th><th>Free</th><th>Total</th><th>Use %</th></tr></thead>
+          <tbody>
+          {{range .Filesystems}}
+            <tr>
+              <td>{{.Mountpoint}}</td>
+              <td class="mono small">{{.Device}}</td>
+              <td>{{.FSType}}</td>
+              <td>{{humanBytes .UsedBytes}}</td>
+              <td>{{humanBytes .FreeBytes}}</td>
+              <td>{{humanBytes .TotalBytes}}</td>
+              <td>{{if gt .TotalBytes 0}}{{printf "%.0f%%" (divf .UsedBytes (divf .TotalBytes 100.0))}}{{end}}</td>
+            </tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{end}}
       </div>
       {{end}}
 
@@ -149,6 +209,54 @@
         {{end}}
       </div>
 
+      {{if .Security}}
+      <div class="tabpanel" role="tabpanel" data-panel="security" hidden>
+        {{with .Security}}
+        <h3>Posture</h3>
+        <table class="kv">
+          {{with .Firewall}}
+          <tr><th>Firewall</th><td>{{.Provider}} · <span class="badge state-{{if .Enabled}}running{{else}}exited{{end}}">{{if .Enabled}}enabled{{else}}disabled{{end}}</span>{{if .Default}} · default {{.Default}}{{end}}{{if .Profiles}} · {{range .Profiles}}{{.}} {{end}}{{end}}</td></tr>
+          {{end}}
+          {{if .TPMPresent}}<tr><th>TPM</th><td>{{if deref .TPMPresent}}<span class="badge state-running">present</span>{{if .TPMVersion}} v{{.TPMVersion}}{{end}}{{else}}<span class="badge state-exited">absent</span>{{end}}</td></tr>{{end}}
+          {{if .SecureBoot}}<tr><th>Secure Boot</th><td>{{if deref .SecureBoot}}<span class="badge state-running">on</span>{{else}}<span class="badge state-exited">off</span>{{end}}</td></tr>{{end}}
+          {{if .SELinuxMode}}<tr><th>SELinux / SIP</th><td>{{.SELinuxMode}}</td></tr>{{end}}
+          {{if .AppArmorMode}}<tr><th>AppArmor</th><td>{{.AppArmorMode}}</td></tr>{{end}}
+        </table>
+
+        {{if .AntiVirus}}
+        <h3>AntiVirus / EDR ({{len .AntiVirus}})</h3>
+        <table>
+          <thead><tr><th>Product</th><th>Enabled</th><th>Realtime</th><th>Up to date</th><th>Signatures</th><th>Last scan</th></tr></thead>
+          <tbody>
+          {{range .AntiVirus}}
+            <tr>
+              <td>{{.Name}}</td>
+              <td><span class="badge state-{{if .Enabled}}running{{else}}exited{{end}}">{{if .Enabled}}yes{{else}}no{{end}}</span></td>
+              <td>{{if .RealtimeProtected}}✓{{else}}✗{{end}}</td>
+              <td>{{if .UpToDate}}✓{{else}}✗{{end}}</td>
+              <td>{{.SignatureVersion}}{{if .SignatureAge}} <span class="muted">({{.SignatureAge}})</span>{{end}}</td>
+              <td>{{shortTime .LastScan}}</td>
+            </tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{end}}
+
+        {{if .DiskEncryption}}
+        <h3>Disk Encryption ({{len .DiskEncryption}})</h3>
+        <table>
+          <thead><tr><th>Mount</th><th>Device</th><th>Type</th><th>Status</th></tr></thead>
+          <tbody>
+          {{range .DiskEncryption}}
+            <tr><td>{{.Mountpoint}}</td><td class="mono small">{{.Device}}</td><td>{{.Type}}</td><td><span class="badge state-{{if eq .Status "on"}}running{{else}}exited{{end}}">{{.Status}}</span></td></tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{end}}
+        {{end}}
+      </div>
+      {{end}}
+
       {{if .Docker}}{{if .Docker.Reachable}}
       <div class="tabpanel" role="tabpanel" data-panel="docker" hidden>
         <p class="muted">Docker v{{.Docker.Version}} · {{len .Docker.Containers}} containers, {{len .Docker.Images}} images{{with .Docker.Engine}}{{if .OSType}} · {{.OSType}}/{{.Architecture}}{{end}}{{if .StorageDriver}} · {{.StorageDriver}}{{end}}{{end}}</p>
@@ -181,7 +289,7 @@
       </div>
       {{end}}{{end}}
 
-      {{if or .Users (or .Listening .Processes)}}
+      {{if or .Users (or .Listening (or .Processes .LocalUsers))}}
       <div class="tabpanel" role="tabpanel" data-panel="activity" hidden>
         {{if .Users}}
         <h3>Logged-in Users ({{len .Users}})</h3>
@@ -190,6 +298,27 @@
           <tbody>
           {{range .Users}}
             <tr><td>{{.User}}</td><td>{{.TTY}}</td><td>{{.Host}}</td><td>{{shortTime .LoginAt}}</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{end}}
+
+        {{if .LocalUsers}}
+        <h3>Local Accounts ({{len .LocalUsers}})</h3>
+        <table>
+          <thead><tr><th>Name</th><th>UID</th><th>Admin</th><th>Disabled</th><th>Shell</th><th>Home</th><th>Last login</th><th>Pwd age</th></tr></thead>
+          <tbody>
+          {{range .LocalUsers}}
+            <tr>
+              <td>{{.Name}}</td>
+              <td class="mono small">{{.UID}}</td>
+              <td>{{if .IsAdmin}}<span class="badge state-running">admin</span>{{end}}</td>
+              <td>{{if .Disabled}}<span class="badge state-exited">disabled</span>{{end}}</td>
+              <td class="mono small">{{.Shell}}</td>
+              <td class="mono small">{{.HomeDir}}</td>
+              <td>{{shortTime .LastLogin}}</td>
+              <td>{{if gt .PasswordAge 0}}{{.PasswordAge}}d{{end}}</td>
+            </tr>
           {{end}}
           </tbody>
         </table>
@@ -221,8 +350,39 @@
       </div>
       {{end}}
 
-      {{if or .Reboots .Packages}}
+      {{if or .Reboots (or .Packages (or .Updates .Services))}}
       <div class="tabpanel" role="tabpanel" data-panel="system" hidden>
+        {{with .Updates}}
+        <h3>Updates ({{.Manager}})</h3>
+        <table class="kv">
+          <tr><th>Pending</th><td>{{.Pending}}{{if gt .Security 0}} <span class="badge state-exited">{{.Security}} security</span>{{end}}</td></tr>
+          <tr><th>Reboot required</th><td>{{if .RebootRequired}}<span class="badge state-exited">yes</span>{{else}}no{{end}}</td></tr>
+          <tr><th>Checked</th><td>{{shortTime .CheckedAt}}</td></tr>
+        </table>
+        {{if .Updates}}
+        <table>
+          <thead><tr><th>Name</th><th>Current</th><th>New</th><th>Source</th><th>Security</th></tr></thead>
+          <tbody>
+          {{range .Updates}}
+            <tr><td>{{.Name}}</td><td class="mono small">{{.CurrentVersion}}</td><td class="mono small">{{.NewVersion}}</td><td>{{.Source}}</td><td>{{if .Security}}<span class="badge state-exited">sec</span>{{end}}</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{end}}
+        {{end}}
+
+        {{if .Services}}
+        <h3>Abnormal Services ({{len .Services}})</h3>
+        <table>
+          <thead><tr><th>Name</th><th>Display name</th><th>State</th><th>Sub</th><th>Start mode</th><th>Exit</th></tr></thead>
+          <tbody>
+          {{range .Services}}
+            <tr><td class="mono small">{{.Name}}</td><td>{{.DisplayName}}</td><td><span class="badge state-exited">{{.State}}</span></td><td>{{.SubState}}</td><td>{{.StartMode}}</td><td>{{if ne .ExitCode 0}}{{.ExitCode}}{{end}}</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{end}}
+
         {{if .Reboots}}
         <h3>Reboot History ({{len .Reboots}})</h3>
         <table>

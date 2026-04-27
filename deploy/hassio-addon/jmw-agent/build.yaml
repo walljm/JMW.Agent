@@ -1,0 +1,6 @@
+# Maps each supported architecture to a Home Assistant base image.
+# These images bundle bashio + s6-overlay; we only use bashio for run.sh.
+build_from:
+  aarch64: ghcr.io/home-assistant/aarch64-base:3.19
+  amd64: ghcr.io/home-assistant/amd64-base:3.19
+  armv7: ghcr.io/home-assistant/armv7-base:3.19

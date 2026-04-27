@@ -54,6 +54,7 @@ func (s *Server) containersList(w http.ResponseWriter, r *http.Request) {
 		"Projects":   projects,
 		"Filter":     filter,
 		"Stats":      stats,
+		"States":     []string{"running", "exited", "paused", "restarting", "created", "dead"},
 	})
 }
 

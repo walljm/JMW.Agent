@@ -15,7 +15,7 @@
     <input type="search" name="q" value="{{.Filter.Search}}" placeholder="name or image..." />
     <select name="state">
       <option value="">All states</option>
-      {{range $s := (slice "running" "exited" "paused" "restarting" "created" "dead")}}
+      {{range $s := .States}}
         <option value="{{$s}}" {{if eq $.Filter.State $s}}selected{{end}}>{{$s}}</option>
       {{end}}
     </select>

@@ -631,3 +631,6 @@ MigrationBackup/
 src/Server/JMW.Agent.Server/jmw.agent.sqlite-shm
 src/Server/JMW.Agent.Server/jmw.agent.sqlite-wal
 .sdev/
+
+
+**/.playwright-mcp/

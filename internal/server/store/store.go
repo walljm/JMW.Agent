@@ -50,6 +50,20 @@ func (s *Store) Close() error {
 	return s.DB.Close()
 }
 
+// DBSize returns the on-disk size of the SQLite database in bytes,
+// computed as page_count * page_size. This includes the WAL only after a
+// checkpoint, but is accurate enough for dashboard display.
+func (s *Store) DBSize(ctx context.Context) (int64, error) {
+	var pages, pageSize int64
+	if err := s.DB.QueryRowContext(ctx, `PRAGMA page_count`).Scan(&pages); err != nil {
+		return 0, err
+	}
+	if err := s.DB.QueryRowContext(ctx, `PRAGMA page_size`).Scan(&pageSize); err != nil {
+		return 0, err
+	}
+	return pages * pageSize, nil
+}
+
 func (s *Store) migrate(ctx context.Context) error {
 	// Bootstrap migration table.
 	if _, err := s.DB.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`); err != nil {

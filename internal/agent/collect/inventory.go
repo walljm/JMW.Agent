@@ -17,11 +17,13 @@ import (
 
 // Inventory builds a full Inventory snapshot. Includes packages only if includePackages is true.
 func Inventory(ctx context.Context, includePackages bool) proto.Inventory {
+	disks := collectDisks(ctx)
+	enrichDiskSMART(ctx, disks)
 	inv := proto.Inventory{
 		CollectedAt: time.Now().UTC(),
 		Hardware:    collectHardware(ctx),
 		OS:          collectOS(ctx),
-		Disks:       collectDisks(ctx),
+		Disks:       disks,
 		Network:     collectNetwork(ctx),
 		Routes:      collectRoutes(ctx),
 		Users:       collectUsers(ctx),
@@ -29,10 +31,38 @@ func Inventory(ctx context.Context, includePackages bool) proto.Inventory {
 		Processes:   collectProcesses(ctx),
 		Reboots:     collectReboots(ctx),
 		Docker:      collectDocker(ctx),
+		Hassio:      collectHassio(ctx),
+		Filesystems: collectFilesystems(ctx),
+		Updates:     collectUpdates(ctx),
+		Services:    collectServices(ctx),
+		Security:    collectSecurity(ctx),
+		GPUs:        collectGPUs(ctx),
+		Chassis:     collectChassis(ctx),
+		LocalUsers:  collectLocalUsers(ctx),
 	}
 	if includePackages {
 		if pkgs := collectPackages(ctx); pkgs != nil {
 			inv.Packages = pkgs
+		}
+	}
+	// When running as an HA add-on, the container's /etc/os-release describes
+	// the add-on base image (e.g. Alpine 3.19), not the host. Supervisor's
+	// /host/info knows the real host — overlay those fields onto OSInfo so
+	// the dashboard shows the actual HAOS version + kernel + hostname.
+	if inv.Hassio != nil {
+		if inv.Hassio.HostOS != "" {
+			inv.OS.Distro = inv.Hassio.HostOS
+			inv.OS.Version = inv.Hassio.HostOS
+			inv.OS.Build = ""
+		}
+		if inv.Hassio.HostKernel != "" {
+			inv.OS.Kernel = inv.Hassio.HostKernel
+		}
+		if inv.Hassio.Hostname != "" {
+			inv.OS.Hostname = inv.Hassio.Hostname
+		}
+		if !inv.Hassio.BootTime.IsZero() {
+			inv.OS.BootTime = inv.Hassio.BootTime
 		}
 	}
 	return inv

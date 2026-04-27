@@ -113,24 +113,28 @@ func parseNBSTATReply(pkt []byte) string {
 	}
 	num := int(pkt[off])
 	off++
-	for i := 0; i < num && off+18 <= len(pkt); i++ {
-		nameRaw := pkt[off : off+15]
-		typ := pkt[off+15]
-		flags := binary.BigEndian.Uint16(pkt[off+16 : off+18])
-		off += 18
-		if flags&0x8000 != 0 { // group
-			continue
+	// Pass 1 prefers workstation/server (0x00, 0x20). Pass 2 falls back to
+	// messenger (0x03) and any other non-group entry — better a less ideal
+	// name than no name at all.
+	for pass := 0; pass < 2; pass++ {
+		o := off
+		for i := 0; i < num && o+18 <= len(pkt); i++ {
+			nameRaw := pkt[o : o+15]
+			typ := pkt[o+15]
+			flags := binary.BigEndian.Uint16(pkt[o+16 : o+18])
+			o += 18
+			if flags&0x8000 != 0 { // group
+				continue
+			}
+			if pass == 0 && typ != 0x00 && typ != 0x20 {
+				continue
+			}
+			name := strings.TrimSpace(string(nameRaw))
+			if name == "" || strings.Contains(name, "__MSBROWSE__") {
+				continue
+			}
+			return strings.ToLower(name)
 		}
-		// Workstation (0x00) or File Server / messenger (0x20) is what we want.
-		if typ != 0x00 && typ != 0x20 {
-			continue
-		}
-		name := strings.TrimSpace(string(nameRaw))
-		if name == "" || strings.Contains(name, "__MSBROWSE__") {
-			continue
-		}
-		// NetBIOS names are conventionally upper-case; normalize for display.
-		return strings.ToLower(name)
 	}
 	return ""
 }

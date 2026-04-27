@@ -192,6 +192,8 @@ func sendDiscoveries(ctx context.Context, cli *transport.Client, id string) erro
 			IP:              s.IP,
 			MAC:             s.MAC,
 			Hostname:        s.Hostname,
+			Vendor:          s.Vendor,
+			Kind:            s.Kind,
 			Method:          s.Method,
 			SeenAt:          s.SeenAt,
 			Services:        s.Services,
