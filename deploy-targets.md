@@ -3,3 +3,4 @@ walljm@192.168.1.52 - client (walljm-asus-lt)
 walljm@192.168.1.53 - client (cloud)
 walljm@192.168.1.70 - nas (docker deploy)
 walljm@192.168.1.231 - nas (docker deploy)
+localhost - this macbook

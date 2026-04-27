@@ -90,24 +90,49 @@ func (s *Store) UpsertDevice(ctx context.Context, d *Device) error {
 	return err
 }
 
+// GroupSourcePriority ranks a group ID by its source prefix. Higher = more
+// authoritative. Mirrors HostnameSourcePriority so an mDNS group always wins
+// over an NBNS-derived group, etc. Unknown / legacy prefixes return 0 so any
+// sourced group can replace them.
+func GroupSourcePriority(groupID string) int {
+	switch {
+	case strings.HasPrefix(groupID, "agent:"):
+		return 5
+	case strings.HasPrefix(groupID, "mdns:"):
+		return 4
+	case strings.HasPrefix(groupID, "nbns:"):
+		return 3
+	case strings.HasPrefix(groupID, "rdns:"):
+		return 2
+	}
+	return 0
+}
+
 // SetDeviceGroup assigns a device to a group. Setting groupID to "" clears
-// the assignment. Agent-source groups ("agent:...") are sticky: once a row
-// belongs to an agent group, it cannot be reassigned via this call (so a
-// stray mDNS sighting can't unstick a managed NIC, and we never silently
-// reassign a NIC between two agent groups).
+// the assignment. Group assignment is priority-aware by source prefix
+// (agent > mdns > nbns > rdns): an incoming groupID only replaces the stored
+// one when its priority is >= the stored value's. This keeps a NAS that
+// announces via mDNS from being un-grouped by a later rDNS-only sighting,
+// and prevents an mDNS sighting from stealing a NIC away from its agent.
 func (s *Store) SetDeviceGroup(ctx context.Context, deviceID, groupID string) error {
 	if groupID == "" {
 		_, err := s.DB.ExecContext(ctx,
 			`UPDATE devices SET device_group_id = NULL WHERE id = ?`, deviceID)
 		return err
 	}
+	incoming := GroupSourcePriority(groupID)
 	_, err := s.DB.ExecContext(ctx,
 		`UPDATE devices SET device_group_id = ?
 		 WHERE id = ?
 		   AND (device_group_id IS NULL
 		        OR device_group_id = ?
-		        OR device_group_id NOT LIKE 'agent:%')`,
-		groupID, deviceID, groupID)
+		        OR ? >= CASE
+		             WHEN device_group_id LIKE 'agent:%' THEN 5
+		             WHEN device_group_id LIKE 'mdns:%'  THEN 4
+		             WHEN device_group_id LIKE 'nbns:%'  THEN 3
+		             WHEN device_group_id LIKE 'rdns:%'  THEN 2
+		             ELSE 0 END)`,
+		groupID, deviceID, groupID, incoming)
 	return err
 }
 
