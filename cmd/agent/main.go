@@ -139,6 +139,19 @@ func run(ctx context.Context, cfg *agentcfg.Config, cfgPath, id string) error {
 		}
 		slog.Info("initial inventory: sent", "elapsed", time.Since(t0))
 	}()
+	// Send first discovery scan immediately (best-effort). On a fresh
+	// deploy the agent's behaviour may have changed (new probes, new
+	// hostname rules, etc.) and we want the server to see those results
+	// without waiting a full heartbeat interval.
+	go func() {
+		slog.Info("initial discovery: scanning")
+		t0 := time.Now()
+		if err := sendDiscoveries(ctx, cli, id); err != nil {
+			slog.Warn("initial discovery", "err", err, "elapsed", time.Since(t0))
+			return
+		}
+		slog.Info("initial discovery: sent", "elapsed", time.Since(t0))
+	}()
 
 	for {
 		select {
