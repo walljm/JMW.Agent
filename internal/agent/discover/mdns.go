@@ -211,7 +211,14 @@ func buildMDNSQuery(name string, qtype uint16) ([]byte, error) {
 	b = append(b, enc...)
 	var qt [2]byte
 	binary.BigEndian.PutUint16(qt[:], qtype)
-	b = append(b, qt[0], qt[1], 0, 1)
+	// qclass = IN (1) with the top bit (QU) set, asking responders to
+	// unicast their reply directly to our source port. Without QU, mDNS
+	// responses go to multicast 5353 — which we can't bind on macOS
+	// (mDNSResponder owns it) and don't bind on other platforms either,
+	// so the SRV/TXT records never reach us and `fn`/`n`/`nm` friendly
+	// names get lost. With QU set, responders reply to our ephemeral
+	// port and the full record set arrives.
+	b = append(b, qt[0], qt[1], 0x80, 1)
 	return b, nil
 }
 

@@ -101,7 +101,14 @@ func ScanARP() []Sighting {
 	for i := range out {
 		ip := out[i].IP
 		if info, ok := mdns[ip]; ok {
-			if info.Hostname != "" {
+			// Only report mdns hostnames that look human-meaningful.
+			// Google Cast / IoT devices fall back to UUID-shaped SRV
+			// targets when the friendly TXT key (`fn`) isn't received;
+			// reporting that UUID as our `mdns` source would overwrite
+			// any previously-stored friendly name on the server (same
+			// source, equal priority → latest wins). Skipping leaves
+			// the existing friendly intact.
+			if info.Hostname != "" && !looksLikeUUIDHost(info.Hostname) {
 				addSource(&out[i], "mdns", info.Hostname)
 			}
 			out[i].Services = info.Services
