@@ -4,6 +4,7 @@
 # Usage:
 #   scripts/deploy-agent.sh <nickname>
 #   scripts/deploy-agent.sh --all
+#   scripts/deploy-agent.sh --publish [--tag <extra-tag>]
 #
 # Reads host registry from scripts/hosts.tsv and the shared agent.toml
 # (server URL, PSK, pinned cert hash) from deploy/secrets/agent.toml.
@@ -11,6 +12,11 @@
 #   linux   -> /usr/local/bin/jmw-agent + /etc/jmw/agent.toml + systemd unit
 #   darwin  -> /usr/local/bin/jmw-agent + /usr/local/etc/jmw/agent.toml + launchd plist
 #   windows -> C:\Program Files\jmw-agent\jmw-agent.exe + C:\ProgramData\jmw-agent\agent.toml + Scheduled Task
+#
+# --publish builds & pushes a multi-arch (linux/amd64,linux/arm64) image to
+# Docker Hub at $DOCKER_HUB_REPO (default: walljm/jmw-agent), tagged with
+# `latest` and the current `git describe`. Push is gated to its own flag
+# so dev iteration on `--all` doesn't re-push every time.
 
 set -euo pipefail
 
@@ -216,15 +222,66 @@ usage() {
 usage: $0 <nickname>
        $0 --all
        $0 --list
+       $0 --publish [--tag <extra-tag>]
 
 Hosts:
 $(awk '$0 !~ /^#/ && NF >= 5 { printf "  %-15s %-15s %s/%s\n", $1, $2, $4, $5 }' "$HOSTS_FILE")
 EOF
 }
 
+# publish_docker_image builds a multi-arch container image of the agent
+# and pushes it to Docker Hub using buildx. Tagged as `latest` plus the
+# current git-describe (e.g. v1.2.0). Set DOCKER_HUB_REPO to override
+# the default repo. Requires `docker buildx` and a logged-in client.
+publish_docker_image() {
+  local repo="${DOCKER_HUB_REPO:-walljm/jmw-agent}"
+  local extra_tag="$1" # optional caller-supplied additional tag
+  local version
+  version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
+
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "docker not found in PATH — cannot publish" >&2
+    return 1
+  fi
+  if ! docker buildx version >/dev/null 2>&1; then
+    echo "docker buildx not available — install/enable buildx and retry" >&2
+    return 1
+  fi
+
+  # Reuse a named builder so the cache survives across invocations.
+  if ! docker buildx inspect jmw-builder >/dev/null 2>&1; then
+    docker buildx create --name jmw-builder --use >/dev/null
+  else
+    docker buildx use jmw-builder >/dev/null
+  fi
+
+  local tag_args=( -t "${repo}:${version}" -t "${repo}:latest" )
+  if [[ -n "$extra_tag" ]]; then
+    tag_args+=( -t "${repo}:${extra_tag}" )
+  fi
+
+  echo "==> publishing ${repo} (tags: ${version}, latest${extra_tag:+, $extra_tag}) for linux/amd64,linux/arm64"
+  docker buildx build \
+    --platform linux/amd64,linux/arm64 \
+    --build-arg "VERSION=${version}" \
+    -f deploy/docker/Dockerfile.agent \
+    "${tag_args[@]}" \
+    --push \
+    .
+}
+
 case "${1:-}" in
   ""|-h|--help) usage; exit 0 ;;
   --list) list_all; exit 0 ;;
+  --publish)
+    shift
+    extra_tag=""
+    if [[ "${1:-}" == "--tag" ]]; then
+      extra_tag="${2:-}"
+      shift 2 || true
+    fi
+    publish_docker_image "$extra_tag"
+    ;;
   --all)
     for nick in $(list_all); do
       deploy_one "$nick" || echo "FAILED: $nick"

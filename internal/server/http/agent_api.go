@@ -170,12 +170,32 @@ func (s *Server) agentDiscoveries(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		var servicesJSON string
-		if len(sn.Services) > 0 || len(sn.TXT) > 0 || sn.Hostname != "" {
-			blob, err := json.Marshal(map[string]any{
+		if len(sn.Services) > 0 || len(sn.TXT) > 0 || sn.Hostname != "" || len(sn.Probes) > 0 {
+			payload := map[string]any{
 				"hostname": sn.Hostname,
 				"services": sn.Services,
 				"txt":      sn.TXT,
-			})
+			}
+			// Splay each known probe under its own top-level key so the
+			// detail page template can render it directly without a
+			// generic key-walker. Unknown probes still ship through under
+			// "probes" for forward-compat.
+			known := map[string]bool{
+				"eureka": true, "ipp": true, "roku": true, "airplay": true,
+				"ldap": true, "ssh_fp": true, "dhcp": true, "title": true,
+			}
+			extras := map[string]map[string]string{}
+			for k, v := range sn.Probes {
+				if known[k] {
+					payload[k] = v
+				} else {
+					extras[k] = v
+				}
+			}
+			if len(extras) > 0 {
+				payload["probes"] = extras
+			}
+			blob, err := json.Marshal(payload)
 			if err == nil {
 				servicesJSON = string(blob)
 			}
@@ -383,7 +403,7 @@ func pickBestHostname(srcs map[string]string) (string, string) {
 // most-to-least authoritative according to store.HostnameSourcePriority.
 // Mirrors discover.sourcesByPriority on the agent side.
 func hostnameSourcesByPriority() []string {
-	srcs := []string{"agent", "mdns", "llmnr", "smb", "nbns", "snmp", "wsd", "ssdp", "tls", "rdns", "http", "ssh"}
+	srcs := []string{"agent", "docker", "dhcp", "mdns", "llmnr", "smb", "nbns", "ldap", "snmp", "eureka", "ipp", "roku", "airplay", "wsd", "ssdp", "garp", "tls", "rdns", "http", "ssh"}
 	sort.Slice(srcs, func(i, j int) bool {
 		return store.HostnameSourcePriority(srcs[i]) > store.HostnameSourcePriority(srcs[j])
 	})

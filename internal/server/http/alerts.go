@@ -303,10 +303,23 @@ func compareIPStr(a, b string) int {
 	return 0
 }
 // MDNSProfile mirrors the JSON blob stored in devices.services_json.
+// Despite the name (kept for backwards-compat), it now carries the full
+// per-device probe payload, not just mDNS records.
 type MDNSProfile struct {
 	Hostname string            `json:"hostname,omitempty"`
 	Services []string          `json:"services,omitempty"`
 	TXT      map[string]string `json:"txt,omitempty"`
+	// Per-protocol probe payloads. Each is an opaque flat map of strings
+	// rendered as a labelled section on the device detail page.
+	Eureka  map[string]string `json:"eureka,omitempty"`
+	IPP     map[string]string `json:"ipp,omitempty"`
+	Roku    map[string]string `json:"roku,omitempty"`
+	AirPlay map[string]string `json:"airplay,omitempty"`
+	LDAP    map[string]string `json:"ldap,omitempty"`
+	SSHFP   map[string]string `json:"ssh_fp,omitempty"`
+	DHCP    map[string]string `json:"dhcp,omitempty"`
+	// Probes carries any future/unknown probe results sent by newer agents.
+	Probes map[string]map[string]string `json:"probes,omitempty"`
 }
 
 func (s *Server) deviceDetail(w http.ResponseWriter, r *http.Request) {

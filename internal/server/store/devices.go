@@ -40,6 +40,8 @@ func HostnameSourcePriority(src string) int {
 		return 100 // self-reported by a running agent (inventory)
 	case "docker":
 		return 95 // local container runtime is authoritative for its containers
+	case "dhcp":
+		return 93 // self-announced by client to its DHCP server
 	case "mdns":
 		return 90
 	case "llmnr":
@@ -48,12 +50,24 @@ func HostnameSourcePriority(src string) int {
 		return 80
 	case "nbns":
 		return 70
+	case "ldap":
+		return 68 // dnsHostName from rootDSE — solid for DCs
 	case "snmp":
 		return 65
+	case "eureka":
+		return 62 // Google Cast/Nest device-name
+	case "ipp":
+		return 60 // printer-name from IPP
+	case "roku":
+		return 58
+	case "airplay":
+		return 55
 	case "wsd":
-		return 60
+		return 52
 	case "ssdp":
 		return 50
+	case "garp":
+		return 45 // ARP entries scraped from gateway via SNMP
 	case "tls":
 		return 40
 	case "rdns":
@@ -72,7 +86,7 @@ func HostnameSourcePriority(src string) int {
 // place (HostnameSourcePriority above) and is mirrored into SQL on the fly
 // instead of being hand-maintained in every query.
 func hostnameSourceSQLCase(col string) string {
-	knownSources := []string{"agent", "docker", "mdns", "llmnr", "smb", "nbns", "snmp", "wsd", "ssdp", "tls", "rdns", "http", "ssh"}
+	knownSources := []string{"agent", "docker", "dhcp", "mdns", "llmnr", "smb", "nbns", "ldap", "snmp", "eureka", "ipp", "roku", "airplay", "wsd", "ssdp", "garp", "tls", "rdns", "http", "ssh"}
 	var b strings.Builder
 	b.WriteString("CASE ")
 	b.WriteString(col)
@@ -89,7 +103,7 @@ func hostnameSourceSQLCase(col string) string {
 // groupSourceSQLCase returns a SQL CASE expression that maps a group_id
 // column (e.g. 'agent:abc') to the priority of its source prefix.
 func groupSourceSQLCase(col string) string {
-	knownSources := []string{"agent", "docker", "mdns", "llmnr", "smb", "nbns", "snmp", "wsd", "ssdp", "tls", "rdns", "http", "ssh"}
+	knownSources := []string{"agent", "docker", "dhcp", "mdns", "llmnr", "smb", "nbns", "ldap", "snmp", "eureka", "ipp", "roku", "airplay", "wsd", "ssdp", "garp", "tls", "rdns", "http", "ssh"}
 	var b strings.Builder
 	b.WriteString("CASE")
 	for _, s := range knownSources {

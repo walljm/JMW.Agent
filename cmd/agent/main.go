@@ -212,6 +212,7 @@ func sendDiscoveries(ctx context.Context, cli *transport.Client, id string) erro
 			Services:        s.Services,
 			TXT:             s.TXT,
 			HostnameSources: s.HostnameSources,
+			Probes:          s.Probes,
 		})
 	}
 	_, err := cli.Discoveries(ctx, &proto.DiscoveryRequest{

@@ -104,6 +104,80 @@
       <p class="muted">No mDNS data captured.</p>
     {{end}}
   </section>
+
+  {{with .MDNS.Eureka}}
+  <section>
+    <h2>Google Cast / Nest <span class="muted small">(eureka)</span></h2>
+    <table class="kv">
+      {{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}
+    </table>
+  </section>
+  {{end}}
+
+  {{with .MDNS.IPP}}
+  <section>
+    <h2>Printer <span class="muted small">(ipp)</span></h2>
+    <table class="kv">
+      {{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}
+    </table>
+  </section>
+  {{end}}
+
+  {{with .MDNS.Roku}}
+  <section>
+    <h2>Roku <span class="muted small">(ecp)</span></h2>
+    <table class="kv">
+      {{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}
+    </table>
+  </section>
+  {{end}}
+
+  {{with .MDNS.AirPlay}}
+  <section>
+    <h2>AirPlay</h2>
+    <table class="kv">
+      {{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}
+    </table>
+  </section>
+  {{end}}
+
+  {{with .MDNS.LDAP}}
+  <section>
+    <h2>LDAP / Directory <span class="muted small">(rootDSE)</span></h2>
+    <table class="kv">
+      {{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}
+    </table>
+  </section>
+  {{end}}
+
+  {{with .MDNS.SSHFP}}
+  <section>
+    <h2>SSH host key</h2>
+    <table class="kv">
+      {{range $k, $v := .}}<tr><th>{{$k}}</th><td class="mono small">{{$v}}</td></tr>{{end}}
+    </table>
+  </section>
+  {{end}}
+
+  {{with .MDNS.DHCP}}
+  <section>
+    <h2>DHCP</h2>
+    <table class="kv">
+      {{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}
+    </table>
+  </section>
+  {{end}}
+
+  {{with .MDNS.Probes}}
+  {{range $name, $kv := .}}
+  <section>
+    <h2>{{$name}} <span class="muted small">(probe)</span></h2>
+    <table class="kv">
+      {{range $k, $v := $kv}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}
+    </table>
+  </section>
+  {{end}}
+  {{end}}
   {{else}}
   <section>
     <h2>mDNS</h2>

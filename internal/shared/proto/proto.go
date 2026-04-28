@@ -101,6 +101,11 @@ type Sighting struct {
 	Services        []string          `json:"services,omitempty"`
 	TXT             map[string]string `json:"txt,omitempty"`
 	HostnameSources map[string]string `json:"hostname_sources,omitempty"`
+	// Probes carries optional, per-protocol probe results. Each value is
+	// a flat string-keyed map so the server can store and render them
+	// without knowing the schema. Known keys: "eureka", "ipp", "roku",
+	// "airplay", "ldap", "dhcp", "ssh_fp", "title".
+	Probes map[string]map[string]string `json:"probes,omitempty"`
 }
 
 // DiscoveryRequest carries a batch of sightings from one agent.

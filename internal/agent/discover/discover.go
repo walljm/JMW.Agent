@@ -27,25 +27,36 @@ type Sighting struct {
 	// keyed by source name (see sourcePriority). The server uses this to
 	// track aliases and pick the best name by source priority.
 	HostnameSources map[string]string `json:"hostname_sources,omitempty"`
+	// Probes carries optional per-protocol identity blobs (eureka, ipp,
+	// roku, airplay, ldap, dhcp, ssh_fp, title). Sent as-is to the server
+	// and stored in services_json for rendering on the device detail page.
+	Probes map[string]map[string]string `json:"probes,omitempty"`
 }
 
 // sourcePriority ranks hostname sources from most to least authoritative.
 // Higher = better. Keep in sync with store.HostnameSourcePriority on the
 // server. New sources added here MUST also be added there.
 var sourcePriority = map[string]int{
-	"agent":  100,
-	"docker": 95,
-	"mdns":   90,
-	"llmnr": 85,
-	"smb":   80,
-	"nbns":  70,
-	"snmp":  65,
-	"wsd":   60,
-	"ssdp":  50,
-	"tls":   40,
-	"rdns":  30,
-	"http":  20,
-	"ssh":   15,
+	"agent":   100,
+	"docker":  95,
+	"dhcp":    93, // self-announced by client to its DHCP server
+	"mdns":    90,
+	"llmnr":   85,
+	"smb":     80,
+	"nbns":    70,
+	"ldap":    68, // dnsHostName from rootDSE — solid for DCs
+	"snmp":    65,
+	"eureka":  62, // Google Cast/Nest device-name
+	"ipp":     60, // printer-name from IPP
+	"roku":    58,
+	"airplay": 55,
+	"wsd":     52,
+	"ssdp":    50,
+	"garp":    45, // ARP entries scraped from gateway via SNMP
+	"tls":     40,
+	"rdns":    30,
+	"http":    20,
+	"ssh":     15,
 }
 
 // sourcesByPriority returns source names ordered most-to-least authoritative.
@@ -75,7 +86,73 @@ func sourcesByPriority() []string {
 //     into Sighting.Hostname.
 func ScanARP() []Sighting {
 	now := time.Now().UTC()
+
+	// --- Phase 0: prime the kernel ARP/neigh table. ---
+	// A multicast ICMP echo to 224.0.0.1 forces every reachable host to
+	// reply unicast; the kernel learns their MAC from the inbound frame
+	// regardless of whether userspace consumes the reply, so the next
+	// scanARP() read sees them. Best-effort: silent no-op if we lack
+	// raw-ICMP capability.
+	multicastPingPrime()
+
 	out := scanARP()
+
+	// --- Phase 0b: merge DHCP-server lease entries. ---
+	// When the agent runs on a DHCP server, leases are the most
+	// authoritative naming source we have (the client itself announced
+	// the name). Add any leased IPs we don't already have an ARP entry
+	// for, and stash the announced hostname on every match.
+	leases := dhcpLookup()
+	if len(leases) > 0 {
+		seenMAC := make(map[string]int, len(out))
+		for i, s := range out {
+			seenMAC[s.MAC] = i
+		}
+		for _, l := range leases {
+			if i, ok := seenMAC[l.MAC]; ok {
+				if l.Hostname != "" {
+					addSource(&out[i], "dhcp", l.Hostname)
+				}
+				continue
+			}
+			out = append(out, Sighting{
+				IP:       l.IP,
+				MAC:      l.MAC,
+				Method:   "dhcp",
+				SeenAt:   now,
+			})
+			if l.Hostname != "" {
+				addSource(&out[len(out)-1], "dhcp", l.Hostname)
+			}
+		}
+	}
+
+	// --- Phase 0c: merge gateway SNMP ARP table. ---
+	// If the gateway speaks SNMP (community "public" by default), pull
+	// its ipNetToMediaPhysAddress so we surface devices on VLANs the
+	// agent isn't on. Use a low-priority "garp" source that's beaten by
+	// any directly-observed name.
+	for _, e := range gatewayARPLookup(nil, 1500*time.Millisecond) {
+		found := false
+		for i, s := range out {
+			if s.MAC == e.MAC {
+				if s.IP == "" {
+					out[i].IP = e.IP
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			out = append(out, Sighting{
+				IP:     e.IP,
+				MAC:    e.MAC,
+				Method: "garp",
+				SeenAt: now,
+			})
+		}
+	}
+
 	for i := range out {
 		if out[i].SeenAt.IsZero() {
 			out[i].SeenAt = now
@@ -97,6 +174,26 @@ func ScanARP() []Sighting {
 	go func() { defer wg.Done(); ssdp = ssdpLookup(2500 * time.Millisecond) }()
 	go func() { defer wg.Done(); wsd = wsdLookup(2500 * time.Millisecond) }()
 	wg.Wait()
+
+	// Reverse-PTR follow-up over multicast: ask Avahi/mDNSResponder for
+	// any IP that didn't resolve in the forward sweep. This catches
+	// devices that don't advertise SRV/A but do answer reverse queries.
+	{
+		needs := make([]string, 0, len(out))
+		for _, s := range out {
+			if s.IP == "" {
+				continue
+			}
+			if info, ok := mdns[s.IP]; ok && info.Hostname != "" && !looksLikeUUIDHost(info.Hostname) {
+				continue
+			}
+			needs = append(needs, s.IP)
+		}
+		if mdns == nil {
+			mdns = map[string]MDNSInfo{}
+		}
+		mdnsReversePTR(mdns, needs, 800*time.Millisecond)
+	}
 
 	for i := range out {
 		ip := out[i].IP
@@ -133,6 +230,12 @@ func ScanARP() []Sighting {
 	// --- Phase 2: per-IP unicast probes. ---
 	type result struct {
 		nbns, snmp, llmnr, smb, tls, http, ssh, rdns string
+		eureka                                       *EurekaInfo
+		ipp                                          *IPPInfo
+		roku                                         *RokuInfo
+		airplay                                      *AirPlayInfo
+		ldap                                         *LDAPInfo
+		sshFP                                        *SSHFingerprint
 	}
 	results := make([]result, len(out))
 	sem := make(chan struct{}, 24)
@@ -158,6 +261,18 @@ func ScanARP() []Sighting {
 			results[i].http = httpBanner(ip, 800*time.Millisecond)
 			results[i].ssh = sshBanner(ip, 600*time.Millisecond)
 			results[i].rdns = reverseLookup(ip)
+			results[i].eureka = eurekaProbe(ip, 1200*time.Millisecond)
+			results[i].ipp = ippProbe(ip, 1000*time.Millisecond)
+			results[i].roku = rokuProbe(ip, 800*time.Millisecond)
+			results[i].airplay = airPlayProbe(ip, 800*time.Millisecond)
+			results[i].ldap = ldapProbe(ip, 800*time.Millisecond)
+			// Only attempt the full SSH KEX handshake if the cheap
+			// banner read already confirmed an SSH server is listening
+			// — otherwise we'd waste 1.5s per non-SSH host doing a TCP
+			// connect that gets immediately RSTd.
+			if results[i].ssh != "" {
+				results[i].sshFP = sshHostKey(ip, 1500*time.Millisecond)
+			}
 		}(i, ip)
 	}
 	pwg.Wait()
@@ -175,6 +290,84 @@ func ScanARP() []Sighting {
 		}
 		if r.smb != "" {
 			addSource(&out[i], "smb", r.smb)
+		}
+		if r.eureka != nil {
+			if r.eureka.Name != "" {
+				addSource(&out[i], "eureka", r.eureka.Name)
+			}
+			out[i].setProbe("eureka", map[string]string{
+				"name":   r.eureka.Name,
+				"model":  r.eureka.Model,
+				"build":  r.eureka.Build,
+				"mac":    r.eureka.MAC,
+				"locale": r.eureka.Locale,
+			})
+			if out[i].Kind == "" && r.eureka.Model != "" {
+				out[i].Kind = "google-cast"
+			}
+		}
+		if r.ipp != nil {
+			name := r.ipp.Name
+			if name == "" {
+				name = r.ipp.Make
+			}
+			if name != "" {
+				addSource(&out[i], "ipp", name)
+			}
+			out[i].setProbe("ipp", map[string]string{
+				"name":     r.ipp.Name,
+				"make":     r.ipp.Make,
+				"info":     r.ipp.Info,
+				"location": r.ipp.Location,
+			})
+			if out[i].Kind == "" {
+				out[i].Kind = "printer"
+			}
+		}
+		if r.roku != nil {
+			if r.roku.Name != "" {
+				addSource(&out[i], "roku", r.roku.Name)
+			}
+			out[i].setProbe("roku", map[string]string{
+				"name":         r.roku.Name,
+				"model":        r.roku.Model,
+				"model_number": r.roku.ModelNumber,
+				"serial":       r.roku.Serial,
+				"software":     r.roku.Software,
+			})
+			if out[i].Kind == "" {
+				out[i].Kind = "roku"
+			}
+		}
+		if r.airplay != nil {
+			if r.airplay.Name != "" {
+				addSource(&out[i], "airplay", r.airplay.Name)
+			}
+			out[i].setProbe("airplay", map[string]string{
+				"name":    r.airplay.Name,
+				"model":   r.airplay.Model,
+				"version": r.airplay.Version,
+			})
+		}
+		if r.ldap != nil {
+			if r.ldap.DNSHostName != "" {
+				addSource(&out[i], "ldap", r.ldap.DNSHostName)
+			}
+			out[i].setProbe("ldap", map[string]string{
+				"dns_hostname":           r.ldap.DNSHostName,
+				"default_naming_context": r.ldap.DefaultNamingContext,
+				"ldap_service_name":      r.ldap.LDAPServiceName,
+				"server_name":            r.ldap.ServerName,
+			})
+			if out[i].Kind == "" {
+				out[i].Kind = "domain-controller"
+			}
+		}
+		if r.sshFP != nil && r.sshFP.SHA256 != "" {
+			out[i].setProbe("ssh_fp", map[string]string{
+				"algo":   r.sshFP.Algorithm,
+				"sha256": r.sshFP.SHA256,
+			})
 		}
 		if r.tls != "" {
 			addSource(&out[i], "tls", r.tls)
@@ -220,6 +413,26 @@ func addSource(s *Sighting, source, name string) {
 		s.HostnameSources = map[string]string{}
 	}
 	s.HostnameSources[source] = name
+}
+
+// setProbe stores a non-empty probe result map under the given key,
+// dropping empty values so the wire payload stays compact.
+func (s *Sighting) setProbe(key string, kv map[string]string) {
+	clean := make(map[string]string, len(kv))
+	for k, v := range kv {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		clean[k] = v
+	}
+	if len(clean) == 0 {
+		return
+	}
+	if s.Probes == nil {
+		s.Probes = map[string]map[string]string{}
+	}
+	s.Probes[key] = clean
 }
 
 // bestHostname picks the highest-priority name from a sources map.
