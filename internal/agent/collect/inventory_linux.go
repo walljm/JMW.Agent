@@ -532,6 +532,18 @@ func collectUsers(ctx context.Context) []proto.UserSession {
 }
 
 func collectListening(ctx context.Context) []proto.ListeningPort {
+	// When the agent runs inside a container with the host filesystem
+	// bind-mounted (JMW_HOST_ROOT set) but without --network=host, `ss`
+	// only sees the container's own netns. Parse PID 1's /proc/net/*
+	// files through the host-root prefix instead — PID 1 lives in the
+	// host network namespace, so its socket tables reflect host sockets.
+	// Process name/PID resolution is skipped in this path; it would
+	// require walking /host/proc/*/fd/* to match socket inodes.
+	if hostfs.Active() {
+		if out := readHostListening(); out != nil {
+			return out
+		}
+	}
 	// Prefer ss; fallback to /proc/net/tcp parsing skipped for brevity.
 	out := []proto.ListeningPort{}
 	s, err := runCmd(ctx, "ss", "-tulnp")
@@ -569,6 +581,113 @@ func collectListening(ctx context.Context) []proto.ListeningPort {
 		out = append(out, lp)
 	}
 	return out
+}
+
+// readHostListening parses PID 1's socket tables in the host filesystem
+// (reached via JMW_HOST_ROOT) and returns LISTEN tcp + bound udp endpoints.
+// Returns nil if none of the files could be read.
+func readHostListening() []proto.ListeningPort {
+	files := []struct {
+		path string
+		// proto reported on the wire ("tcp", "tcp6", "udp", "udp6")
+		proto string
+		// state value indicating "listening" for this protocol
+		// (TCP=0A, UDP=07 — UDP_LISTEN doesn't exist; bound unconnected
+		// UDP sockets report TCP_CLOSE which is state 7)
+		listenState string
+		v6          bool
+	}{
+		{"/proc/1/net/tcp", "tcp", "0A", false},
+		{"/proc/1/net/tcp6", "tcp6", "0A", true},
+		{"/proc/1/net/udp", "udp", "07", false},
+		{"/proc/1/net/udp6", "udp6", "07", true},
+	}
+	out := []proto.ListeningPort{}
+	any := false
+	for _, f := range files {
+		b, err := os.ReadFile(hostfs.Path(f.path))
+		if err != nil {
+			continue
+		}
+		any = true
+		for i, line := range strings.Split(string(b), "\n") {
+			if i == 0 {
+				continue // header
+			}
+			fs := strings.Fields(line)
+			if len(fs) < 4 {
+				continue
+			}
+			if !strings.EqualFold(fs[3], f.listenState) {
+				continue
+			}
+			addr, port := parseProcNetAddr(fs[1], f.v6)
+			if port == 0 {
+				continue
+			}
+			out = append(out, proto.ListeningPort{
+				Proto:   f.proto,
+				Address: addr,
+				Port:    port,
+			})
+		}
+	}
+	if !any {
+		return nil
+	}
+	return out
+}
+
+// parseProcNetAddr decodes a "HEXIP:HEXPORT" field from /proc/net/{tcp,udp}{,6}.
+// IPv4 addresses are little-endian 32-bit; IPv6 addresses are 32 hex chars,
+// 4 bytes per word, each word little-endian.
+func parseProcNetAddr(s string, v6 bool) (string, int) {
+	colon := strings.LastIndexByte(s, ':')
+	if colon < 0 {
+		return "", 0
+	}
+	hexAddr := s[:colon]
+	hexPort := s[colon+1:]
+	port64, err := strconv.ParseUint(hexPort, 16, 16)
+	if err != nil {
+		return "", 0
+	}
+	port := int(port64)
+	if v6 {
+		if len(hexAddr) != 32 {
+			return "", port
+		}
+		b := make([]byte, 16)
+		for w := 0; w < 4; w++ {
+			word, err := strconv.ParseUint(hexAddr[w*8:(w+1)*8], 16, 32)
+			if err != nil {
+				return "", port
+			}
+			// Each 32-bit word is stored little-endian.
+			b[w*4+0] = byte(word)
+			b[w*4+1] = byte(word >> 8)
+			b[w*4+2] = byte(word >> 16)
+			b[w*4+3] = byte(word >> 24)
+		}
+		ip := net.IP(b)
+		if ip.IsUnspecified() {
+			return "::", port
+		}
+		// Render v4-mapped (::ffff:a.b.c.d) addresses as their v4 form.
+		if v4 := ip.To4(); v4 != nil {
+			return v4.String(), port
+		}
+		return ip.String(), port
+	}
+	if len(hexAddr) != 8 {
+		return "", port
+	}
+	v, err := strconv.ParseUint(hexAddr, 16, 32)
+	if err != nil {
+		return "", port
+	}
+	ip := net.IPv4(byte(v), byte(v>>8), byte(v>>16), byte(v>>24))
+	return ip.String(), port
 }
 
 func splitHostPort(s string) (string, int) {

@@ -20,6 +20,7 @@
     <li class="{{if eq .Active "alerts"}}active{{end}}"><a href="/alerts">Alerts</a></li>
     <li class="{{if eq .Active "pending"}}active{{end}}"><a href="/pending">Pending</a></li>
     <li class="{{if eq .Active "events"}}active{{end}}"><a href="/events">Events</a></li>
+    <li class="{{if eq .Active "terrain"}}active{{end}}"><a href="/terrain">Terrain</a></li>
   </ul>
   <div class="navright">
     {{if .User}}<span class="user">{{.User.Username}}</span>{{end}}

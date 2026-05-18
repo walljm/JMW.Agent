@@ -14,12 +14,26 @@ import (
 
 // Config is the server configuration.
 type Config struct {
-	Addr         string `toml:"addr"`
-	DataDir      string `toml:"data_dir"`
-	TLSCertFile  string `toml:"tls_cert_file"`
-	TLSKeyFile   string `toml:"tls_key_file"`
-	AgentPSK     string `toml:"agent_psk"`
-	SessionLifetimeHours int `toml:"session_lifetime_hours"`
+	Addr                 string        `toml:"addr"`
+	DataDir              string        `toml:"data_dir"`
+	TLSCertFile          string        `toml:"tls_cert_file"`
+	TLSKeyFile           string        `toml:"tls_key_file"`
+	AgentPSK             string        `toml:"agent_psk"`
+	SessionLifetimeHours int           `toml:"session_lifetime_hours"`
+	Terrain              TerrainConfig `toml:"terrain"`
+}
+
+// TerrainConfig holds optional Key Cyber Terrain polling configuration.
+// If URL is empty, auto-detection is attempted against LAN candidates.
+//
+// For Technitium DNS, prefer setting Token (a pre-created API token) over
+// username/password. If only username/password are set, the poller will
+// log in to obtain a session token.
+type TerrainConfig struct {
+	URL      string `toml:"url"`
+	Token    string `toml:"token"`
+	Username string `toml:"username"`
+	Password string `toml:"password"`
 }
 
 // Defaults returns sensible defaults.

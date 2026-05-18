@@ -30,6 +30,12 @@
       <tr><th>Kind</th><td>{{if .Device.Kind}}{{.Device.Kind}}{{else}}<span class="muted">unclassified</span>{{end}}</td></tr>
       <tr><th>First seen</th><td>{{shortTime .Device.FirstSeenAt}}</td></tr>
       <tr><th>Last seen</th><td>{{shortTime .Device.LastSeenAt}}</td></tr>
+      {{if or .Device.StaticLease (not .Device.DHCPSeenAt.IsZero)}}
+      <tr><th>DHCP</th><td>
+        {{if .Device.StaticLease}}<span class="badge">Pinned (static lease)</span>{{else}}<span class="badge muted">Dynamic lease</span>{{end}}
+        {{if not .Device.DHCPSeenAt.IsZero}}<span class="muted"> &middot; last seen {{shortTime .Device.DHCPSeenAt}}</span>{{end}}
+      </td></tr>
+      {{end}}
       <tr><th>Discovered by</th><td>
         {{- $aid := .Device.AgentID -}}
         {{- if not $aid}}{{$aid = .Device.SeenByAgent}}{{end -}}
@@ -78,6 +84,25 @@
       {{end}}
       </tbody>
     </table>
+  </section>
+  {{end}}
+
+  {{with .DNSActivity}}
+  <section>
+    <h2>DNS activity</h2>
+    {{if .Available}}
+      {{if .InTop}}
+        <p><strong>{{.TotalQueries}}</strong> queries in last 24h
+          {{if .Source}}<span class="muted">via {{.Source}}</span>{{end}}
+          {{if gt (len .MatchedIPs) 1}}<span class="muted"> &middot; across {{len .MatchedIPs}} IPs</span>{{end}}
+        </p>
+        <p class="muted">Only the top-10 querying clients are tracked; total may understate background activity.</p>
+      {{else}}
+        <p class="muted">{{.Note}}{{if .Source}} (source: {{.Source}}){{end}}</p>
+      {{end}}
+    {{else}}
+      <p class="muted">{{.Note}}</p>
+    {{end}}
   </section>
   {{end}}
 

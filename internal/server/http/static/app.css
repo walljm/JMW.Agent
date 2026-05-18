@@ -212,3 +212,10 @@ table.compact th, table.compact td { padding: 4px 8px; font-size: 12px; }
 .server-health { margin-top: 32px; padding-top: 16px; border-top: 1px dashed var(--border); }
 .server-health .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; }
 .server-health dt { color: var(--fg-muted); }
+
+/* Key Cyber Terrain panels */
+.two-col-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--gap); margin-top: 8px; }
+.panel { background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+.panel h3 { font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.panel .data td.num, .data th.num { text-align: right; }
+.data td.num { font-variant-numeric: tabular-nums; }

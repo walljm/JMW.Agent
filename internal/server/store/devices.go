@@ -29,6 +29,8 @@ type Device struct {
 	AgentID        string // if this device is one of our agents, the agent.id
 	ServicesJSON   string // JSON: {hostname, services:[], txt:{}} from latest mDNS
 	GroupID        string // logical-device group; "" means ungrouped
+	StaticLease    bool   // true when the DHCP server has this MAC pinned (Reserved/Static lease)
+	DHCPSeenAt     time.Time // most recent time a DHCP lease for this MAC was observed; zero if never
 }
 
 // HostnameSourcePriority ranks a hostname source. Higher = more authoritative.
@@ -330,7 +332,8 @@ func (s *Store) ListDevices(ctx context.Context) ([]*Device, error) {
 		        COALESCE(vendor,''), first_seen_at, last_seen_at,
 		        COALESCE(seen_by_agent,''), COALESCE(kind,''), COALESCE(notes,''),
 		        COALESCE(agent_id,''), COALESCE(services_json,''),
-		        COALESCE(device_group_id,'')
+		        COALESCE(device_group_id,''),
+		        COALESCE(static_lease,0), COALESCE(dhcp_seen_at,'')
 		 FROM devices`)
 	if err != nil {
 		return nil, err
@@ -339,13 +342,19 @@ func (s *Store) ListDevices(ctx context.Context) ([]*Device, error) {
 	var out []*Device
 	for rows.Next() {
 		var d Device
-		var fs, ls string
+		var fs, ls, ds string
+		var staticLease int
 		if err := rows.Scan(&d.ID, &d.MAC, &d.IP, &d.Hostname, &d.HostnameSource, &d.Vendor,
-			&fs, &ls, &d.SeenByAgent, &d.Kind, &d.Notes, &d.AgentID, &d.ServicesJSON, &d.GroupID); err != nil {
+			&fs, &ls, &d.SeenByAgent, &d.Kind, &d.Notes, &d.AgentID, &d.ServicesJSON, &d.GroupID,
+			&staticLease, &ds); err != nil {
 			return nil, err
 		}
 		d.FirstSeenAt, _ = time.Parse(time.RFC3339, fs)
 		d.LastSeenAt, _ = time.Parse(time.RFC3339, ls)
+		d.StaticLease = staticLease != 0
+		if ds != "" {
+			d.DHCPSeenAt, _ = time.Parse(time.RFC3339, ds)
+		}
 		out = append(out, &d)
 	}
 	if err := rows.Err(); err != nil {
@@ -411,7 +420,8 @@ func (s *Store) ListRecentDevices(ctx context.Context, limit int) ([]*Device, er
 		        COALESCE(vendor,''), first_seen_at, last_seen_at,
 		        COALESCE(seen_by_agent,''), COALESCE(kind,''), COALESCE(notes,''),
 		        COALESCE(agent_id,''), COALESCE(services_json,''),
-		        COALESCE(device_group_id,'')
+		        COALESCE(device_group_id,''),
+		        COALESCE(static_lease,0), COALESCE(dhcp_seen_at,'')
 		 FROM devices
 		 ORDER BY first_seen_at DESC, id ASC
 		 LIMIT ?`, limit)
@@ -422,13 +432,19 @@ func (s *Store) ListRecentDevices(ctx context.Context, limit int) ([]*Device, er
 	var out []*Device
 	for rows.Next() {
 		var d Device
-		var fs, ls string
+		var fs, ls, ds string
+		var staticLease int
 		if err := rows.Scan(&d.ID, &d.MAC, &d.IP, &d.Hostname, &d.HostnameSource, &d.Vendor,
-			&fs, &ls, &d.SeenByAgent, &d.Kind, &d.Notes, &d.AgentID, &d.ServicesJSON, &d.GroupID); err != nil {
+			&fs, &ls, &d.SeenByAgent, &d.Kind, &d.Notes, &d.AgentID, &d.ServicesJSON, &d.GroupID,
+			&staticLease, &ds); err != nil {
 			return nil, err
 		}
 		d.FirstSeenAt, _ = time.Parse(time.RFC3339, fs)
 		d.LastSeenAt, _ = time.Parse(time.RFC3339, ls)
+		d.StaticLease = staticLease != 0
+		if ds != "" {
+			d.DHCPSeenAt, _ = time.Parse(time.RFC3339, ds)
+		}
 		out = append(out, &d)
 	}
 	return out, rows.Err()
@@ -467,12 +483,15 @@ func (s *Store) GetDevice(ctx context.Context, id string) (*Device, error) {
 		        COALESCE(vendor,''), first_seen_at, last_seen_at,
 		        COALESCE(seen_by_agent,''), COALESCE(kind,''), COALESCE(notes,''),
 		        COALESCE(agent_id,''), COALESCE(services_json,''),
-		        COALESCE(device_group_id,'')
+		        COALESCE(device_group_id,''),
+		        COALESCE(static_lease,0), COALESCE(dhcp_seen_at,'')
 		 FROM devices WHERE id = ?`, id)
 	var d Device
-	var fs, ls string
+	var fs, ls, ds string
+	var staticLease int
 	if err := row.Scan(&d.ID, &d.MAC, &d.IP, &d.Hostname, &d.HostnameSource, &d.Vendor,
-		&fs, &ls, &d.SeenByAgent, &d.Kind, &d.Notes, &d.AgentID, &d.ServicesJSON, &d.GroupID); err != nil {
+		&fs, &ls, &d.SeenByAgent, &d.Kind, &d.Notes, &d.AgentID, &d.ServicesJSON, &d.GroupID,
+		&staticLease, &ds); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -480,6 +499,10 @@ func (s *Store) GetDevice(ctx context.Context, id string) (*Device, error) {
 	}
 	d.FirstSeenAt, _ = time.Parse(time.RFC3339, fs)
 	d.LastSeenAt, _ = time.Parse(time.RFC3339, ls)
+	d.StaticLease = staticLease != 0
+	if ds != "" {
+		d.DHCPSeenAt, _ = time.Parse(time.RFC3339, ds)
+	}
 	return &d, nil
 }
 
@@ -501,7 +524,8 @@ func (s *Store) ListGroupMembers(ctx context.Context, groupID, fallbackID string
 		        COALESCE(vendor,''), first_seen_at, last_seen_at,
 		        COALESCE(seen_by_agent,''), COALESCE(kind,''), COALESCE(notes,''),
 		        COALESCE(agent_id,''), COALESCE(services_json,''),
-		        COALESCE(device_group_id,'')
+		        COALESCE(device_group_id,''),
+		        COALESCE(static_lease,0), COALESCE(dhcp_seen_at,'')
 		 FROM devices WHERE device_group_id = ?`, groupID)
 	if err != nil {
 		return nil, err
@@ -510,13 +534,19 @@ func (s *Store) ListGroupMembers(ctx context.Context, groupID, fallbackID string
 	var out []*Device
 	for rows.Next() {
 		var d Device
-		var fs, ls string
+		var fs, ls, ds string
+		var staticLease int
 		if err := rows.Scan(&d.ID, &d.MAC, &d.IP, &d.Hostname, &d.HostnameSource, &d.Vendor,
-			&fs, &ls, &d.SeenByAgent, &d.Kind, &d.Notes, &d.AgentID, &d.ServicesJSON, &d.GroupID); err != nil {
+			&fs, &ls, &d.SeenByAgent, &d.Kind, &d.Notes, &d.AgentID, &d.ServicesJSON, &d.GroupID,
+			&staticLease, &ds); err != nil {
 			return nil, err
 		}
 		d.FirstSeenAt, _ = time.Parse(time.RFC3339, fs)
 		d.LastSeenAt, _ = time.Parse(time.RFC3339, ls)
+		d.StaticLease = staticLease != 0
+		if ds != "" {
+			d.DHCPSeenAt, _ = time.Parse(time.RFC3339, ds)
+		}
 		out = append(out, &d)
 	}
 	if err := rows.Err(); err != nil {
@@ -641,3 +671,76 @@ func (s *Store) ListHostnamesForDevices(ctx context.Context, deviceIDs []string)
 	}
 	return out, rows.Err()
 }
+
+// DHCPLeaseEntry is one lease observation supplied by the terrain poller
+// (or any other DHCP-aware source). MAC is the canonical key; Hostname is
+// the name the client announced; Static marks Reserved/Static reservations.
+type DHCPLeaseEntry struct {
+	MAC      string
+	IP       string
+	Hostname string
+	Static   bool
+	Expires  time.Time
+}
+
+// UpsertFromDHCPLease overlays a DHCP lease onto the devices table:
+//
+//   - Inserts a skeletal row if no device exists for the lease's MAC.
+//   - Refreshes the row's IP and dhcp_seen_at on every call.
+//   - Updates static_lease to reflect the lease's pinned/reservation state.
+//   - Performs a priority-aware hostname update via UpsertDevice
+//     (hostname source = "dhcp", priority 93), so it never clobbers a
+//     higher-priority name (agent/docker self-report).
+//   - Records the announced name in device_hostnames so the alias table
+//     surfaces it on the detail page.
+//   - Records a "dhcp" sighting so the device timeline reflects the
+//     observation.
+//
+// MAC is lowercased before use. Empty MAC is a no-op.
+func (s *Store) UpsertFromDHCPLease(ctx context.Context, lease DHCPLeaseEntry, sourceAgent string, observedAt time.Time) error {
+	mac := strings.ToLower(strings.TrimSpace(lease.MAC))
+	if mac == "" {
+		return nil
+	}
+	if observedAt.IsZero() {
+		observedAt = time.Now().UTC()
+	}
+
+	// UpsertDevice handles priority-aware hostname merging and first/last seen.
+	// Leave Kind/Vendor/ServicesJSON empty so a richer agent sighting always
+	// wins those fields.
+	dev := &Device{
+		ID:             mac,
+		MAC:            mac,
+		IP:             lease.IP,
+		Hostname:       strings.TrimSpace(lease.Hostname),
+		HostnameSource: "dhcp",
+		LastSeenAt:     observedAt,
+		SeenByAgent:    sourceAgent,
+	}
+	if err := s.UpsertDevice(ctx, dev); err != nil {
+		return err
+	}
+
+	// Overlay the DHCP-only columns. These are always written: the latest
+	// lease observation is the freshest truth for them.
+	staticFlag := 0
+	if lease.Static {
+		staticFlag = 1
+	}
+	if _, err := s.DB.ExecContext(ctx,
+		`UPDATE devices
+		    SET static_lease = ?,
+		        dhcp_seen_at = ?
+		  WHERE id = ?`,
+		staticFlag, observedAt.UTC().Format(time.RFC3339), mac); err != nil {
+		return err
+	}
+
+	if dev.Hostname != "" {
+		_ = s.AddHostname(ctx, mac, dev.Hostname, "dhcp", observedAt)
+	}
+	_ = s.AddSighting(ctx, mac, sourceAgent, lease.IP, mac, "dhcp", observedAt)
+	return nil
+}
+

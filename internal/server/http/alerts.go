@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/walljm/jmwagent/internal/server/store"
+	"github.com/walljm/jmwagent/internal/server/terrain"
 )
 
 func (s *Server) alertsList(w http.ResponseWriter, r *http.Request) {
@@ -370,6 +371,13 @@ func (s *Server) deviceDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	tags, _ := s.Store.ListTagsForTarget(r.Context(), store.TagTargetDevice, d.ID)
 	csrf := s.ensureCSRF(w, r)
+
+	// DNS activity: cross-reference this device's IPs with the terrain
+	// poller's TopClients list. The upstream DNS server only ranks its
+	// top-N busiest clients, so a "not listed" result means low/no
+	// query volume relative to other clients, not necessarily zero.
+	dnsActivity := buildDNSActivity(s.Terrain.Status(), ips)
+
 	s.render(w, r, "device_detail.html", map[string]any{
 		"CSRFToken":       csrf,
 		"Title":           "Device " + d.Hostname,
@@ -385,7 +393,49 @@ func (s *Server) deviceDetail(w http.ResponseWriter, r *http.Request) {
 		"ManagedHostname": managedHostname,
 		"Tags":            tags,
 		"TagsCSV":         strings.Join(tags, ", "),
+		"DNSActivity":     dnsActivity,
 	})
+}
+
+// DNSActivity summarises DNS query volume observed for a device, derived
+// from the terrain poller's top-N clients list.
+type DNSActivity struct {
+	Source       string // e.g. "Technitium DNS"
+	Available    bool   // terrain reachable and DNS stats present
+	InTop        bool   // any of the device's IPs appear in TopClients
+	TotalQueries int64  // sum across this device's matching IPs
+	MatchedIPs   []string
+	Note         string // human-readable caveat
+}
+
+func buildDNSActivity(status terrain.Status, ips []string) *DNSActivity {
+	a := &DNSActivity{Source: string(status.Kind)}
+	if !status.Reachable || status.DNS == nil {
+		a.Note = "Terrain DNS server not reachable"
+		return a
+	}
+	a.Available = true
+	if len(status.DNS.TopClients) == 0 || len(ips) == 0 {
+		a.Note = "No top-client data available"
+		return a
+	}
+	ipSet := make(map[string]bool, len(ips))
+	for _, ip := range ips {
+		if ip != "" {
+			ipSet[ip] = true
+		}
+	}
+	for _, c := range status.DNS.TopClients {
+		if ipSet[c.Name] {
+			a.InTop = true
+			a.TotalQueries += c.Count
+			a.MatchedIPs = append(a.MatchedIPs, c.Name)
+		}
+	}
+	if !a.InTop {
+		a.Note = "Not in top-10 querying clients (24h)"
+	}
+	return a
 }
 
 // deviceEdit handles POST /devices/{id}/edit — updates description (notes)

@@ -68,7 +68,9 @@ docker run -d \
 Flag rationale:
 
 - `--network=host` — agent sees the NAS's real interfaces and hostname (used
-  by REQ-038 ICMP probes and by network inventory).
+  by REQ-038 ICMP probes and by network inventory). Without it the agent's
+  socket-table scan falls back to parsing `/host/proc/1/net/{tcp,tcp6,udp,udp6}`,
+  which still surfaces host listening ports but without process names/PIDs.
 - `--pid=host` — needed for `who`, `ps`, and the listening-port collector to
   see host processes. Drop this if you only care about the metrics under
   `--network=host` + `JMW_HOST_ROOT`.

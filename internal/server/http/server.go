@@ -19,6 +19,7 @@ import (
 	"github.com/walljm/jmwagent/internal/server/alerting"
 	"github.com/walljm/jmwagent/internal/server/config"
 	"github.com/walljm/jmwagent/internal/server/store"
+	"github.com/walljm/jmwagent/internal/server/terrain"
 	"github.com/walljm/jmwagent/internal/shared/version"
 )
 
@@ -32,6 +33,7 @@ var staticFS embed.FS
 type Server struct {
 	Config        *config.Config
 	Store         *store.Store
+	Terrain       *terrain.Poller
 	templates     *template.Template
 	ServerCertSHA string
 	StartedAt     time.Time
@@ -51,14 +53,31 @@ func New(cfg *config.Config, st *store.Store, certSHA string) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	poller := terrain.New(terrain.Config{URL: cfg.Terrain.URL, Token: cfg.Terrain.Token, Username: cfg.Terrain.Username, Password: cfg.Terrain.Password})
+	poller.SetDeviceSink(dhcpSink{st: st})
 	return &Server{
 		Config:            cfg,
 		Store:             st,
+		Terrain:           poller,
 		templates:         tmpl,
 		ServerCertSHA:     certSHA,
 		StartedAt:         time.Now().UTC(),
 		heartbeatInterval: 30,
 	}, nil
+}
+
+// dhcpSink adapts *store.Store to terrain.DeviceSink so the poller can stay
+// store-agnostic.
+type dhcpSink struct{ st *store.Store }
+
+func (d dhcpSink) UpsertFromDHCPLease(ctx context.Context, lease terrain.DHCPLeaseToSink, sourceAgent string, observedAt time.Time) error {
+	return d.st.UpsertFromDHCPLease(ctx, store.DHCPLeaseEntry{
+		MAC:      lease.MAC,
+		IP:       lease.IP,
+		Hostname: lease.Hostname,
+		Static:   lease.Static,
+		Expires:  lease.Expires,
+	}, sourceAgent, observedAt)
 }
 
 // countIngest counts each agent-API request so the dashboard can show an
@@ -146,6 +165,10 @@ func (s *Server) Router() http.Handler {
 		pr.Get("/devices/{id}", s.deviceDetail)
 		pr.Get("/containers", s.containersList)
 		pr.Get("/containers/{agentID}/{containerID}", s.containerDetail)
+		pr.Get("/terrain", s.terrainGet)
+
+		// Dashboard JSON for terrain.
+		pr.Get("/api/v1/ui/terrain", s.uiTerrainStatus)
 
 		// Dashboard mutations (require both session + CSRF).
 		pr.With(s.requireCSRF).Post("/clients/{id}/approve", s.clientApprove)
@@ -230,6 +253,7 @@ func (s *Server) StartBackground(ctx context.Context) {
 		}
 	}()
 	go (&alerting.Evaluator{Store: s.Store, Interval: 30 * time.Second}).Run(ctx)
+	go s.Terrain.Run(ctx)
 }
 
 // ErrNotFound is returned when an entity isn't found.
