@@ -2,7 +2,7 @@
 {{template "navbar" .}}
 <main class="container">
   <h1>{{.Agent.Hostname}}</h1>
-  <p class="muted">{{.Agent.OS}}/{{.Agent.Arch}} · v{{.Agent.Version}} · {{sinceShort .Agent.LastHeartbeatAt}}</p>
+  <p class="muted">{{.Agent.OS}}/{{.Agent.Arch}} · {{.Agent.Version}} · {{sinceShort .Agent.LastHeartbeatAt}}</p>
 
   <section>
     <h2>Description &amp; tags</h2>
