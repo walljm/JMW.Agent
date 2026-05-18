@@ -16,6 +16,7 @@ import (
 type Config struct {
 	Addr                 string        `toml:"addr"`
 	DataDir              string        `toml:"data_dir"`
+	ReleasesDir          string        `toml:"releases_dir"`
 	TLSCertFile          string        `toml:"tls_cert_file"`
 	TLSKeyFile           string        `toml:"tls_key_file"`
 	AgentPSK             string        `toml:"agent_psk"`
@@ -41,6 +42,7 @@ func Defaults() *Config {
 	return &Config{
 		Addr:                 ":8443",
 		DataDir:              "./data",
+		ReleasesDir:          "./releases",
 		SessionLifetimeHours: 24 * 7,
 	}
 }

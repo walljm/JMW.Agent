@@ -105,6 +105,30 @@ func (c *Client) Inventory(ctx context.Context, req *proto.InventoryRequest) (*p
 	return &resp, nil
 }
 
+// Download fetches a binary blob from the server. path must begin with "/".
+// The caller is responsible for closing the returned reader. Uses a fresh
+// context-bound request rather than the JSON helper because update payloads
+// can be tens of MB and should not be subject to the 30s client timeout.
+func (c *Client) Download(ctx context.Context, path string) (io.ReadCloser, int64, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+path, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("X-Agent-PSK", c.PSK)
+	// Reuse the pinned-TLS transport but bypass the 30s timeout.
+	httpClient := &http.Client{Transport: c.HTTPClient.Transport, Timeout: 10 * time.Minute}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		return nil, 0, fmt.Errorf("server %d: %s", resp.StatusCode, string(b))
+	}
+	return resp.Body, resp.ContentLength, nil
+}
+
 func (c *Client) do(ctx context.Context, path string, in, out any) error {
 	body, err := json.Marshal(in)
 	if err != nil {

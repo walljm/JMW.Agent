@@ -37,10 +37,19 @@ type HeartbeatRequest struct {
 
 // HeartbeatResponse may include directives back to the agent.
 type HeartbeatResponse struct {
-	Approved          bool   `json:"approved"`
-	NextHeartbeatIn   int    `json:"next_heartbeat_in"` // seconds
-	UpdateAvailable   bool   `json:"update_available,omitempty"`
-	UpdateVersion     string `json:"update_version,omitempty"`
+	Approved        bool        `json:"approved"`
+	NextHeartbeatIn int         `json:"next_heartbeat_in"` // seconds
+	Update          *UpdateInfo `json:"update,omitempty"`
+}
+
+// UpdateInfo tells the agent that a newer binary is available for its
+// platform. URL is relative to the server base URL; the agent calls it
+// over the same PSK + pinned-TLS channel as every other API request.
+type UpdateInfo struct {
+	Version string `json:"version"`
+	URL     string `json:"url"`
+	SHA256  string `json:"sha256"`
+	Size    int64  `json:"size,omitempty"`
 }
 
 // MetricSnapshot is one point-in-time system metrics reading.

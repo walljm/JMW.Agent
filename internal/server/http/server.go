@@ -18,6 +18,7 @@ import (
 
 	"github.com/walljm/jmwagent/internal/server/alerting"
 	"github.com/walljm/jmwagent/internal/server/config"
+	"github.com/walljm/jmwagent/internal/server/releases"
 	"github.com/walljm/jmwagent/internal/server/store"
 	"github.com/walljm/jmwagent/internal/server/terrain"
 	"github.com/walljm/jmwagent/internal/shared/version"
@@ -34,6 +35,7 @@ type Server struct {
 	Config        *config.Config
 	Store         *store.Store
 	Terrain       *terrain.Poller
+	Releases      *releases.Manager
 	templates     *template.Template
 	ServerCertSHA string
 	StartedAt     time.Time
@@ -55,10 +57,15 @@ func New(cfg *config.Config, st *store.Store, certSHA string) (*Server, error) {
 	}
 	poller := terrain.New(terrain.Config{URL: cfg.Terrain.URL, Token: cfg.Terrain.Token, Username: cfg.Terrain.Username, Password: cfg.Terrain.Password})
 	poller.SetDeviceSink(dhcpSink{st: st})
+	rel := releases.New(cfg.ReleasesDir)
+	if err := rel.Scan(); err != nil {
+		slog.Warn("initial releases scan failed", "dir", cfg.ReleasesDir, "err", err)
+	}
 	return &Server{
 		Config:            cfg,
 		Store:             st,
 		Terrain:           poller,
+		Releases:          rel,
 		templates:         tmpl,
 		ServerCertSHA:     certSHA,
 		StartedAt:         time.Now().UTC(),
@@ -148,6 +155,7 @@ func (s *Server) Router() http.Handler {
 		ar.Post("/metrics", s.agentMetrics)
 		ar.Post("/discoveries", s.agentDiscoveries)
 		ar.Post("/inventory", s.agentInventory)
+		ar.Get("/releases/{version}/{filename}", s.agentReleaseDownload)
 	})
 
 	// Dashboard (browser, session-authenticated).
@@ -254,6 +262,22 @@ func (s *Server) StartBackground(ctx context.Context) {
 	}()
 	go (&alerting.Evaluator{Store: s.Store, Interval: 30 * time.Second}).Run(ctx)
 	go s.Terrain.Run(ctx)
+	if s.Releases != nil && s.Releases.Enabled() {
+		go func() {
+			t := time.NewTicker(2 * time.Minute)
+			defer t.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					if err := s.Releases.Scan(); err != nil {
+						slog.Warn("releases rescan failed", "err", err)
+					}
+				}
+			}
+		}()
+	}
 }
 
 // ErrNotFound is returned when an entity isn't found.

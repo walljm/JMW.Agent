@@ -3,12 +3,15 @@ package httpsrv
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/walljm/jmwagent/internal/server/releases"
 	"github.com/walljm/jmwagent/internal/server/store"
 	"github.com/walljm/jmwagent/internal/shared/proto"
 )
@@ -116,6 +119,20 @@ func (s *Server) agentHeartbeat(w http.ResponseWriter, r *http.Request) {
 	resp := proto.HeartbeatResponse{
 		Approved:        a.Status == store.AgentStatusApproved,
 		NextHeartbeatIn: s.heartbeatInterval,
+	}
+	// Offer an update when a strictly-newer clean release exists on disk
+	// for the agent's platform. The agent's own version may be a dev/dirty
+	// build — semver ordering still places clean releases above prerelease
+	// builds at the same MAJOR.MINOR.PATCH, so the comparison Just Works.
+	if s.Releases != nil && s.Releases.Enabled() && a.OS != "" && a.Arch != "" {
+		if e, ok := s.Releases.Latest(a.OS, a.Arch); ok && releases.SemverGreater(req.Version, e.Version) {
+			resp.Update = &proto.UpdateInfo{
+				Version: e.Version,
+				URL:     "/api/v1/agent/releases/" + e.Version + "/" + e.Filename,
+				SHA256:  e.SHA256,
+				Size:    e.Size,
+			}
+		}
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -437,4 +454,37 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 func writeJSONError(w http.ResponseWriter, code int, errCode, msg string) {
 	writeJSON(w, code, proto.ErrorResponse{Error: errCode, Code: errCode, Message: msg})
+}
+
+// agentReleaseDownload serves an agent binary from the configured releases
+// directory. It is PSK-authenticated (router middleware) and limited to
+// entries that the manager has indexed; arbitrary path access is refused.
+func (s *Server) agentReleaseDownload(w http.ResponseWriter, r *http.Request) {
+	if s.Releases == nil || !s.Releases.Enabled() {
+		writeJSONError(w, http.StatusNotFound, "not_found", "releases not configured")
+		return
+	}
+	version := chi.URLParam(r, "version")
+	filename := chi.URLParam(r, "filename")
+	if version == "" || filename == "" || strings.ContainsAny(version, "/\\") || strings.ContainsAny(filename, "/\\") {
+		writeJSONError(w, http.StatusBadRequest, "bad_request", "invalid path")
+		return
+	}
+	entry, ok := s.Releases.Lookup(version, filename)
+	if !ok {
+		writeJSONError(w, http.StatusNotFound, "not_found", "release not found")
+		return
+	}
+	f, err := s.Releases.Open(entry)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "open_failed", err.Error())
+		return
+	}
+	defer f.Close()
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", entry.Size))
+	w.Header().Set("X-JMW-Release-Version", entry.Version)
+	w.Header().Set("X-JMW-Release-SHA256", entry.SHA256)
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+entry.Filename+"\"")
+	_, _ = io.Copy(w, f)
 }

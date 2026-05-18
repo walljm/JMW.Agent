@@ -62,6 +62,32 @@ Reference unit files live in [deploy/](deploy/):
 - [deploy/launchd/com.walljm.jmw.server.plist](deploy/launchd/com.walljm.jmw.server.plist)
 - [deploy/launchd/com.walljm.jmw.agent.plist](deploy/launchd/com.walljm.jmw.agent.plist)
 
+### Publishing agent updates
+
+The server can push binary updates to agents over the same PSK + pinned-TLS
+channel. Drop release binaries into the directory named by `releases_dir` in
+`server.toml` (default `./releases`) using this layout:
+
+```
+releases/
+  v1.4.0/
+    jmw-agent-linux-amd64
+    jmw-agent-linux-arm64
+    jmw-agent-darwin-amd64
+    jmw-agent-darwin-arm64
+    jmw-agent-windows-amd64.exe
+  v1.5.0/
+    ...
+```
+
+Filenames must match `jmw-agent-<os>-<arch>[.exe]`. The server picks the
+highest semver-clean directory per platform; dev/dirty tags are ignored on
+both sides (the agent will not auto-update from a clean release to a dirty
+one, and vice versa). On the next heartbeat after a new release lands, each
+eligible agent downloads the binary, verifies SHA-256, swaps it in, and
+re-execs in place. Docker deployments use Watchtower instead — see
+[deploy/docker/README.md](deploy/docker/README.md#auto-updating-the-agent).
+
 ## Architecture
 
 See [planning/architecture/overview.md](planning/architecture/overview.md) and

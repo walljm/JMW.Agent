@@ -110,3 +110,31 @@ keeps the same agent ID.
   `/var/run/docker.sock` from inside its own filesystem. To inventory the
   containers running on the NAS, also bind-mount the socket:
   `-v /var/run/docker.sock:/var/run/docker.sock:ro`.
+
+## Auto-updating the agent
+
+The agent has a built-in self-update mechanism (downloads a new binary from
+the server, verifies SHA-256, and re-execs in place). Inside Docker, however,
+the binary lives on the container's read-only image layer, so the in-process
+updater cannot rewrite it. Two options:
+
+1. **Watchtower (recommended for Docker)**: run
+   [`containrrr/watchtower`](https://containrrr.dev/watchtower/) on the NAS
+   to pull `walljm/jmw-agent:latest` on a schedule. The server's heartbeat
+   response will still advertise updates, but the container-side updater will
+   fail with a permission error (logged at WARN and harmless). Watchtower
+   handles the actual swap by recreating the container.
+
+   ```sh
+   docker run -d --name watchtower --restart=always \
+     -v /var/run/docker.sock:/var/run/docker.sock \
+     containrrr/watchtower --interval 3600 jmw-agent
+   ```
+
+2. **Rebuild + redeploy manually**: re-run `scripts/deploy-agent.sh --publish`
+   on your dev machine to push a new image tag, then `docker pull
+   walljm/jmw-agent:latest && docker rm -f jmw-agent` on the NAS and re-run
+   the `docker run` command from step 4.
+
+For Linux/macOS bare-metal installs and Windows installs, no extra setup is
+needed — the agent updates itself when the server publishes a new release.

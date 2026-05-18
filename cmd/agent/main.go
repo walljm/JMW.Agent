@@ -14,8 +14,10 @@ import (
 	agentcfg "github.com/walljm/jmwagent/internal/agent/config"
 	"github.com/walljm/jmwagent/internal/agent/collect"
 	"github.com/walljm/jmwagent/internal/agent/discover"
+	"github.com/walljm/jmwagent/internal/agent/hostfs"
 	"github.com/walljm/jmwagent/internal/agent/identity"
 	"github.com/walljm/jmwagent/internal/agent/transport"
+	"github.com/walljm/jmwagent/internal/agent/updater"
 	"github.com/walljm/jmwagent/internal/shared/proto"
 	"github.com/walljm/jmwagent/internal/shared/version"
 )
@@ -176,13 +178,31 @@ func run(ctx context.Context, cfg *agentcfg.Config, cfgPath, id string) error {
 }
 
 func sendHeartbeat(ctx context.Context, cli *transport.Client, id string) error {
-	_, err := cli.Heartbeat(ctx, &proto.HeartbeatRequest{
+	resp, err := cli.Heartbeat(ctx, &proto.HeartbeatRequest{
 		AgentID:           id,
 		Version:           version.Version,
 		EnabledSubsystems: []string{"metrics"},
 		SentAt:            time.Now().UTC(),
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if resp != nil && resp.Update != nil {
+		// Inside containers (JMW_HOST_ROOT set) the binary lives on a
+		// read-only image layer; the in-process updater can't rewrite it.
+		// Image-level updates are handled out-of-band by Watchtower or a
+		// manual `docker pull`, so just acknowledge and move on.
+		if hostfs.Active() {
+			slog.Debug("update offered but skipped (containerized; handled by image updater)", "version", resp.Update.Version)
+			return nil
+		}
+		slog.Info("server offered update", "version", resp.Update.Version)
+		if err := updater.Apply(ctx, cli, resp.Update); err != nil {
+			slog.Warn("update apply failed; will retry on next heartbeat", "err", err)
+		}
+		// On success Apply does not return (process is replaced).
+	}
+	return nil
 }
 
 func sendSample(ctx context.Context, cli *transport.Client, id string) error {

@@ -36,11 +36,34 @@ Move-Item -Force $stagedCfg (Join-Path $dataDir    'agent.toml')
 $exe     = Join-Path $installDir 'jmw-agent.exe'
 $cfg     = Join-Path $dataDir    'agent.toml'
 $logFile = Join-Path $logDir     'agent.log'
+$wrapper = Join-Path $installDir 'jmw-agent-launcher.cmd'
 
-# Use cmd.exe wrapper so we can redirect stderr to a log file.
-$argLine = '/c "' + '"' + $exe + '"' + ' -config "' + $cfg + '" >> "' + $logFile + '" 2>&1"'
+# Launcher wrapper: promotes any staged auto-update (.new file) before
+# launching the agent. The agent writes <exe>.new and exits when it
+# receives an update; Scheduled Task restart-on-failure runs this wrapper
+# again, which renames .new over the real exe and starts the new image.
+$wrapperBody = @"
+@echo off
+setlocal
+set ""EXE=$exe""
+set ""NEW=$exe.new""
+set ""CFG=$cfg""
+set ""LOG=$logFile""
 
-$action    = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument $argLine
+:loop
+if exist ""%NEW%"" (
+  echo [%date% %time%] applying staged update>> ""%LOG%""
+  move /Y ""%NEW%"" ""%EXE%"" >> ""%LOG%"" 2>&1
+)
+""%EXE%"" -config ""%CFG%"" >> ""%LOG%"" 2>&1
+echo [%date% %time%] agent exited with code %ERRORLEVEL%, restarting in 5s>> ""%LOG%""
+timeout /t 5 /nobreak >nul
+goto loop
+"@
+
+Set-Content -Path $wrapper -Value $wrapperBody -Encoding ASCII
+
+$action    = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument ('/c "' + $wrapper + '"')
 $trigger   = New-ScheduledTaskTrigger -AtStartup
 $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
 $settings  = New-ScheduledTaskSettingsSet `
