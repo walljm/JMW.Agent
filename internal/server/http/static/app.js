@@ -121,7 +121,64 @@ function initTabs() {
   });
 }
 
+// Sortable tables: click any th in a table.data to sort by that column.
+function initSortableTables() {
+  document.querySelectorAll('table.data').forEach((table) => {
+    const ths = table.querySelectorAll('thead th');
+    ths.forEach((th, colIdx) => {
+      th.style.cursor = 'pointer';
+      th.setAttribute('data-sort', 'none');
+      th.addEventListener('click', () => sortByCol(table, th, colIdx));
+    });
+  });
+}
+
+function sortByCol(table, th, colIdx) {
+  const ths = table.querySelectorAll('thead th');
+  const wasDir = th.getAttribute('data-sort');
+  const dir = wasDir === 'asc' ? 'desc' : 'asc';
+
+  ths.forEach((h) => { h.setAttribute('data-sort', 'none'); });
+  th.setAttribute('data-sort', dir);
+
+  const tbody = table.querySelector('tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+
+  rows.sort((a, b) => {
+    const aText = cellText(a, colIdx);
+    const bText = cellText(b, colIdx);
+    const aVal = parseVal(aText);
+    const bVal = parseVal(bText);
+    let cmp;
+    if (typeof aVal === 'number' && typeof bVal === 'number') {
+      cmp = aVal - bVal;
+    } else {
+      cmp = String(aVal).localeCompare(String(bVal), undefined, { numeric: true, sensitivity: 'base' });
+    }
+    return dir === 'asc' ? cmp : -cmp;
+  });
+
+  rows.forEach((r) => tbody.appendChild(r));
+}
+
+function cellText(row, colIdx) {
+  const cell = row.cells[colIdx];
+  return cell ? (cell.textContent || '').trim() : '';
+}
+
+// Try to parse dates and numbers so they sort correctly.
+function parseVal(text) {
+  if (text === '' || text === '—') return '';
+  // ISO-ish date: "Jan 2, 2006 15:04" or similar — if it parses, use ms.
+  const d = Date.parse(text);
+  if (!isNaN(d)) return d;
+  const n = Number(text.replace(/[,$%]/g, ''));
+  if (!isNaN(n) && text !== '') return n;
+  return text.toLowerCase();
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   renderCpuChart();
   initTabs();
+  initSortableTables();
 });
