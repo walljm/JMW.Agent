@@ -24,14 +24,16 @@ docker buildx build \
   --platform=linux/amd64 \
   -f deploy/docker/Dockerfile.agent \
   --build-arg VERSION="$(git describe --tags --always --dirty)" \
-  -t ghcr.io/walljm/jmw-agent:latest \
+  -t walljm/jmw-agent:latest \
   --push .
 ```
 
 (Substitute your own registry. For ARM NAS units use `--platform=linux/arm64`.)
 The `VERSION` build-arg is stamped into the binary and shown in the server UI;
-omitting it makes the agent report `dev`. The `make docker-agent` target wraps
-this command and supplies `VERSION` automatically.
+omitting it makes the agent report `dev`. The `scripts/deploy-agent.sh --publish`
+helper wraps this command, builds multi-arch (amd64 + arm64), tags both
+`latest` and the current git-describe (e.g. `v1.3.0`), and pushes to Docker
+Hub. Override the repo with `DOCKER_HUB_REPO=...`.
 
 ## 3. Stage the agent config on the NAS
 
@@ -62,7 +64,7 @@ docker run -d \
   -v /:/host:ro \
   -v /volume1/jmw-agent/data:/data \
   -v /volume1/jmw-agent/etc:/etc/jmw-agent:ro \
-  ghcr.io/walljm/jmw-agent:latest
+  walljm/jmw-agent:latest
 ```
 
 Flag rationale:
