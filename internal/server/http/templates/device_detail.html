@@ -4,10 +4,10 @@
   <h1>{{if .Device.Hostname}}{{.Device.Hostname}}{{else}}<span class="muted">unknown device</span>{{end}}</h1>
 
   {{if .Device.AgentID}}
-  <div class="callout">
-    <strong>Managed client.</strong> This device is one of our agents:
-    <a href="/clients/{{.Device.AgentID}}">{{if .ManagedHostname}}{{.ManagedHostname}}{{else}}{{.Device.AgentID}}{{end}}</a>
-    &mdash; full inventory and metrics on the client page.
+  <div class="callout callout-ok">
+    <strong>Managed agent.</strong> This device is one of our agents:
+    <a href="/agents/{{.Device.AgentID}}">{{if .ManagedHostname}}{{.ManagedHostname}}{{else}}{{.Device.AgentID}}{{end}}</a>
+    &mdash; full inventory and metrics on the agent page.
   </div>
   {{end}}
 
@@ -40,7 +40,7 @@
         {{- $aid := .Device.AgentID -}}
         {{- if not $aid}}{{$aid = .Device.SeenByAgent}}{{end -}}
         {{- if $aid -}}
-          <a href="/clients/{{$aid}}">{{with index $.AgentNames $aid}}{{.}}{{else}}{{$aid}}{{end}}</a>
+          <a href="/agents/{{$aid}}">{{with index $.AgentNames $aid}}{{.}}{{else}}{{$aid}}{{end}}</a>
         {{- else -}}<span class="muted">none</span>{{- end -}}
       </td></tr>
     </table>
@@ -87,6 +87,56 @@
   </section>
   {{end}}
 
+  <section>
+    <h2>Sightings</h2>
+    {{if .Sightings}}
+    <table class="data sortable">
+      <thead><tr><th>By</th><th>IP</th><th>MAC</th><th>Method</th><th>First seen</th><th>Last seen</th><th>Count</th></tr></thead>
+      <tbody>
+      {{range .Sightings}}
+        <tr>
+          <td>
+            {{- if .SeenByAgent -}}
+              <a href="/agents/{{.SeenByAgent}}">{{with index $.AgentNames .SeenByAgent}}{{.}}{{else}}{{.SeenByAgent}}{{end}}</a>
+            {{- else -}}<span class="muted">—</span>{{- end -}}
+          </td>
+          <td>{{.IP}}</td>
+          <td>{{.MAC}}</td>
+          <td>{{.Method}}</td>
+          <td>{{shortTime .FirstSeenAt}}</td>
+          <td>{{shortTime .LastSeenAt}}</td>
+          <td class="num">{{.Count}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="muted">No sightings recorded.</p>
+    {{end}}
+  </section>
+
+  <section>
+    <h2>Hostname aliases</h2>
+    {{if .Aliases}}
+    <table class="data sortable">
+      <thead><tr><th>Name</th><th>Source</th><th>First seen</th><th>Last seen</th><th>Count</th></tr></thead>
+      <tbody>
+      {{range .Aliases}}
+        <tr>
+          <td>{{.Name}}{{if and $.Device.Hostname (eq .Name $.Device.Hostname)}} <span class="muted">(primary)</span>{{end}}</td>
+          <td>{{.Source}}</td>
+          <td>{{shortTime .FirstSeenAt}}</td>
+          <td>{{shortTime .LastSeenAt}}</td>
+          <td class="num">{{.Count}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="muted">No alternate hostnames observed.</p>
+    {{end}}
+  </section>
+
   {{with .DNSActivity}}
   <section>
     <h2>DNS activity</h2>
@@ -106,157 +156,74 @@
   </section>
   {{end}}
 
-  {{if .MDNS}}
-  <section>
+  <section class="mdns-section">
     <h2>mDNS</h2>
-    {{if .MDNS.Hostname}}<p><strong>Advertised hostname:</strong> {{.MDNS.Hostname}}</p>{{end}}
-    {{if .MDNS.Services}}
-      <h3>Services</h3>
-      <ul>
-        {{range .MDNS.Services}}<li><code>{{.}}</code></li>{{end}}
-      </ul>
-    {{end}}
-    {{if .MDNS.TXT}}
-      <h3>TXT records</h3>
-      <table class="data">
-        <thead><tr><th>Key</th><th>Value</th></tr></thead>
-        <tbody>
-        {{range $k, $v := .MDNS.TXT}}<tr><td><code>{{$k}}</code></td><td>{{$v}}</td></tr>{{end}}
-        </tbody>
-      </table>
-    {{end}}
-    {{if and (not .MDNS.Services) (not .MDNS.TXT) (not .MDNS.Hostname)}}
-      <p class="muted">No mDNS data captured.</p>
-    {{end}}
-  </section>
-
-  {{with .MDNS.Eureka}}
-  <section>
-    <h2>Google Cast / Nest <span class="muted small">(eureka)</span></h2>
-    <table class="kv">
-      {{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}
-    </table>
-  </section>
-  {{end}}
-
-  {{with .MDNS.IPP}}
-  <section>
-    <h2>Printer <span class="muted small">(ipp)</span></h2>
-    <table class="kv">
-      {{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}
-    </table>
-  </section>
-  {{end}}
-
-  {{with .MDNS.Roku}}
-  <section>
-    <h2>Roku <span class="muted small">(ecp)</span></h2>
-    <table class="kv">
-      {{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}
-    </table>
-  </section>
-  {{end}}
-
-  {{with .MDNS.AirPlay}}
-  <section>
-    <h2>AirPlay</h2>
-    <table class="kv">
-      {{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}
-    </table>
-  </section>
-  {{end}}
-
-  {{with .MDNS.LDAP}}
-  <section>
-    <h2>LDAP / Directory <span class="muted small">(rootDSE)</span></h2>
-    <table class="kv">
-      {{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}
-    </table>
-  </section>
-  {{end}}
-
-  {{with .MDNS.SSHFP}}
-  <section>
-    <h2>SSH host key</h2>
-    <table class="kv">
-      {{range $k, $v := .}}<tr><th>{{$k}}</th><td class="mono small">{{$v}}</td></tr>{{end}}
-    </table>
-  </section>
-  {{end}}
-
-  {{with .MDNS.DHCP}}
-  <section>
-    <h2>DHCP</h2>
-    <table class="kv">
-      {{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}
-    </table>
-  </section>
-  {{end}}
-
-  {{with .MDNS.Probes}}
-  {{range $name, $kv := .}}
-  <section>
-    <h2>{{$name}} <span class="muted small">(probe)</span></h2>
-    <table class="kv">
-      {{range $k, $v := $kv}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}
-    </table>
-  </section>
-  {{end}}
-  {{end}}
-  {{else}}
-  <section>
-    <h2>mDNS</h2>
-    <p class="muted">No mDNS profile recorded for this device yet.</p>
-  </section>
-  {{end}}
-
-  <section>
-    <h2>Hostname aliases</h2>
-    {{if .Aliases}}
-    <table class="data">
-      <thead><tr><th>Name</th><th>Source</th><th>First seen</th><th>Last seen</th><th>Count</th></tr></thead>
-      <tbody>
-      {{range .Aliases}}
-        <tr>
-          <td>{{.Name}}{{if and $.Device.Hostname (eq .Name $.Device.Hostname)}} <span class="muted">(primary)</span>{{end}}</td>
-          <td>{{.Source}}</td>
-          <td>{{shortTime .FirstSeenAt}}</td>
-          <td>{{shortTime .LastSeenAt}}</td>
-          <td>{{.Count}}</td>
-        </tr>
+    {{if .MDNS}}
+      {{if .MDNS.Hostname}}<p><strong>Advertised hostname:</strong> {{.MDNS.Hostname}}</p>{{end}}
+      {{if .MDNS.Services}}
+        <h3>Services</h3>
+        <ul>
+          {{range .MDNS.Services}}<li><code>{{.}}</code></li>{{end}}
+        </ul>
       {{end}}
-      </tbody>
-    </table>
-    {{else}}
-    <p class="muted">No alternate hostnames observed.</p>
-    {{end}}
-  </section>
-
-  <section>
-    <h2>Sightings</h2>
-    {{if .Sightings}}
-    <table class="data">
-      <thead><tr><th>By</th><th>IP</th><th>MAC</th><th>Method</th><th>First seen</th><th>Last seen</th><th>Count</th></tr></thead>
-      <tbody>
-      {{range .Sightings}}
-        <tr>
-          <td>
-            {{- if .SeenByAgent -}}
-              <a href="/clients/{{.SeenByAgent}}">{{with index $.AgentNames .SeenByAgent}}{{.}}{{else}}{{.SeenByAgent}}{{end}}</a>
-            {{- else -}}<span class="muted">—</span>{{- end -}}
-          </td>
-          <td>{{.IP}}</td>
-          <td>{{.MAC}}</td>
-          <td>{{.Method}}</td>
-          <td>{{shortTime .FirstSeenAt}}</td>
-          <td>{{shortTime .LastSeenAt}}</td>
-          <td>{{.Count}}</td>
-        </tr>
+      {{if .MDNS.TXT}}
+        <details class="mdns-sub">
+          <summary>TXT records ({{len .MDNS.TXT}})</summary>
+          <table class="data">
+            <thead><tr><th>Key</th><th>Value</th></tr></thead>
+            <tbody>
+            {{range $k, $v := .MDNS.TXT}}<tr><td><code>{{$k}}</code></td><td>{{$v}}</td></tr>{{end}}
+            </tbody>
+          </table>
+        </details>
       {{end}}
-      </tbody>
-    </table>
+      {{with .MDNS.Eureka}}
+        <details class="mdns-sub"><summary>Google Cast / Nest <span class="muted small">(eureka)</span></summary>
+          <table class="kv">{{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}</table>
+        </details>
+      {{end}}
+      {{with .MDNS.IPP}}
+        <details class="mdns-sub"><summary>Printer <span class="muted small">(ipp)</span></summary>
+          <table class="kv">{{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}</table>
+        </details>
+      {{end}}
+      {{with .MDNS.Roku}}
+        <details class="mdns-sub"><summary>Roku <span class="muted small">(ecp)</span></summary>
+          <table class="kv">{{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}</table>
+        </details>
+      {{end}}
+      {{with .MDNS.AirPlay}}
+        <details class="mdns-sub"><summary>AirPlay</summary>
+          <table class="kv">{{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}</table>
+        </details>
+      {{end}}
+      {{with .MDNS.LDAP}}
+        <details class="mdns-sub"><summary>LDAP / Directory <span class="muted small">(rootDSE)</span></summary>
+          <table class="kv">{{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}</table>
+        </details>
+      {{end}}
+      {{with .MDNS.SSHFP}}
+        <details class="mdns-sub"><summary>SSH host key</summary>
+          <table class="kv">{{range $k, $v := .}}<tr><th>{{$k}}</th><td class="mono small">{{$v}}</td></tr>{{end}}</table>
+        </details>
+      {{end}}
+      {{with .MDNS.DHCP}}
+        <details class="mdns-sub"><summary>DHCP</summary>
+          <table class="kv">{{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}</table>
+        </details>
+      {{end}}
+      {{with .MDNS.Probes}}
+        {{range $name, $kv := .}}
+        <details class="mdns-sub"><summary>{{$name}} <span class="muted small">(probe)</span></summary>
+          <table class="kv">{{range $k, $v := $kv}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}</table>
+        </details>
+        {{end}}
+      {{end}}
+      {{if and (not .MDNS.Services) (not .MDNS.TXT) (not .MDNS.Hostname)}}
+        <p class="muted">No mDNS data captured.</p>
+      {{end}}
     {{else}}
-    <p class="muted">No sightings recorded.</p>
+      <p class="muted">No mDNS profile recorded for this device yet.</p>
     {{end}}
   </section>
 

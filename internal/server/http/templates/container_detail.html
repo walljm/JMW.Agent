@@ -19,7 +19,7 @@
         <dt>Image</dt><dd class="mono">{{.Container.Image}}</dd>
         <dt>Image ID</dt><dd class="mono small">{{.Container.ImageID}}</dd>
         {{if .Record}}{{if .Record.Platform}}<dt>Platform</dt><dd>{{.Record.Platform}}</dd>{{end}}{{end}}
-        <dt>Host</dt><dd><a href="/clients/{{.Container.AgentID}}">{{if .Agent}}{{.Agent.Hostname}}{{else}}{{.Container.AgentID}}{{end}}</a></dd>
+        <dt>Host</dt><dd><a href="/agents/{{.Container.AgentID}}">{{if .Agent}}{{.Agent.Hostname}}{{else}}{{.Container.AgentID}}{{end}}</a></dd>
       </dl>
     </div>
 

@@ -88,20 +88,23 @@ func (s *Server) dashboardGet(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) clientsList(w http.ResponseWriter, r *http.Request) {
+func (s *Server) agentsList(w http.ResponseWriter, r *http.Request) {
 	agents, _ := s.Store.ListAgents(r.Context(), store.AgentStatusApproved)
+	pending, _ := s.Store.ListAgents(r.Context(), store.AgentStatusPending)
 	tags, _ := s.Store.ListTagsForTargets(r.Context(), store.TagTargetAgent)
 	csrf := s.ensureCSRF(w, r)
-	s.render(w, r, "clients.html", map[string]any{
-		"CSRFToken": csrf,
-		"Title":     "Clients",
-		"Active":    "clients",
-		"Agents":    agents,
-		"Tags":      tags,
+	s.render(w, r, "agents.html", map[string]any{
+		"CSRFToken":    csrf,
+		"Title":        "Agents",
+		"Active":       "agents",
+		"Agents":       agents,
+		"Pending":      pending,
+		"PendingCount": len(pending),
+		"Tags":         tags,
 	})
 }
 
-func (s *Server) clientDetail(w http.ResponseWriter, r *http.Request) {
+func (s *Server) agentDetail(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	a, err := s.Store.GetAgent(r.Context(), id)
 	if err != nil || a == nil {
@@ -119,10 +122,10 @@ func (s *Server) clientDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	tags, _ := s.Store.ListTagsForTarget(r.Context(), store.TagTargetAgent, id)
 	csrf := s.ensureCSRF(w, r)
-	s.render(w, r, "client_detail.html", map[string]any{
+	s.render(w, r, "agent_detail.html", map[string]any{
 		"CSRFToken":    csrf,
 		"Title":        a.Hostname,
-		"Active":       "clients",
+		"Active":       "agents",
 		"Agent":        a,
 		"Latest":       latest,
 		"Inventory":    inv,
@@ -133,9 +136,9 @@ func (s *Server) clientDetail(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// clientEdit handles POST /clients/{id}/edit — updates description (notes)
+// agentEdit handles POST /agents/{id}/edit — updates description (notes)
 // and tags for a managed agent.
-func (s *Server) clientEdit(w http.ResponseWriter, r *http.Request) {
+func (s *Server) agentEdit(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	a, err := s.Store.GetAgent(r.Context(), id)
 	if err != nil || a == nil {
@@ -159,7 +162,7 @@ func (s *Server) clientEdit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/clients/"+id, http.StatusSeeOther)
+	http.Redirect(w, r, "/agents/"+id, http.StatusSeeOther)
 }
 
 func (s *Server) pendingList(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +185,7 @@ func (s *Server) eventsList(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) clientApprove(w http.ResponseWriter, r *http.Request) {
+func (s *Server) agentApprove(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	user := userFrom(r)
 	approver := ""
@@ -207,7 +210,7 @@ func (s *Server) clientApprove(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/pending", http.StatusSeeOther)
 }
 
-func (s *Server) clientDeregister(w http.ResponseWriter, r *http.Request) {
+func (s *Server) agentDeregister(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if err := s.Store.DeregisterAgent(r.Context(), id); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -218,10 +221,10 @@ func (s *Server) clientDeregister(w http.ResponseWriter, r *http.Request) {
 		SourceKind: "agent", SourceID: id,
 		Summary: "Agent deregistered",
 	})
-	http.Redirect(w, r, "/clients", http.StatusSeeOther)
+	http.Redirect(w, r, "/agents", http.StatusSeeOther)
 }
 
-func (s *Server) uiClientMetrics(w http.ResponseWriter, r *http.Request) {
+func (s *Server) uiAgentMetrics(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	since := time.Now().UTC().Add(-1 * time.Hour)
 	if v := r.URL.Query().Get("since"); v != "" {

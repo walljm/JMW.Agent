@@ -261,3 +261,123 @@ th.no-sort::after { content: "" !important; }
 .inline-form > .kind-fieldset > label { display: block; margin: 0; font-size: 12px; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .inline-form > .kind-fieldset > label.checkbox { text-transform: none; letter-spacing: 0; color: var(--fg); display: flex; align-items: center; gap: 8px; }
 .inline-form > .kind-fieldset > label.checkbox input { width: auto; margin: 0; display: inline-block; }
+
+/* ---------------------------------------------------------------------
+   Structural-pass additions (nav, theme toggle, status badges, etc.)
+   ------------------------------------------------------------------ */
+
+/* Skip link for keyboard users. Hidden until focused. */
+.skip-link {
+  position: absolute; left: -9999px; top: 0; padding: 8px 12px;
+  background: var(--accent); color: var(--accent-fg); border-radius: 0 0 var(--radius) 0;
+  z-index: 1000;
+}
+.skip-link:focus { left: 0; outline: 2px solid var(--fg); outline-offset: 2px; }
+
+/* Universal keyboard focus ring (browsers vary; keep it visible). */
+a:focus-visible, button:focus-visible, summary:focus-visible,
+input:focus-visible, select:focus-visible, textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+
+/* Grouped navigation: top-level groups with dropdown menus.
+   On hover OR when the toggle button is focus-within, the menu opens. */
+.navbar .navlinks > li { position: relative; }
+.navbar .navgroup-label {
+  background: none; border: none; color: var(--fg-muted); font: inherit;
+  cursor: pointer; padding: 0; line-height: inherit;
+}
+.navbar .navgroup-label::after { content: " \25BE"; font-size: 10px; opacity: 0.7; }
+.navbar .navgroup:hover .navgroup-label,
+.navbar .navgroup-label:hover,
+.navbar .navgroup-label[aria-expanded="true"],
+.navbar .navgroup.active .navgroup-label { color: var(--fg); }
+.navbar .navgroup.active > .navgroup-label { border-bottom: 2px solid var(--accent); padding-bottom: 4px; }
+
+.navbar .navmenu {
+  position: absolute; top: 100%; left: 0; min-width: 180px;
+  margin: 0; padding: 6px 0; list-style: none;
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  display: none; z-index: 100;
+}
+.navbar .navgroup:hover > .navmenu,
+.navbar .navgroup:focus-within > .navmenu,
+.navbar .navgroup.open > .navmenu { display: block; }
+.navbar .navmenu a {
+  display: block; padding: 8px 14px; color: var(--fg-muted); white-space: nowrap;
+}
+.navbar .navmenu a:hover { background: var(--bg-elev-2); color: var(--fg); text-decoration: none; }
+.navbar .navmenu a.active { color: var(--accent); }
+
+/* Theme toggle: shows the icon for the OTHER theme. */
+.theme-toggle { display: inline-flex; align-items: center; padding: 4px 8px; font-size: 16px; }
+[data-theme="dark"]  .theme-icon-dark  { display: none; }
+[data-theme="light"] .theme-icon-light { display: none; }
+
+/* Mobile nav toggle — hidden on desktop, simple hamburger when shown. */
+.navtoggle { display: none; background: none; border: none; padding: 6px; cursor: pointer; }
+.navtoggle span {
+  display: block; width: 22px; height: 2px; margin: 4px 0; background: var(--fg-muted); border-radius: 2px;
+}
+@media (max-width: 800px) {
+  .navtoggle { display: block; }
+  .navbar { flex-wrap: wrap; }
+  .navbar .navlinks {
+    flex-basis: 100%; flex-direction: column; gap: 0;
+    border-top: 1px solid var(--border); margin-top: 12px;
+    display: none;
+  }
+  .navbar .navlinks.open { display: flex; }
+  .navbar .navlinks > li { padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .navbar .navmenu { position: static; box-shadow: none; border: none; padding: 4px 0 4px 16px; background: transparent; }
+  .navbar .navgroup .navmenu { display: block; }
+}
+
+/* Page header pattern: title + subtitle + optional actions. */
+.page-header { margin-bottom: 16px; }
+.page-header h1 { margin: 0 0 4px 0; display: flex; align-items: center; gap: 12px; }
+.page-header p  { margin: 0; }
+.detail-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; }
+.detail-divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+.danger-zone-title { color: var(--danger); font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 4px 0; }
+
+.empty-state { padding: 24px; text-align: center; border: 1px dashed var(--border); border-radius: var(--radius); }
+
+/* Tabs on the agents page (button[data-tab] / section.tab-panel). */
+.tabs[role="tablist"] { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--border); margin: 8px 0 0; }
+.tab-panel { padding: 16px 0; }
+.tab-count { display: inline-block; margin-left: 6px; padding: 1px 8px; background: var(--bg-elev-2); border-radius: 999px; font-size: 11px; color: var(--fg-muted); font-weight: 600; }
+.tab-count-attention { background: var(--accent); color: var(--accent-fg); }
+
+/* Agent status badge — three-state. Tokens drive both themes. */
+.badge-status { text-transform: capitalize; }
+.badge-status.online  { color: var(--ok);     border-color: var(--ok); }
+.badge-status.stale   { color: var(--warn);   border-color: var(--warn); }
+.badge-status.offline { color: var(--fg-muted); border-color: var(--border); }
+
+/* Generic callout (used by alerts.html "no alerts" banner). */
+.callout { padding: 12px 16px; background: var(--bg-elev); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--radius); margin: 12px 0; }
+.callout-ok { border-left-color: var(--ok); }
+.callout-warn { border-left-color: var(--warn); }
+.callout-danger { border-left-color: var(--danger); }
+
+/* Light-theme overrides for color swatches that were hard-coded
+   for dark backgrounds. Use slightly darker hues so contrast holds. */
+[data-theme="light"] .badge.state-running,
+[data-theme="light"] .badge.health-healthy   { color: #1a7f37; border-color: #1a7f37; }
+[data-theme="light"] .badge.state-exited,
+[data-theme="light"] .badge.state-created    { color: #57606a; border-color: #57606a; }
+[data-theme="light"] .badge.state-paused,
+[data-theme="light"] .badge.state-restarting,
+[data-theme="light"] .badge.health-starting  { color: #9a6700; border-color: #9a6700; }
+[data-theme="light"] .badge.state-dead,
+[data-theme="light"] .badge.health-unhealthy { color: #cf222e; border-color: #cf222e; }
+[data-theme="light"] .badge-warn { background: rgba(154, 103, 0, 0.12); color: #9a6700; }
+
+/* mDNS sub-section accordions on device detail */
+.mdns-section details.mdns-sub { margin: 0.5rem 0; border: 1px solid var(--border, #30363d); border-radius: 6px; padding: 0.25rem 0.75rem; }
+.mdns-section details.mdns-sub > summary { cursor: pointer; padding: 0.4rem 0; font-weight: 600; }
+.mdns-section details.mdns-sub[open] > summary { margin-bottom: 0.5rem; }
+

@@ -7,12 +7,12 @@
        things that genuinely need attention (stale agents, open alerts,
        pending approvals). Cards link to the page that lets you act. -->
   <section class="cards kpi">
-    <a class="card kpi-link {{if gt .OnlineCount 0}}kpi-ok{{end}}" href="/clients">
+    <a class="card kpi-link {{if gt .OnlineCount 0}}kpi-ok{{end}}" href="/agents">
       <div class="card-label">Agents online</div>
       <div class="card-value">{{.OnlineCount}}</div>
       <div class="card-sub">{{len .Approved}} approved</div>
     </a>
-    <a class="card kpi-link {{if gt .StaleCount 0}}kpi-warn{{end}}" href="/clients">
+    <a class="card kpi-link {{if gt .StaleCount 0}}kpi-warn{{end}}" href="/agents">
       <div class="card-label">Stale</div>
       <div class="card-value">{{.StaleCount}}</div>
       <div class="card-sub">no heartbeat 2m+</div>
@@ -61,7 +61,7 @@
         <div class="attn-title">Recently went stale</div>
         <ul class="attn-list">
           {{range .RecentlyStale}}
-            <li><a href="/clients/{{.ID}}">{{.Hostname}}</a> <span class="muted small">{{sinceShort .LastHeartbeatAt}}</span></li>
+            <li><a href="/agents/{{.ID}}">{{.Hostname}}</a> <span class="muted small">{{sinceShort .LastHeartbeatAt}}</span></li>
           {{end}}
         </ul>
       </div>
@@ -84,14 +84,14 @@
   {{end}}
 
   <section>
-    <h2>Approved clients</h2>
+    <h2>Approved agents</h2>
     {{if .Approved}}
     <table class="data">
       <thead><tr><th>Hostname</th><th>IP</th><th>OS</th><th>Version</th><th>Last heartbeat</th><th></th></tr></thead>
       <tbody>
       {{range .Approved}}
         <tr>
-          <td><a href="/clients/{{.ID}}">{{.Hostname}}</a></td>
+          <td><a href="/agents/{{.ID}}">{{.Hostname}}</a></td>
           <td>{{if .PrimaryIP}}{{.PrimaryIP}}{{else}}<span class="muted">—</span>{{end}}</td>
           <td>{{.OS}}/{{.Arch}}</td>
           <td>{{.Version}}</td>
@@ -102,7 +102,7 @@
       </tbody>
     </table>
     {{else}}
-    <p class="muted">No approved clients yet. Install an agent and approve it on the Pending page.</p>
+    <p class="muted">No approved agents yet. Install an agent; new registrations appear in the Pending tab on the Agents page.</p>
     {{end}}
   </section>
 
@@ -119,7 +119,7 @@
           <tr>
             <td>
               {{if eq .SourceKind "agent"}}
-                <a href="/clients/{{.SourceID}}">{{if .Hostname}}{{.Hostname}}{{else}}{{.SourceID}}{{end}}</a>
+                <a href="/agents/{{.SourceID}}">{{if .Hostname}}{{.Hostname}}{{else}}{{.SourceID}}{{end}}</a>
               {{else}}
                 <span class="mono small">{{.SourceKind}}:{{.SourceID}}</span>
               {{end}}

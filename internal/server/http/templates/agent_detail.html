@@ -1,23 +1,35 @@
 {{template "head" .}}
 {{template "navbar" .}}
 <main class="container">
-  <h1>{{.Agent.Hostname}}</h1>
-  <p class="muted">{{.Agent.OS}}/{{.Agent.Arch}} · {{.Agent.Version}} · {{sinceShort .Agent.LastHeartbeatAt}}</p>
+  {{- $st := agentStatus .Agent.LastHeartbeatAt -}}
+  <header class="page-header detail-header">
+    <div class="detail-title">
+      <h1>{{.Agent.Hostname}} <span class="badge badge-status {{$st}}" title="{{$st}}">{{$st}}</span></h1>
+      <p class="muted">{{.Agent.OS}}/{{.Agent.Arch}} · {{.Agent.Version}} · last heartbeat {{sinceShort .Agent.LastHeartbeatAt}}</p>
+    </div>
+  </header>
 
   <section>
     <h2>Description &amp; tags</h2>
     {{if .Agent.Notes}}<p>{{.Agent.Notes}}</p>{{end}}
     {{if .Tags}}<p class="tag-list">{{range .Tags}}<span class="tag">{{.}}</span>{{end}}</p>{{end}}
     <details>
-      <summary>Edit</summary>
-      <form class="edit-form" method="POST" action="/clients/{{.Agent.ID}}/edit">
+      <summary>Edit description, tags, and lifecycle</summary>
+      <form class="edit-form" method="POST" action="/agents/{{.Agent.ID}}/edit">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
         <label for="description">Description</label>
-        <textarea id="description" name="description" maxlength="2000" placeholder="Free-form notes about this client">{{.Agent.Notes}}</textarea>
+        <textarea id="description" name="description" maxlength="2000" placeholder="Free-form notes about this agent">{{.Agent.Notes}}</textarea>
         <label for="tags">Tags</label>
         <input type="text" id="tags" name="tags" value="{{.TagsCSV}}" placeholder="comma-separated, e.g. prod, web, us-east" />
         <p class="help">Tags are normalized to lowercase. Allowed: letters, digits, <code>-_./:</code>.</p>
         <div><button class="primary" type="submit">Save</button></div>
+      </form>
+      <hr class="detail-divider" />
+      <h3 class="danger-zone-title">Danger zone</h3>
+      <p class="muted small">Deregistering removes this agent from the server. The agent will re-appear as a Pending registration the next time it checks in.</p>
+      <form method="POST" action="/agents/{{.Agent.ID}}/deregister" onsubmit="return confirm('Deregister this agent? It will re-register on its next heartbeat.')">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+        <button type="submit" class="danger">Deregister agent</button>
       </form>
     </details>
   </section>
@@ -56,12 +68,12 @@
     <div class="tabs" data-tabs>
       <div class="tablist" role="tablist">
         <button type="button" class="tab" role="tab" data-tab="overview" aria-selected="true">Overview</button>
-        {{if or .Disks .Filesystems}}<button type="button" class="tab" role="tab" data-tab="storage" aria-selected="false">Storage</button>{{end}}
+        <button type="button" class="tab" role="tab" data-tab="storage" aria-selected="false">Storage</button>
         <button type="button" class="tab" role="tab" data-tab="network" aria-selected="false">Network</button>
-        {{if .Security}}<button type="button" class="tab" role="tab" data-tab="security" aria-selected="false">Security</button>{{end}}
-        {{if .Docker}}{{if .Docker.Reachable}}<button type="button" class="tab" role="tab" data-tab="docker" aria-selected="false">Docker</button>{{end}}{{end}}
-        {{if or .Users (or .Listening (or .Processes .LocalUsers))}}<button type="button" class="tab" role="tab" data-tab="activity" aria-selected="false">Activity</button>{{end}}
-        {{if or .Reboots (or .Packages (or .Updates .Services))}}<button type="button" class="tab" role="tab" data-tab="system" aria-selected="false">System</button>{{end}}
+        <button type="button" class="tab" role="tab" data-tab="security" aria-selected="false">Security</button>
+        <button type="button" class="tab" role="tab" data-tab="docker" aria-selected="false">Docker</button>
+        <button type="button" class="tab" role="tab" data-tab="activity" aria-selected="false">Activity</button>
+        <button type="button" class="tab" role="tab" data-tab="system" aria-selected="false">System</button>
       </div>
 
       <div class="tabpanel" role="tabpanel" data-panel="overview">
@@ -114,8 +126,8 @@
         </table>
       </div>
 
-      {{if or .Disks .Filesystems}}
       <div class="tabpanel" role="tabpanel" data-panel="storage" hidden>
+        {{if not (or .Disks .Filesystems)}}<p class="muted empty-state">No storage information collected.</p>{{end}}
         {{if .Disks}}
         <h3>Disks ({{len .Disks}})</h3>
         <table>
@@ -168,7 +180,6 @@
         </table>
         {{end}}
       </div>
-      {{end}}
 
       <div class="tabpanel" role="tabpanel" data-panel="network" hidden>
         <h3>Interfaces ({{len .Network.Interfaces}})</h3>
@@ -209,8 +220,8 @@
         {{end}}
       </div>
 
-      {{if .Security}}
       <div class="tabpanel" role="tabpanel" data-panel="security" hidden>
+        {{if not .Security}}<p class="muted empty-state">No security posture information collected.</p>{{end}}
         {{with .Security}}
         <h3>Posture</h3>
         <table class="kv">
@@ -255,17 +266,17 @@
         {{end}}
         {{end}}
       </div>
-      {{end}}
 
-      {{if .Docker}}{{if .Docker.Reachable}}
       <div class="tabpanel" role="tabpanel" data-panel="docker" hidden>
-        <p class="muted">Docker v{{.Docker.Version}} · {{len .Docker.Containers}} containers, {{len .Docker.Images}} images{{with .Docker.Engine}}{{if .OSType}} · {{.OSType}}/{{.Architecture}}{{end}}{{if .StorageDriver}} · {{.StorageDriver}}{{end}}{{end}}</p>
+        {{if not (and .Docker .Docker.Reachable)}}<p class="muted empty-state">Docker not detected on this host.</p>{{end}}
+        {{if and .Docker .Docker.Reachable}}{{with .Docker}}
+        <p class="muted">Docker v{{.Version}} · {{len .Containers}} containers, {{len .Images}} images{{with .Engine}}{{if .OSType}} · {{.OSType}}/{{.Architecture}}{{end}}{{if .StorageDriver}} · {{.StorageDriver}}{{end}}{{end}}</p>
         <h3>Containers</h3>
         <table class="data">
           <thead><tr><th>Name</th><th>State</th><th>Health</th><th>Image</th><th>Project</th><th>Status</th></tr></thead>
           <tbody>
           {{$agentID := $.Agent.ID}}
-          {{range .Docker.Containers}}
+          {{range .Containers}}
             <tr>
               <td><a href="/containers/{{$agentID}}/{{.ID}}">{{.Name}}</a></td>
               <td><span class="badge state-{{.State}}">{{.State}}</span></td>
@@ -281,16 +292,16 @@
         <table class="data">
           <thead><tr><th>Repository</th><th>Tag</th><th>Size</th></tr></thead>
           <tbody>
-          {{range .Docker.Images}}
+          {{range .Images}}
             <tr><td class="mono">{{.Repository}}</td><td>{{.Tag}}</td><td>{{humanBytes .SizeBytes}}</td></tr>
           {{end}}
           </tbody>
         </table>
+        {{end}}{{end}}
       </div>
-      {{end}}{{end}}
 
-      {{if or .Users (or .Listening (or .Processes .LocalUsers))}}
       <div class="tabpanel" role="tabpanel" data-panel="activity" hidden>
+        {{if not (or .Users (or .Listening (or .Processes .LocalUsers)))}}<p class="muted empty-state">No activity data collected.</p>{{end}}
         {{if .Users}}
         <h3>Logged-in Users ({{len .Users}})</h3>
         <table>
@@ -348,10 +359,9 @@
         </table>
         {{end}}
       </div>
-      {{end}}
 
-      {{if or .Reboots (or .Packages (or .Updates .Services))}}
       <div class="tabpanel" role="tabpanel" data-panel="system" hidden>
+        {{if not (or .Reboots (or .Packages (or .Updates .Services)))}}<p class="muted empty-state">No system data collected.</p>{{end}}
         {{with .Updates}}
         <h3>Updates ({{.Manager}})</h3>
         <table class="kv">
@@ -407,7 +417,6 @@
         </table>
         {{end}}
       </div>
-      {{end}}
     </div>
   </section>
   {{end}}
@@ -418,11 +427,5 @@
   </section>
   {{end}}
 
-  <section class="actions">
-    <form method="POST" action="/clients/{{.Agent.ID}}/deregister" onsubmit="return confirm('Deregister this client?')">
-      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
-      <button type="submit" class="danger">Deregister</button>
-    </form>
-  </section>
 </main>
 {{template "foot" .}}

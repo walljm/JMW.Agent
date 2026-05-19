@@ -107,6 +107,7 @@ func loadTemplates() (*template.Template, error) {
 		"sinceShort":    sinceShort,
 		"divf":          divf,
 		"deref":         derefBool,
+		"agentStatus":   agentStatus,
 	})
 	// First, parse all partials so layouts can reference them by name.
 	partials, err := fs.Glob(templateFS, "templates/partials/*.html")
@@ -164,8 +165,8 @@ func (s *Server) Router() http.Handler {
 		pr.With(s.requireCSRF).Post("/logout", s.logoutPost)
 
 		pr.Get("/", s.dashboardGet)
-		pr.Get("/clients", s.clientsList)
-		pr.Get("/clients/{id}", s.clientDetail)
+		pr.Get("/agents", s.agentsList)
+		pr.Get("/agents/{id}", s.agentDetail)
 		pr.Get("/pending", s.pendingList)
 		pr.Get("/events", s.eventsList)
 		pr.Get("/alerts", s.alertsList)
@@ -175,13 +176,17 @@ func (s *Server) Router() http.Handler {
 		pr.Get("/containers/{agentID}/{containerID}", s.containerDetail)
 		pr.Get("/terrain", s.terrainGet)
 
+		// Legacy redirects: /clients/* → /agents/* (bookmarks).
+		pr.Get("/clients", redirectTo("/agents"))
+		pr.Get("/clients/{id}", redirectPath("/clients", "/agents"))
+
 		// Dashboard JSON for terrain.
 		pr.Get("/api/v1/ui/terrain", s.uiTerrainStatus)
 
 		// Dashboard mutations (require both session + CSRF).
-		pr.With(s.requireCSRF).Post("/clients/{id}/approve", s.clientApprove)
-		pr.With(s.requireCSRF).Post("/clients/{id}/deregister", s.clientDeregister)
-		pr.With(s.requireCSRF).Post("/clients/{id}/edit", s.clientEdit)
+		pr.With(s.requireCSRF).Post("/agents/{id}/approve", s.agentApprove)
+		pr.With(s.requireCSRF).Post("/agents/{id}/deregister", s.agentDeregister)
+		pr.With(s.requireCSRF).Post("/agents/{id}/edit", s.agentEdit)
 		pr.With(s.requireCSRF).Post("/devices/{id}/edit", s.deviceEdit)
 		pr.With(s.requireCSRF).Post("/alerts", s.alertCreate)
 		pr.With(s.requireCSRF).Post("/alerts/{id}/delete", s.alertDelete)
@@ -189,10 +194,29 @@ func (s *Server) Router() http.Handler {
 		pr.With(s.requireCSRF).Post("/channels/{id}/delete", s.channelDelete)
 
 		// Dashboard JSON for charts.
-		pr.Get("/api/v1/ui/clients/{id}/metrics", s.uiClientMetrics)
+		pr.Get("/api/v1/ui/agents/{id}/metrics", s.uiAgentMetrics)
 	})
 
 	return r
+}
+
+// redirectTo returns a handler that issues a 308 permanent redirect to dest.
+func redirectTo(dest string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, dest, http.StatusPermanentRedirect)
+	}
+}
+
+// redirectPath returns a handler that rewrites the request path's old prefix
+// to a new prefix and issues a 308 redirect. Used for /clients/* → /agents/*.
+func redirectPath(oldPrefix, newPrefix string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		if strings.HasPrefix(p, oldPrefix) {
+			p = newPrefix + strings.TrimPrefix(p, oldPrefix)
+		}
+		http.Redirect(w, r, p, http.StatusPermanentRedirect)
+	}
 }
 
 // secHeaders sets baseline security headers on every response.
@@ -399,5 +423,24 @@ func sinceShort(t *time.Time) string {
 		return fmt.Sprintf("%dh ago", int(d.Hours()))
 	default:
 		return fmt.Sprintf("%dd ago", int(d.Hours())/24)
+	}
+}
+
+// agentStatus returns a one-word status keyword for an agent's last
+// heartbeat: "online" (< 2 min), "stale" (< 1 hour), or "offline".
+// Templates use this both for label text and as a CSS modifier suffix
+// on .badge-status (e.g. .badge-status.online).
+func agentStatus(t *time.Time) string {
+	if t == nil || t.IsZero() {
+		return "offline"
+	}
+	d := time.Since(*t)
+	switch {
+	case d < 2*time.Minute:
+		return "online"
+	case d < time.Hour:
+		return "stale"
+	default:
+		return "offline"
 	}
 }

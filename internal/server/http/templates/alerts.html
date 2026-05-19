@@ -152,12 +152,4 @@
     </details>
   </section>
 </main>
-<script>
-  document.getElementById('ch-kind')?.addEventListener('change', e => {
-    const k = e.target.value;
-    document.querySelectorAll('fieldset[data-kind]').forEach(f => {
-      f.hidden = f.dataset.kind !== k;
-    });
-  });
-</script>
 {{template "foot" .}}

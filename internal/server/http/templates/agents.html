@@ -1,0 +1,89 @@
+{{template "head" .}}
+{{template "navbar" .}}
+<main class="container">
+  <header class="page-header">
+    <h1>Agents</h1>
+    <p class="muted">Hosts running the JMW agent.</p>
+  </header>
+
+  <div class="tabs" role="tablist" aria-label="Agent views">
+    <button type="button" role="tab" id="tab-approved" aria-controls="panel-approved" aria-selected="true" class="tab active" data-tab="approved">
+      Approved <span class="tab-count">{{len .Agents}}</span>
+    </button>
+    <button type="button" role="tab" id="tab-pending" aria-controls="panel-pending" aria-selected="false" class="tab" data-tab="pending">
+      Pending {{if .PendingCount}}<span class="tab-count tab-count-attention">{{.PendingCount}}</span>{{end}}
+    </button>
+  </div>
+
+  <section id="panel-approved" role="tabpanel" aria-labelledby="tab-approved" class="tab-panel active">
+    {{if .Agents}}
+    <table class="data sortable agents">
+      <thead><tr>
+        <th>Status</th>
+        <th>Hostname</th>
+        <th>IP</th>
+        <th>OS</th>
+        <th>Version</th>
+        <th>Description</th>
+        <th>Tags</th>
+        <th>Last heartbeat</th>
+      </tr></thead>
+      <tbody>
+      {{range .Agents}}
+        {{- $st := agentStatus .LastHeartbeatAt -}}
+        <tr>
+          <td><span class="badge badge-status {{$st}}" title="{{$st}}">{{$st}}</span></td>
+          <td><a href="/agents/{{.ID}}">{{.Hostname}}</a></td>
+          <td>{{if .PrimaryIP}}{{.PrimaryIP}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td>{{.OS}}/{{.Arch}}</td>
+          <td>{{.Version}}</td>
+          <td>{{if .Notes}}<span class="desc-cell" title="{{.Notes}}">{{.Notes}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+          <td>
+            {{- $ts := index $.Tags .ID -}}
+            {{- if $ts -}}
+              <span class="tag-list">{{range $ts}}<span class="tag">{{.}}</span>{{end}}</span>
+            {{- else -}}<span class="muted">—</span>{{- end -}}
+          </td>
+          <td>{{sinceShort .LastHeartbeatAt}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="muted empty-state">No approved agents yet. Once an agent registers and is approved, it will appear here.</p>
+    {{end}}
+  </section>
+
+  <section id="panel-pending" role="tabpanel" aria-labelledby="tab-pending" class="tab-panel" hidden>
+    {{if .Pending}}
+    <table class="data sortable">
+      <thead><tr>
+        <th>Hostname</th>
+        <th>OS</th>
+        <th>Version</th>
+        <th>Registered</th>
+        <th></th>
+      </tr></thead>
+      <tbody>
+      {{range .Pending}}
+        <tr>
+          <td>{{.Hostname}}</td>
+          <td>{{.OS}}/{{.Arch}}</td>
+          <td>{{.Version}}</td>
+          <td>{{shortTime .RegisteredAt}}</td>
+          <td>
+            <form method="POST" action="/agents/{{.ID}}/approve">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}" />
+              <button class="primary" type="submit">Approve</button>
+            </form>
+          </td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="muted empty-state">No agents are awaiting approval.</p>
+    {{end}}
+  </section>
+</main>
+{{template "foot" .}}

@@ -24,12 +24,12 @@ function applyTheme(t) {
   applyTheme(t);
 })();
 
-// CPU chart on client_detail.html
+// CPU chart on agent_detail.html
 async function renderCpuChart() {
   const c = document.getElementById('cpu-chart');
   if (!c) return;
   const id = c.getAttribute('data-agent');
-  const res = await apiFetch('/api/v1/ui/clients/' + encodeURIComponent(id) + '/metrics?since=1h');
+  const res = await apiFetch('/api/v1/ui/agents/' + encodeURIComponent(id) + '/metrics?since=1h');
   if (!res.ok) return;
   const data = await res.json();
   drawLineChart(c, (data.snapshots || []).map(s => ({ x: new Date(s.ts), y: s.cpu_pct || 0 })), { yMax: 100, label: 'CPU %' });
@@ -189,5 +189,132 @@ function parseVal(text) {
 document.addEventListener('DOMContentLoaded', () => {
   renderCpuChart();
   initTabs();
+  initRoleTabs();
   initSortableTables();
+  initThemeToggle();
+  initNavToggle();
+  initNavGroups();
+  initAlertCharts();
+  initAlertChannelKindToggle();
 });
+
+// Alerts page: when the user picks a channel kind from the form,
+// reveal only the matching <fieldset data-kind="…">.
+function initAlertChannelKindToggle() {
+  const sel = document.getElementById('ch-kind');
+  if (!sel) return;
+  const fields = document.querySelectorAll('fieldset[data-kind]');
+  function apply() {
+    const k = sel.value;
+    fields.forEach((f) => { f.hidden = f.dataset.kind !== k; });
+  }
+  sel.addEventListener('change', apply);
+  apply();
+}
+
+// Theme toggle button in the navbar.
+function initThemeToggle() {
+  const btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    const cur = document.documentElement.getAttribute('data-theme') || 'dark';
+    applyTheme(cur === 'dark' ? 'light' : 'dark');
+  });
+}
+
+// Mobile nav hamburger.
+function initNavToggle() {
+  const btn = document.querySelector('.navtoggle');
+  const list = document.getElementById('primary-nav');
+  if (!btn || !list) return;
+  btn.addEventListener('click', () => {
+    const open = list.classList.toggle('open');
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+}
+
+// Grouped nav dropdowns — click-to-toggle as a keyboard/touch fallback
+// when hover-to-open isn't available. Closes when clicking outside.
+function initNavGroups() {
+  const groups = document.querySelectorAll('.navgroup');
+  if (!groups.length) return;
+  groups.forEach((g) => {
+    const btn = g.querySelector('.navgroup-label');
+    if (!btn) return;
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const wasOpen = g.classList.contains('open');
+      groups.forEach((other) => {
+        other.classList.remove('open');
+        const ob = other.querySelector('.navgroup-label');
+        if (ob) ob.setAttribute('aria-expanded', 'false');
+      });
+      if (!wasOpen) {
+        g.classList.add('open');
+        btn.setAttribute('aria-expanded', 'true');
+      }
+    });
+  });
+  document.addEventListener('click', () => {
+    groups.forEach((g) => {
+      g.classList.remove('open');
+      const b = g.querySelector('.navgroup-label');
+      if (b) b.setAttribute('aria-expanded', 'false');
+    });
+  });
+}
+
+// Role-based tabs (button[role=tab] + section[role=tabpanel]), used on the
+// agents page. Each tablist controls the panels at sibling level. Supports
+// click and Left/Right/Home/End keyboard nav per WAI-ARIA APG.
+function initRoleTabs() {
+  document.querySelectorAll('[role="tablist"]').forEach((list) => {
+    // Skip if inside a [data-tabs] container (handled by initTabs).
+    if (list.closest('[data-tabs]')) return;
+    const tabs = Array.from(list.querySelectorAll('[role="tab"]'));
+    if (!tabs.length) return;
+    const container = list.parentElement || document;
+    const panels = Array.from(container.querySelectorAll('[role="tabpanel"]'));
+    function activate(name) {
+      tabs.forEach((t) => {
+        const match = t.dataset.tab === name;
+        t.classList.toggle('active', match);
+        t.setAttribute('aria-selected', match ? 'true' : 'false');
+        t.tabIndex = match ? 0 : -1;
+      });
+      panels.forEach((p) => {
+        const match = p.id === 'panel-' + name;
+        p.classList.toggle('active', match);
+        p.hidden = !match;
+      });
+    }
+    tabs.forEach((t, i) => {
+      t.tabIndex = i === 0 ? 0 : -1;
+      t.addEventListener('click', () => { activate(t.dataset.tab); t.focus(); });
+      t.addEventListener('keydown', (e) => {
+        let next = -1;
+        switch (e.key) {
+          case 'ArrowLeft':  next = (i - 1 + tabs.length) % tabs.length; break;
+          case 'ArrowRight': next = (i + 1) % tabs.length; break;
+          case 'Home':       next = 0; break;
+          case 'End':        next = tabs.length - 1; break;
+        }
+        if (next >= 0) {
+          e.preventDefault();
+          const target = tabs[next];
+          activate(target.dataset.tab);
+          target.focus();
+        }
+      });
+    });
+  });
+}
+
+// Placeholder hook for charts moved off the alerts page inline script.
+// Real implementation reads canvases populated by the alerts template.
+function initAlertCharts() {
+  document.querySelectorAll('canvas[data-alert-chart]').forEach((c) => {
+    // No-op until/unless alerts.html opts into client-rendered charts.
+    void c;
+  });
+}

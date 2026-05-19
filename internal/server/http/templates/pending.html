@@ -13,7 +13,7 @@
         <td>{{.Version}}</td>
         <td>{{shortTime .RegisteredAt}}</td>
         <td>
-          <form method="POST" action="/clients/{{.ID}}/approve">
+          <form method="POST" action="/agents/{{.ID}}/approve">
             <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}" />
             <button class="primary" type="submit">Approve</button>
           </form>

@@ -40,7 +40,7 @@
           {{- $aid := $p.AgentID -}}
           {{- if not $aid}}{{$aid = $p.SeenByAgent}}{{end -}}
           {{- if $aid -}}
-            <a href="/clients/{{$aid}}">{{with index $.AgentNames $aid}}{{.}}{{else}}{{$aid}}{{end}}</a>
+            <a href="/agents/{{$aid}}">{{with index $.AgentNames $aid}}{{.}}{{else}}{{$aid}}{{end}}</a>
           {{- end -}}
         </td>
       </tr>
