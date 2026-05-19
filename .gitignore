@@ -77,6 +77,8 @@ e2e/*.map
 [Dd]ebugPublic/
 [Rr]elease/
 [Rr]eleases/
+# but keep the Go package that happens to be named "releases"
+!internal/server/releases/
 x64/
 x86/
 bld/
