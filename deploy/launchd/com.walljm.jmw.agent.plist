@@ -7,7 +7,7 @@
   <string>com.walljm.jmw.agent</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/local/bin/jmw-agent</string>
+    <string>/opt/jmw/bin/jmw-agent</string>
     <string>-config</string>
     <string>/usr/local/etc/jmw/agent.toml</string>
   </array>

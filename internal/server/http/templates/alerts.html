@@ -3,144 +3,160 @@
 <main class="container">
   <h1>Alerts</h1>
 
-  <h2>Active &amp; recent firings</h2>
-  {{if .Firings}}
-  <table class="data">
-    <thead><tr><th>Started</th><th>Resolved</th><th>Rule</th><th>Agent</th><th>Value</th><th>Summary</th></tr></thead>
-    <tbody>
-    {{range .Firings}}
-      <tr>
-        <td>{{shortTime .StartedAt}}</td>
-        <td>{{if .ResolvedAt}}{{shortTime .ResolvedAt}}{{else}}<span class="evt-summary" style="color:var(--danger)">open</span>{{end}}</td>
-        <td>{{index $.RuleMap .RuleID}}</td>
-        <td>{{index $.AgentMap .AgentID}}</td>
-        <td>{{printf "%.2f" .LastValue}}</td>
-        <td>{{.Summary}}</td>
-      </tr>
-    {{end}}
-    </tbody>
-  </table>
-  {{else}}<p class="muted">No alert firings recorded.</p>{{end}}
+  <section class="alerts-section">
+    <h2>Active &amp; recent firings</h2>
+    {{if .Firings}}
+    <table class="data">
+      <thead><tr><th>Started</th><th>Resolved</th><th>Rule</th><th>Agent</th><th>Value</th><th>Summary</th></tr></thead>
+      <tbody>
+      {{range .Firings}}
+        <tr>
+          <td>{{shortTime .StartedAt}}</td>
+          <td>{{if .ResolvedAt}}{{shortTime .ResolvedAt}}{{else}}<span class="badge state-dead">open</span>{{end}}</td>
+          <td>{{index $.RuleMap .RuleID}}</td>
+          <td>{{index $.AgentMap .AgentID}}</td>
+          <td class="num">{{printf "%.2f" .LastValue}}</td>
+          <td>{{.Summary}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{else}}<p class="muted">No alert firings recorded.</p>{{end}}
+  </section>
 
-  <h2>Rules</h2>
-  {{if .Rules}}
-  <table class="data">
-    <thead><tr><th>Name</th><th>Metric</th><th>Op</th><th>Threshold</th><th>Target</th><th>Severity</th><th>Channel</th><th></th></tr></thead>
-    <tbody>
-    {{range .Rules}}
-      <tr>
-        <td>{{.Name}}</td>
-        <td>{{.Metric}}</td>
-        <td>{{.Op}}</td>
-        <td>{{printf "%.2f" .Threshold}}</td>
-        <td>{{if eq .TargetKind "agent"}}{{index $.AgentMap .TargetID}}{{else}}{{.TargetKind}}{{end}}</td>
-        <td>{{.Severity}}</td>
-        <td>{{if .ChannelID}}#{{.ChannelID}}{{else}}—{{end}}</td>
-        <td>
-          <form method="POST" action="/alerts/{{.ID}}/delete" onsubmit="return confirm('Delete rule?')">
-            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}" />
-            <button class="danger" type="submit">Delete</button>
-          </form>
-        </td>
-      </tr>
-    {{end}}
-    </tbody>
-  </table>
-  {{else}}<p class="muted">No alert rules configured.</p>{{end}}
+  <section class="alerts-section">
+    <h2>Rules</h2>
+    {{if .Rules}}
+    <table class="data">
+      <thead><tr><th>Name</th><th>Metric</th><th>Op</th><th>Threshold</th><th>Target</th><th>Severity</th><th>Channel</th><th class="no-sort"></th></tr></thead>
+      <tbody>
+      {{range .Rules}}
+        <tr>
+          <td>{{.Name}}</td>
+          <td>{{.Metric}}</td>
+          <td>{{.Op}}</td>
+          <td class="num">{{printf "%.2f" .Threshold}}</td>
+          <td>{{if eq .TargetKind "agent"}}{{index $.AgentMap .TargetID}}{{else}}<span class="muted">{{.TargetKind}}</span>{{end}}</td>
+          <td>{{.Severity}}</td>
+          <td>{{if .ChannelID}}{{index $.ChannelMap .ChannelID}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="row-actions">
+            <form method="POST" action="/alerts/{{.ID}}/delete" onsubmit="return confirm('Delete rule?')">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}" />
+              <button class="danger" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{else}}<p class="muted">No alert rules configured.</p>{{end}}
 
-  <h2>New rule</h2>
-  <form method="POST" action="/alerts" class="inline-form">
-    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
-    <label>Name<input name="name" required /></label>
-    <label>Metric
-      <select name="metric">
-        <option value="cpu_pct">CPU %</option>
-        <option value="mem_pct">Memory %</option>
-        <option value="offline_minutes">Offline minutes</option>
-      </select>
-    </label>
-    <label>Op
-      <select name="op">
-        <option value="gt">&gt;</option>
-        <option value="lt">&lt;</option>
-      </select>
-    </label>
-    <label>Threshold<input name="threshold" type="number" step="0.01" required /></label>
-    <label>Duration (seconds)<input name="duration_seconds" type="number" value="60" /></label>
-    <label>Target agent
-      <select name="target_id">
-        <option value="">All</option>
-        {{range .Agents}}<option value="{{.ID}}">{{.Hostname}}</option>{{end}}
-      </select>
-    </label>
-    <label>Severity
-      <select name="severity">
-        <option value="warning">warning</option>
-        <option value="critical">critical</option>
-        <option value="info">info</option>
-      </select>
-    </label>
-    <label>Channel
-      <select name="channel_id">
-        <option value="">— none —</option>
-        {{range .Channels}}<option value="{{.ID}}">{{.Name}} ({{.Kind}})</option>{{end}}
-      </select>
-    </label>
-    <button type="submit" class="primary">Create rule</button>
-  </form>
+    <details class="form-details">
+      <summary>New rule</summary>
+      <form method="POST" action="/alerts" class="inline-form">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+        <label>Name<input name="name" required /></label>
+        <label>Metric
+          <select name="metric">
+            <option value="cpu_pct">CPU %</option>
+            <option value="mem_pct">Memory %</option>
+            <option value="offline_minutes">Offline minutes</option>
+          </select>
+        </label>
+        <label>Op
+          <select name="op">
+            <option value="gt">&gt;</option>
+            <option value="lt">&lt;</option>
+          </select>
+        </label>
+        <label>Threshold<input name="threshold" type="number" step="0.01" required /></label>
+        <label>Duration (seconds)<input name="duration_seconds" type="number" value="60" /></label>
+        <label>Target agent
+          <select name="target_id">
+            <option value="">All</option>
+            {{range .Agents}}<option value="{{.ID}}">{{.Hostname}}</option>{{end}}
+          </select>
+        </label>
+        <label>Severity
+          <select name="severity">
+            <option value="warning">warning</option>
+            <option value="critical">critical</option>
+            <option value="info">info</option>
+          </select>
+        </label>
+        <label>Channel
+          <select name="channel_id">
+            <option value="">— none —</option>
+            {{range .Channels}}<option value="{{.ID}}">{{.Name}} ({{.Kind}})</option>{{end}}
+          </select>
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="primary">Create rule</button>
+        </div>
+      </form>
+    </details>
+  </section>
 
-  <h2>Notification channels</h2>
-  {{if .Channels}}
-  <table class="data">
-    <thead><tr><th>Name</th><th>Kind</th><th>Enabled</th><th></th></tr></thead>
-    <tbody>
-    {{range .Channels}}
-      <tr>
-        <td>{{.Name}}</td>
-        <td>{{.Kind}}</td>
-        <td>{{if .Enabled}}yes{{else}}no{{end}}</td>
-        <td>
-          <form method="POST" action="/channels/{{.ID}}/delete" onsubmit="return confirm('Delete channel?')">
-            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}" />
-            <button class="danger" type="submit">Delete</button>
-          </form>
-        </td>
-      </tr>
-    {{end}}
-    </tbody>
-  </table>
-  {{else}}<p class="muted">No channels configured.</p>{{end}}
+  <section class="alerts-section">
+    <h2>Notification channels</h2>
+    {{if .Channels}}
+    <table class="data">
+      <thead><tr><th>Name</th><th>Kind</th><th>Enabled</th><th class="no-sort"></th></tr></thead>
+      <tbody>
+      {{range .Channels}}
+        <tr>
+          <td>{{.Name}}</td>
+          <td>{{.Kind}}</td>
+          <td>{{if .Enabled}}<span class="badge state-running">yes</span>{{else}}<span class="badge state-exited">no</span>{{end}}</td>
+          <td class="row-actions">
+            <form method="POST" action="/channels/{{.ID}}/delete" onsubmit="return confirm('Delete channel?')">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}" />
+              <button class="danger" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{else}}<p class="muted">No channels configured.</p>{{end}}
 
-  <h2>New channel</h2>
-  <form method="POST" action="/channels" class="inline-form">
-    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
-    <label>Name<input name="name" required /></label>
-    <label>Kind
-      <select name="kind" id="ch-kind">
-        <option value="webhook">webhook</option>
-        <option value="email">email</option>
-      </select>
-    </label>
-    <fieldset id="ch-webhook" data-kind="webhook">
-      <label>URL<input name="url" /></label>
-    </fieldset>
-    <fieldset id="ch-email" data-kind="email" style="display:none">
-      <label>Host<input name="host" /></label>
-      <label>Port<input name="port" type="number" value="587" /></label>
-      <label>Username<input name="username" /></label>
-      <label>Password<input name="password" type="password" /></label>
-      <label>From<input name="from" /></label>
-      <label>To<input name="to" /></label>
-      <label><input type="checkbox" name="tls" /> Use STARTTLS</label>
-    </fieldset>
-    <button type="submit" class="primary">Create channel</button>
-  </form>
+    <details class="form-details">
+      <summary>New channel</summary>
+      <form method="POST" action="/channels" class="inline-form">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+        <label>Name<input name="name" required /></label>
+        <label>Kind
+          <select name="kind" id="ch-kind">
+            <option value="webhook">webhook</option>
+            <option value="email">email</option>
+          </select>
+        </label>
+        <fieldset id="ch-webhook" data-kind="webhook" class="kind-fieldset">
+          <legend>Webhook</legend>
+          <label>URL<input name="url" /></label>
+        </fieldset>
+        <fieldset id="ch-email" data-kind="email" class="kind-fieldset" hidden>
+          <legend>Email (SMTP)</legend>
+          <label>Host<input name="host" /></label>
+          <label>Port<input name="port" type="number" value="587" /></label>
+          <label>Username<input name="username" /></label>
+          <label>Password<input name="password" type="password" /></label>
+          <label>From<input name="from" /></label>
+          <label>To<input name="to" /></label>
+          <label class="checkbox"><input type="checkbox" name="tls" /> Use STARTTLS</label>
+        </fieldset>
+        <div class="form-actions">
+          <button type="submit" class="primary">Create channel</button>
+        </div>
+      </form>
+    </details>
+  </section>
 </main>
 <script>
   document.getElementById('ch-kind')?.addEventListener('change', e => {
     const k = e.target.value;
     document.querySelectorAll('fieldset[data-kind]').forEach(f => {
-      f.style.display = (f.dataset.kind === k) ? '' : 'none';
+      f.hidden = f.dataset.kind !== k;
     });
   });
 </script>

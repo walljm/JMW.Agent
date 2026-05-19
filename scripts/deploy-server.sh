@@ -34,12 +34,18 @@ CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
 
 echo "==> shipping to $user@$host"
 scp -q "$OUT" "$user@$host:/tmp/jmw-server.new"
+scp -q deploy/systemd/jmw-server.service "$user@$host:/tmp/jmw-server.service"
 
 ssh -t "$user@$host" '
   set -e
-  sudo install -m 0755 /tmp/jmw-server.new /usr/local/bin/jmw-server
+  sudo mkdir -p /opt/jmw/bin
+  sudo install -m 0755 /tmp/jmw-server.new /opt/jmw/bin/jmw-server
+  sudo install -m 0644 /tmp/jmw-server.service /etc/systemd/system/jmw-server.service
+  sudo systemctl daemon-reload
+  # Clean up legacy /usr/local/bin install if present.
+  if [ -f /usr/local/bin/jmw-server ]; then sudo rm -f /usr/local/bin/jmw-server; fi
   sudo systemctl restart jmw-server
-  rm -f /tmp/jmw-server.new
+  rm -f /tmp/jmw-server.new /tmp/jmw-server.service
   sleep 1
   systemctl is-active jmw-server
 '

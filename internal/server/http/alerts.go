@@ -31,17 +31,22 @@ func (s *Server) alertsList(w http.ResponseWriter, r *http.Request) {
 	for _, ru := range rules {
 		ruleMap[ru.ID] = ru.Name
 	}
+	channelMap := map[int64]string{}
+	for _, ch := range channels {
+		channelMap[ch.ID] = ch.Name
+	}
 
 	s.render(w, r, "alerts.html", map[string]any{
-		"CSRFToken": csrf,
-		"Title":     "Alerts",
-		"Active":    "alerts",
-		"Rules":     rules,
-		"Firings":   firings,
-		"Channels":  channels,
-		"Agents":    agents,
-		"AgentMap":  agentMap,
-		"RuleMap":   ruleMap,
+		"CSRFToken":  csrf,
+		"Title":      "Alerts",
+		"Active":     "alerts",
+		"Rules":      rules,
+		"Firings":    firings,
+		"Channels":   channels,
+		"Agents":     agents,
+		"AgentMap":   agentMap,
+		"RuleMap":    ruleMap,
+		"ChannelMap": channelMap,
 	})
 }
 

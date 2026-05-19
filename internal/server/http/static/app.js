@@ -121,12 +121,20 @@ function initTabs() {
   });
 }
 
-// Sortable tables: click any th in a table.data to sort by that column.
+// Sortable tables: click any th in a table's thead to sort by that column.
+// Applies to all tables with a thead + tbody. Skip .kv tables (row-label
+// definition lists, no thead) and tables explicitly opted out with .no-sort.
 function initSortableTables() {
-  document.querySelectorAll('table.data').forEach((table) => {
-    const ths = table.querySelectorAll('thead th');
+  document.querySelectorAll('table').forEach((table) => {
+    if (table.classList.contains('kv') || table.classList.contains('no-sort')) return;
+    const thead = table.querySelector('thead');
+    const tbody = table.querySelector('tbody');
+    if (!thead || !tbody) return;
+    const ths = thead.querySelectorAll('th');
+    if (!ths.length) return;
     ths.forEach((th, colIdx) => {
-      th.style.cursor = 'pointer';
+      if (th.classList.contains('no-sort')) return;
+      th.classList.add('sortable');
       th.setAttribute('data-sort', 'none');
       th.addEventListener('click', () => sortByCol(table, th, colIdx));
     });
@@ -134,7 +142,8 @@ function initSortableTables() {
 }
 
 function sortByCol(table, th, colIdx) {
-  const ths = table.querySelectorAll('thead th');
+  const thead = th.closest('thead');
+  const ths = thead.querySelectorAll('th');
   const wasDir = th.getAttribute('data-sort');
   const dir = wasDir === 'asc' ? 'desc' : 'asc';
 
@@ -142,7 +151,7 @@ function sortByCol(table, th, colIdx) {
   th.setAttribute('data-sort', dir);
 
   const tbody = table.querySelector('tbody');
-  const rows = Array.from(tbody.querySelectorAll('tr'));
+  const rows = Array.from(tbody.querySelectorAll(':scope > tr'));
 
   rows.sort((a, b) => {
     const aText = cellText(a, colIdx);

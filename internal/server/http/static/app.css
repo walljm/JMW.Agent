@@ -69,11 +69,14 @@ h2 { margin-top: 32px; font-size: 16px; color: var(--fg-muted); font-weight: 600
 table.data { width: 100%; border-collapse: collapse; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 table.data th, table.data td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
 table.data th { background: var(--bg-elev-2); font-weight: 600; color: var(--fg-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; user-select: none; }
-table.data th:hover { color: var(--fg); }
-table.data th[data-sort="asc"]::after  { content: " ▲"; color: var(--accent); }
-table.data th[data-sort="desc"]::after { content: " ▼"; color: var(--accent); }
 table.data tr:last-child td { border-bottom: none; }
 table.data form { display: inline; margin: 0; }
+
+/* Sortable table indicators — apply to any sortable th, not just table.data. */
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--fg); }
+th[data-sort="asc"]::after  { content: " \25B2"; color: var(--accent); }
+th[data-sort="desc"]::after { content: " \25BC"; color: var(--accent); }
 
 button {
   background: var(--bg-elev-2); color: var(--fg); border: 1px solid var(--border);
@@ -219,3 +222,42 @@ table.compact th, table.compact td { padding: 4px 8px; font-size: 12px; }
 .panel h3 { font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .panel .data td.num, .data th.num { text-align: right; }
 .data td.num { font-variant-numeric: tabular-nums; }
+
+/* Generic <select> styling (inputs already have rules above). */
+select { display: block; margin-top: 4px; padding: 8px 10px; width: 100%; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius); color: var(--fg); font: inherit; }
+select:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Suppress sort indicator on action/empty columns. */
+th.no-sort { cursor: default !important; }
+th.no-sort::after { content: "" !important; }
+
+/* Sectioned page layout: clear vertical rhythm between blocks. */
+.alerts-section { margin-top: 32px; }
+.alerts-section:first-of-type { margin-top: 16px; }
+.alerts-section > h2 { margin-top: 0; margin-bottom: 12px; }
+.row-actions { width: 1%; white-space: nowrap; text-align: right; }
+
+/* Collapsible form block under a section. */
+.form-details { margin-top: 16px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius); padding: 0; overflow: hidden; }
+.form-details > summary { padding: 10px 14px; cursor: pointer; font-weight: 600; color: var(--fg); background: var(--bg-elev-2); list-style: none; }
+.form-details > summary::-webkit-details-marker { display: none; }
+.form-details > summary::before { content: "+ "; color: var(--fg-muted); font-weight: 400; }
+.form-details[open] > summary::before { content: "− "; }
+.form-details[open] > summary { border-bottom: 1px solid var(--border); }
+.form-details > .inline-form { padding: 16px; }
+
+/* Compact grid form: fields flow into auto-fit columns instead of stacking
+   full-width. Each <label> is a grid cell containing its control. */
+.inline-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 16px; align-items: end; }
+.inline-form > label { display: block; margin: 0; font-size: 12px; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.inline-form > label.checkbox { text-transform: none; letter-spacing: 0; color: var(--fg); display: flex; align-items: center; gap: 8px; }
+.inline-form > label.checkbox input { width: auto; margin: 0; display: inline-block; }
+.inline-form > .form-actions { grid-column: 1 / -1; margin-top: 4px; display: flex; justify-content: flex-end; }
+
+/* Fieldset for conditional channel sub-forms. Spans the full grid row and
+   gets its own nested grid so its fields line up with the parent. */
+.inline-form > .kind-fieldset { grid-column: 1 / -1; border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px 16px; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 16px; align-items: end; }
+.inline-form > .kind-fieldset > legend { padding: 0 6px; color: var(--fg-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+.inline-form > .kind-fieldset > label { display: block; margin: 0; font-size: 12px; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.inline-form > .kind-fieldset > label.checkbox { text-transform: none; letter-spacing: 0; color: var(--fg); display: flex; align-items: center; gap: 8px; }
+.inline-form > .kind-fieldset > label.checkbox input { width: auto; margin: 0; display: inline-block; }

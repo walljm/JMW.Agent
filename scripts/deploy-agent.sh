@@ -9,8 +9,8 @@
 # Reads host registry from scripts/hosts.tsv and the shared agent.toml
 # (server URL, PSK, pinned cert hash) from deploy/secrets/agent.toml.
 # Per-OS install paths:
-#   linux   -> /usr/local/bin/jmw-agent + /etc/jmw/agent.toml + systemd unit
-#   darwin  -> /usr/local/bin/jmw-agent + /usr/local/etc/jmw/agent.toml + launchd plist
+#   linux   -> /opt/jmw/bin/jmw-agent + /etc/jmw/agent.toml + systemd unit
+#   darwin  -> /opt/jmw/bin/jmw-agent + /usr/local/etc/jmw/agent.toml + launchd plist
 #   windows -> C:\Program Files\jmw-agent\jmw-agent.exe + C:\ProgramData\jmw-agent\agent.toml + Scheduled Task
 #
 # --publish builds & pushes a multi-arch (linux/amd64,linux/arm64) image to
@@ -92,14 +92,14 @@ deploy_linux() {
 
   ssh -t "$user@$host" "
     set -e
-    sudo install -m 0755 /tmp/$(basename "$binary") /usr/local/bin/jmw-agent
-    sudo mkdir -p /etc/jmw /var/lib/jmw-agent
+    sudo mkdir -p /opt/jmw/bin /etc/jmw /var/lib/jmw-agent
+    sudo install -m 0755 /tmp/$(basename "$binary") /opt/jmw/bin/jmw-agent
     sudo install -m 0640 /tmp/$(basename "$cfg_tmp") /etc/jmw/agent.toml
-    if [ ! -f /etc/systemd/system/jmw-agent.service ]; then
-      sudo install -m 0644 /tmp/jmw-agent.service /etc/systemd/system/jmw-agent.service
-      sudo systemctl daemon-reload
-      sudo systemctl enable jmw-agent
-    fi
+    sudo install -m 0644 /tmp/jmw-agent.service /etc/systemd/system/jmw-agent.service
+    sudo systemctl daemon-reload
+    sudo systemctl enable jmw-agent
+    # Clean up legacy /usr/local/bin install if present.
+    if [ -f /usr/local/bin/jmw-agent ]; then sudo rm -f /usr/local/bin/jmw-agent; fi
     sudo systemctl restart jmw-agent
     rm -f /tmp/$(basename "$binary") /tmp/$(basename "$cfg_tmp") /tmp/jmw-agent.service
     sleep 1
@@ -117,16 +117,25 @@ deploy_darwin() {
 
   ssh -t "$user@$host" "
     set -e
-    sudo install -m 0755 /tmp/$(basename "$binary") /usr/local/bin/jmw-agent
-    sudo mkdir -p /usr/local/etc/jmw /usr/local/var/jmw-agent /usr/local/var/log
+    sudo mkdir -p /opt/jmw/bin /usr/local/etc/jmw /usr/local/var/jmw-agent /usr/local/var/log
+    sudo install -m 0755 /tmp/$(basename "$binary") /opt/jmw/bin/jmw-agent
     sudo install -m 0640 /tmp/$(basename "$cfg_tmp") /usr/local/etc/jmw/agent.toml
     sudo chown -R root:wheel /usr/local/var/jmw-agent
-    if [ ! -f /Library/LaunchDaemons/com.walljm.jmw.agent.plist ]; then
-      sudo install -m 0644 /tmp/com.walljm.jmw.agent.plist /Library/LaunchDaemons/com.walljm.jmw.agent.plist
-      sudo launchctl bootstrap system /Library/LaunchDaemons/com.walljm.jmw.agent.plist
-    else
-      sudo launchctl kickstart -k system/com.walljm.jmw.agent
+    # Always install the latest plist (path may have changed).
+    sudo install -m 0644 /tmp/com.walljm.jmw.agent.plist /Library/LaunchDaemons/com.walljm.jmw.agent.plist
+    if sudo launchctl print system/com.walljm.jmw.agent >/dev/null 2>&1; then
+      sudo launchctl bootout system/com.walljm.jmw.agent || true
+      # launchctl bootstrap right after bootout intermittently fails with
+      # 'Bootstrap failed: 5: Input/output error' while the previous job is
+      # still tearing down. Wait for it to actually disappear, then bootstrap.
+      for _ in 1 2 3 4 5; do
+        sudo launchctl print system/com.walljm.jmw.agent >/dev/null 2>&1 || break
+        sleep 1
+      done
     fi
+    sudo launchctl bootstrap system /Library/LaunchDaemons/com.walljm.jmw.agent.plist
+    # Clean up legacy /usr/local/bin install if present.
+    if [ -f /usr/local/bin/jmw-agent ]; then sudo rm -f /usr/local/bin/jmw-agent; fi
     rm -f /tmp/$(basename "$binary") /tmp/$(basename "$cfg_tmp") /tmp/com.walljm.jmw.agent.plist
     sleep 1
     sudo launchctl print system/com.walljm.jmw.agent | grep -E '^[[:space:]]+state' || true
