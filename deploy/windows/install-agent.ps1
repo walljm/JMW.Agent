@@ -42,21 +42,25 @@ $wrapper = Join-Path $installDir 'jmw-agent-launcher.cmd'
 # launching the agent. The agent writes <exe>.new and exits when it
 # receives an update; Scheduled Task restart-on-failure runs this wrapper
 # again, which renames .new over the real exe and starts the new image.
+# NOTE: this is a PowerShell here-string (@"..."@), so " passes through
+# literally — do NOT double them up to escape (that's the regular-string
+# rule). A previous version of this file used "" everywhere and produced
+# a malformed .cmd that silently failed to launch the agent.
 $wrapperBody = @"
 @echo off
 setlocal
-set ""EXE=$exe""
-set ""NEW=$exe.new""
-set ""CFG=$cfg""
-set ""LOG=$logFile""
+set "EXE=$exe"
+set "NEW=$exe.new"
+set "CFG=$cfg"
+set "LOG=$logFile"
 
 :loop
-if exist ""%NEW%"" (
-  echo [%date% %time%] applying staged update>> ""%LOG%""
-  move /Y ""%NEW%"" ""%EXE%"" >> ""%LOG%"" 2>&1
+if exist "%NEW%" (
+  echo [%date% %time%] applying staged update>> "%LOG%"
+  move /Y "%NEW%" "%EXE%" >> "%LOG%" 2>&1
 )
-""%EXE%"" -config ""%CFG%"" >> ""%LOG%"" 2>&1
-echo [%date% %time%] agent exited with code %ERRORLEVEL%, restarting in 5s>> ""%LOG%""
+"%EXE%" -config "%CFG%" >> "%LOG%" 2>&1
+echo [%date% %time%] agent exited with code %ERRORLEVEL%, restarting in 5s>> "%LOG%"
 timeout /t 5 /nobreak >nul
 goto loop
 "@

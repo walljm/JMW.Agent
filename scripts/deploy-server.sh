@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
-# Deploy or update the jmw-server on its host (default: core-services).
+# Deploy or update the jmw-server.
 #
-# Usage: scripts/deploy-server.sh [nickname]
+# Unlike the agent, the server has no self-updater, so this script
+# is used both for initial install and for routine updates.
+#
+# Usage: scripts/deploy-server.sh <user@host> [arch]
+#
+# arch defaults to amd64. OS is always linux (the server only
+# ships for linux today).
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-NICK="${1:-core-services}"
-HOSTS_FILE="$REPO_ROOT/scripts/hosts.tsv"
-
-row=$(awk -v nick="$NICK" '$0 !~ /^#/ && $1 == nick { print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5; exit }' "$HOSTS_FILE")
-if [[ -z "$row" ]]; then
-  echo "no host '$NICK' in $HOSTS_FILE" >&2
+if [[ $# -lt 1 ]]; then
+  echo "usage: $0 <user@host> [arch]" >&2
   exit 1
 fi
-IFS=$'\t' read -r _ host user os arch <<<"$row"
 
-if [[ "$os" != "linux" ]]; then
-  echo "server deploy currently supports linux only (host '$NICK' is $os)" >&2
-  exit 1
-fi
+target="$1"
+arch="${2:-amd64}"
+os="linux"
 
 VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
 OUT="bin/jmw-server-${os}-${arch}"
@@ -32,11 +32,11 @@ CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
   go build -ldflags "-s -w -X github.com/walljm/jmwagent/internal/shared/version.Version=$VERSION" \
   -o "$OUT" ./cmd/server
 
-echo "==> shipping to $user@$host"
-scp -q "$OUT" "$user@$host:/tmp/jmw-server.new"
-scp -q deploy/systemd/jmw-server.service "$user@$host:/tmp/jmw-server.service"
+echo "==> shipping to $target"
+scp -q "$OUT" "$target:/tmp/jmw-server.new"
+scp -q deploy/systemd/jmw-server.service "$target:/tmp/jmw-server.service"
 
-ssh -t "$user@$host" '
+ssh -t "$target" '
   set -e
   sudo mkdir -p /opt/jmw/bin
   sudo install -m 0755 /tmp/jmw-server.new /opt/jmw/bin/jmw-server

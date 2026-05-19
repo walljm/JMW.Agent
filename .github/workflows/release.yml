@@ -1,0 +1,143 @@
+name: Release
+
+on:
+  push:
+    tags:
+      # Strict semver: vMAJOR.MINOR.PATCH only. No prereleases, no build metadata.
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write # for creating GitHub Releases
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: [self-hosted, core-services]
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - id: version
+        run: echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Build all binaries
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          LDFLAGS="-s -w -X github.com/walljm/jmwagent/internal/shared/version.Version=${VERSION}"
+
+          # Agent: all platforms.
+          for combo in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            os=${combo%/*}; arch=${combo#*/}
+            out="dist/jmw-agent-${os}-${arch}"
+            [ "$os" = "windows" ] && out="${out}.exe"
+            echo "==> building $out"
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch \
+              go build -ldflags "$LDFLAGS" -o "$out" ./cmd/agent
+          done
+
+          # Server: linux only.
+          for arch in amd64 arm64; do
+            out="dist/jmw-server-linux-${arch}"
+            echo "==> building $out"
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch \
+              go build -ldflags "$LDFLAGS" -o "$out" ./cmd/server
+          done
+
+          (cd dist && sha256sum * > SHA256SUMS)
+          ls -la dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries
+          path: dist/
+          retention-days: 14
+
+  github-release:
+    needs: build
+    runs-on: [self-hosted, core-services]
+    steps:
+      - uses: actions/checkout@v4 # needed for `gh release create` to know the repo
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries
+          path: dist/
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          gh release create "$VERSION" \
+            --title "$VERSION" \
+            --generate-notes \
+            dist/*
+
+  publish-docker:
+    needs: build
+    runs-on: [self-hosted, core-services]
+    steps:
+      - uses: actions/checkout@v4 # Dockerfile lives in the repo
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USER }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: Build & push multi-arch agent image
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg "VERSION=${VERSION}" \
+            -f deploy/docker/Dockerfile.agent \
+            -t "walljm/jmw-agent:${VERSION}" \
+            -t "walljm/jmw-agent:latest" \
+            --push \
+            .
+
+  deploy-server:
+    needs: build
+    runs-on: [self-hosted, core-services]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries
+          path: dist/
+
+      - name: Install + restart jmw-server
+        run: |
+          set -euo pipefail
+          chmod 0755 dist/jmw-server-linux-amd64
+          sudo /opt/jmw/bin/gha-deploy-server "$PWD/dist/jmw-server-linux-amd64"
+
+  publish-agent-releases:
+    needs: build
+    runs-on: [self-hosted, core-services]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries
+          path: dist/
+
+      - name: Publish agent binaries to releases dir
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          sudo /opt/jmw/bin/gha-publish-agent-release "$VERSION" "$PWD/dist"
