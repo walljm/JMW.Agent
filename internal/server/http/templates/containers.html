@@ -30,7 +30,8 @@
   </form>
 
   {{if .Containers}}
-  <table class="data">
+  <div class="table-wrap">
+  <table class="data sortable">
     <thead><tr>
       <th>Name</th><th>State</th><th>Health</th><th>Image</th>
       <th>Project / Service</th><th>Host</th><th>Started</th>
@@ -49,6 +50,7 @@
     {{end}}
     </tbody>
   </table>
+  </div>
   {{else}}<p class="muted">No containers reported. Hosts running Docker will populate this list on their next inventory cycle.</p>{{end}}
 </main>
 {{template "foot" .}}

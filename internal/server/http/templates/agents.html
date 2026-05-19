@@ -17,6 +17,7 @@
 
   <section id="panel-approved" role="tabpanel" aria-labelledby="tab-approved" class="tab-panel active">
     {{if .Agents}}
+    <div class="table-wrap">
     <table class="data sortable agents">
       <thead><tr>
         <th>Status</th>
@@ -49,6 +50,7 @@
       {{end}}
       </tbody>
     </table>
+    </div>
     {{else}}
     <p class="muted empty-state">No approved agents yet. Once an agent registers and is approved, it will appear here.</p>
     {{end}}
@@ -56,6 +58,7 @@
 
   <section id="panel-pending" role="tabpanel" aria-labelledby="tab-pending" class="tab-panel" hidden>
     {{if .Pending}}
+    <div class="table-wrap">
     <table class="data sortable">
       <thead><tr>
         <th>Hostname</th>
@@ -81,6 +84,7 @@
       {{end}}
       </tbody>
     </table>
+    </div>
     {{else}}
     <p class="muted empty-state">No agents are awaiting approval.</p>
     {{end}}

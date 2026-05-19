@@ -187,6 +187,7 @@ function parseVal(text) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  autoWrapTables();
   renderCpuChart();
   initTabs();
   initRoleTabs();
@@ -197,6 +198,20 @@ document.addEventListener('DOMContentLoaded', () => {
   initAlertCharts();
   initAlertChannelKindToggle();
 });
+
+// Every <table class="data"> gets wrapped in a horizontally-scrollable
+// container so wide tables never break the page layout. Idempotent: if
+// a template already wrapped its table in .table-wrap we skip it.
+function autoWrapTables() {
+  document.querySelectorAll('table.data').forEach((t) => {
+    const parent = t.parentElement;
+    if (!parent || parent.classList.contains('table-wrap')) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'table-wrap';
+    parent.insertBefore(wrap, t);
+    wrap.appendChild(t);
+  });
+}
 
 // Alerts page: when the user picks a channel kind from the form,
 // reveal only the matching <fieldset data-kind="…">.

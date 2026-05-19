@@ -3,7 +3,8 @@
 <main class="container">
   <h1>Discovered devices</h1>
   {{if .Groups}}
-  <table class="data devices">
+  <div class="table-wrap">
+  <table class="data sortable devices">
     <thead><tr><th>Hostname</th><th>IP</th><th>MAC</th><th>Vendor</th><th>Kind</th><th>Description</th><th>Tags</th><th>First seen</th><th>Last seen</th><th>Via</th></tr></thead>
     <tbody>
     {{range .Groups}}
@@ -47,6 +48,7 @@
     {{end}}
     </tbody>
   </table>
+  </div>
   {{else}}<p class="muted">No devices discovered yet. Agents will report ARP/mDNS sightings during their normal cycle.</p>{{end}}
 </main>
 {{template "foot" .}}

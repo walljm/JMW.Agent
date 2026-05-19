@@ -6,7 +6,8 @@
   <section class="alerts-section">
     <h2>Active &amp; recent firings</h2>
     {{if .Firings}}
-    <table class="data">
+    <div class="table-wrap">
+    <table class="data sortable">
       <thead><tr><th>Started</th><th>Resolved</th><th>Rule</th><th>Agent</th><th>Value</th><th>Summary</th></tr></thead>
       <tbody>
       {{range .Firings}}
@@ -21,13 +22,15 @@
       {{end}}
       </tbody>
     </table>
+    </div>
     {{else}}<p class="muted">No alert firings recorded.</p>{{end}}
   </section>
 
   <section class="alerts-section">
     <h2>Rules</h2>
     {{if .Rules}}
-    <table class="data">
+    <div class="table-wrap">
+    <table class="data sortable">
       <thead><tr><th>Name</th><th>Metric</th><th>Op</th><th>Threshold</th><th>Target</th><th>Severity</th><th>Channel</th><th class="no-sort"></th></tr></thead>
       <tbody>
       {{range .Rules}}
@@ -49,6 +52,7 @@
       {{end}}
       </tbody>
     </table>
+    </div>
     {{else}}<p class="muted">No alert rules configured.</p>{{end}}
 
     <details class="form-details">
@@ -100,7 +104,8 @@
   <section class="alerts-section">
     <h2>Notification channels</h2>
     {{if .Channels}}
-    <table class="data">
+    <div class="table-wrap">
+    <table class="data sortable">
       <thead><tr><th>Name</th><th>Kind</th><th>Enabled</th><th class="no-sort"></th></tr></thead>
       <tbody>
       {{range .Channels}}
@@ -118,6 +123,7 @@
       {{end}}
       </tbody>
     </table>
+    </div>
     {{else}}<p class="muted">No channels configured.</p>{{end}}
 
     <details class="form-details">
