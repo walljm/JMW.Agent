@@ -53,7 +53,7 @@ a:hover { text-decoration: underline; }
 }
 .link-btn:hover { color: var(--fg); }
 
-.container { padding: 24px; max-width: 1200px; margin: 0 auto; }
+.container { padding: 24px; }
 h1 { margin-top: 0; font-size: 22px; }
 h2 { margin-top: 32px; font-size: 16px; color: var(--fg-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
 .muted { color: var(--fg-muted); }
