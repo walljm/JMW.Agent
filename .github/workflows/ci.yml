@@ -38,4 +38,6 @@ jobs:
           fi
 
       - name: go test
+        env:
+          CGO_ENABLED: "1"
         run: go test ./... -race
