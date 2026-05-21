@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["**"] # release.yml handles tags
+  workflow_dispatch:
+
+# Self-hosted runners cannot safely accept PR workflows from forks (the PR
+# author could exfiltrate from the box), so we only trigger on push from
+# the same repository. There is no fork-PR flow on this repo anyway.
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: [self-hosted, core-services]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: gofmt check
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then
+            echo "gofmt issues:"
+            echo "$out"
+            exit 1
+          fi
+
+      - name: go test
+        run: go test ./...

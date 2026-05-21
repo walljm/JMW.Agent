@@ -1,0 +1,106 @@
+{{define "head"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>{{.Title}} · JMW Agent</title>
+<link rel="stylesheet" href="/static/app.css" />
+<script>
+  // Apply persisted theme before paint to avoid a flash. Default is dark.
+  (function () {
+    try {
+      var t = localStorage.getItem('jmw_theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', t);
+    } catch (e) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  })();
+</script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to main content</a>
+{{end}}
+
+{{define "navbar"}}
+{{- $active := .Active -}}
+{{- $group := "" -}}
+{{- if or (eq $active "agents") (eq $active "pending") (eq $active "alerts") (eq $active "containers") -}}{{- $group = "fleet" -}}{{- end -}}
+{{- if or (eq $active "devices") (eq $active "terrain") -}}{{- $group = "network" -}}{{- end -}}
+{{- if eq $active "events" -}}{{- $group = "system" -}}{{- end -}}
+<nav class="navbar" aria-label="Primary">
+  <div class="brand"><a href="/">JMW Agent</a></div>
+  <button class="navtoggle" type="button" aria-controls="primary-nav" aria-expanded="false" aria-label="Toggle navigation">
+    <span></span><span></span><span></span>
+  </button>
+  <ul id="primary-nav" class="navlinks">
+    <li class="{{if eq $active "dashboard"}}active{{end}}"><a href="/">Dashboard</a></li>
+
+    <li class="navgroup {{if eq $group "fleet"}}active{{end}}" data-group>
+      <button type="button" class="navgroup-label" aria-haspopup="true" aria-expanded="false">Fleet</button>
+      <ul class="navmenu" role="menu">
+        <li role="none"><a role="menuitem" href="/agents" class="{{if or (eq $active "agents") (eq $active "pending")}}active{{end}}">Agents</a></li>
+        <li role="none"><a role="menuitem" href="/alerts" class="{{if eq $active "alerts"}}active{{end}}">Alerts</a></li>
+      </ul>
+    </li>
+
+    <li class="navgroup {{if eq $group "network"}}active{{end}}" data-group>
+      <button type="button" class="navgroup-label" aria-haspopup="true" aria-expanded="false">Network</button>
+      <ul class="navmenu" role="menu">
+        <li role="none"><a role="menuitem" href="/devices" class="{{if eq $active "devices"}}active{{end}}">Devices</a></li>
+        <li role="none"><a role="menuitem" href="/terrain" class="{{if eq $active "terrain"}}active{{end}}">Key Cyber Terrain</a></li>
+      </ul>
+    </li>
+
+    <li class="navgroup {{if eq $group "system"}}active{{end}}" data-group>
+      <button type="button" class="navgroup-label" aria-haspopup="true" aria-expanded="false">System</button>
+      <ul class="navmenu" role="menu">
+        <li role="none"><a role="menuitem" href="/events" class="{{if eq $active "events"}}active{{end}}">Events</a></li>
+      </ul>
+    </li>
+  </ul>
+  <div class="navright">
+    <button type="button" class="theme-toggle link-btn" id="theme-toggle" aria-label="Toggle color theme" title="Toggle theme">
+      <span class="theme-icon theme-icon-dark" aria-hidden="true">☾</span>
+      <span class="theme-icon theme-icon-light" aria-hidden="true">☀</span>
+    </button>
+    {{if .User}}<span class="user">{{.User.Username}}</span>{{end}}
+    {{if .CSRFToken}}
+    <form method="POST" action="/logout" class="logout-form">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+      <button type="submit" class="link-btn">Logout</button>
+    </form>
+    {{end}}
+  </div>
+</nav>
+<div id="main"></div>
+{{end}}
+
+{{define "foot"}}
+<footer class="site-footer">
+  <span class="muted small">JMW Agent server <span class="mono">{{.ServerVersion}}</span></span>
+</footer>
+<script src="/static/app.js" defer></script>
+</body>
+</html>
+{{end}}
+
+{{define "authhead"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>{{.Title}} · JMW Agent</title>
+<link rel="stylesheet" href="/static/app.css" />
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem('jmw_theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', t);
+    } catch (e) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  })();
+</script>
+</head>
+<body class="auth-body">
+{{end}}

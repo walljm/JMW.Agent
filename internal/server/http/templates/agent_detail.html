@@ -1,0 +1,431 @@
+{{template "head" .}}
+{{template "navbar" .}}
+<main class="container">
+  {{- $st := agentStatus .Agent.LastHeartbeatAt -}}
+  <header class="page-header detail-header">
+    <div class="detail-title">
+      <h1>{{.Agent.Hostname}} <span class="badge badge-status {{$st}}" title="{{$st}}">{{$st}}</span></h1>
+      <p class="muted">{{.Agent.OS}}/{{.Agent.Arch}} · {{.Agent.Version}} · last heartbeat {{sinceShort .Agent.LastHeartbeatAt}}</p>
+    </div>
+  </header>
+
+  <section>
+    <h2>Description &amp; tags</h2>
+    {{if .Agent.Notes}}<p>{{.Agent.Notes}}</p>{{end}}
+    {{if .Tags}}<p class="tag-list">{{range .Tags}}<span class="tag">{{.}}</span>{{end}}</p>{{end}}
+    <details>
+      <summary>Edit description, tags, and lifecycle</summary>
+      <form class="edit-form" method="POST" action="/agents/{{.Agent.ID}}/edit">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+        <label for="description">Description</label>
+        <textarea id="description" name="description" maxlength="2000" placeholder="Free-form notes about this agent">{{.Agent.Notes}}</textarea>
+        <label for="tags">Tags</label>
+        <input type="text" id="tags" name="tags" value="{{.TagsCSV}}" placeholder="comma-separated, e.g. prod, web, us-east" />
+        <p class="help">Tags are normalized to lowercase. Allowed: letters, digits, <code>-_./:</code>.</p>
+        <div><button class="primary" type="submit">Save</button></div>
+      </form>
+      <hr class="detail-divider" />
+      <h3 class="danger-zone-title">Danger zone</h3>
+      <p class="muted small">Deregistering removes this agent from the server. The agent will re-appear as a Pending registration the next time it checks in.</p>
+      <form method="POST" action="/agents/{{.Agent.ID}}/deregister" onsubmit="return confirm('Deregister this agent? It will re-register on its next heartbeat.')">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+        <button type="submit" class="danger">Deregister agent</button>
+      </form>
+    </details>
+  </section>
+
+  <section class="cards">
+    {{with .Latest}}
+    <div class="card">
+      <div class="card-label">CPU</div>
+      <div class="card-value">{{printf "%.1f%%" .CPUPercent}}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Memory</div>
+      <div class="card-value">{{humanBytes .MemUsedBytes}}<span class="card-sub">/ {{humanBytes .MemTotalBytes}}</span></div>
+    </div>
+    <div class="card">
+      <div class="card-label">Load 1m</div>
+      <div class="card-value">{{printf "%.2f" .Load1}}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Uptime</div>
+      <div class="card-value">{{humanDuration .UptimeSeconds}}</div>
+    </div>
+    {{else}}
+    <p class="muted">No metrics received yet.</p>
+    {{end}}
+  </section>
+
+  <canvas id="cpu-chart" width="800" height="200" data-agent="{{.Agent.ID}}"></canvas>
+
+  {{if .HasInventory}}
+  {{with .Inventory}}
+  <section class="inventory">
+    <h2>Device Inventory</h2>
+    <p class="muted">Collected {{shortTime .CollectedAt}}</p>
+
+    <div class="tabs" data-tabs>
+      <div class="tablist" role="tablist">
+        <button type="button" class="tab" role="tab" data-tab="overview" aria-selected="true">Overview</button>
+        <button type="button" class="tab" role="tab" data-tab="storage" aria-selected="false">Storage</button>
+        <button type="button" class="tab" role="tab" data-tab="network" aria-selected="false">Network</button>
+        <button type="button" class="tab" role="tab" data-tab="security" aria-selected="false">Security</button>
+        <button type="button" class="tab" role="tab" data-tab="docker" aria-selected="false">Docker</button>
+        <button type="button" class="tab" role="tab" data-tab="activity" aria-selected="false">Activity</button>
+        <button type="button" class="tab" role="tab" data-tab="system" aria-selected="false">System</button>
+      </div>
+
+      <div class="tabpanel" role="tabpanel" data-panel="overview">
+        <h3>Hardware</h3>
+        <table class="kv">
+          <tr><th>CPU</th><td>{{.Hardware.CPUModel}} {{if .Hardware.CPUVendor}}({{.Hardware.CPUVendor}}){{end}}</td></tr>
+          <tr><th>Cores</th><td>{{.Hardware.CPUCores}} physical / {{.Hardware.CPULogicalCores}} logical{{if gt .Hardware.CPUMHz 0.0}} · {{printf "%.0f MHz" .Hardware.CPUMHz}}{{end}}</td></tr>
+          <tr><th>Memory</th><td>{{humanBytes .Hardware.TotalMemBytes}}</td></tr>
+          <tr><th>System</th><td>{{.Hardware.SystemVendor}} {{.Hardware.SystemModel}}{{if .Hardware.SystemSerial}} · S/N {{.Hardware.SystemSerial}}{{end}}</td></tr>
+          <tr><th>Board</th><td>{{.Hardware.BoardVendor}} {{.Hardware.BoardModel}}</td></tr>
+          <tr><th>BIOS</th><td>{{.Hardware.BIOSVendor}} {{.Hardware.BIOSVersion}}{{if .Hardware.BIOSDate}} ({{.Hardware.BIOSDate}}){{end}}</td></tr>
+          <tr><th>Virtualization</th><td>{{.Hardware.Virtualization}}</td></tr>
+        </table>
+
+        {{if .Chassis}}
+        <h3>Chassis</h3>
+        <table class="kv">
+          <tr><th>Form factor</th><td>{{.Chassis.Type}}</td></tr>
+          {{with .Chassis.Battery}}
+          <tr><th>Battery</th><td>
+            {{if gt .ChargePercent 0.0}}{{printf "%.0f%%" .ChargePercent}} charged · {{end}}
+            {{if .State}}{{.State}}{{end}}
+            {{if gt .HealthPercent 0.0}} · health {{printf "%.0f%%" .HealthPercent}}{{end}}
+            {{if gt .CycleCount 0}} · {{.CycleCount}} cycles{{end}}
+          </td></tr>
+          {{end}}
+        </table>
+        {{end}}
+
+        {{if .GPUs}}
+        <h3>Graphics ({{len .GPUs}})</h3>
+        <table>
+          <thead><tr><th>Vendor</th><th>Model</th><th>Driver</th><th>VRAM</th></tr></thead>
+          <tbody>
+          {{range .GPUs}}
+            <tr><td>{{.Vendor}}</td><td>{{.Model}}</td><td>{{.DriverVersion}}</td><td>{{if gt .VRAMBytes 0}}{{humanBytes .VRAMBytes}}{{end}}</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{end}}
+
+        <h3>Operating System</h3>
+        <table class="kv">
+          <tr><th>Distro</th><td>{{.OS.Distro}} {{.OS.Version}} {{if .OS.Build}}(build {{.OS.Build}}){{end}}</td></tr>
+          <tr><th>Kernel</th><td>{{.OS.Kernel}} ({{.OS.KernelArch}})</td></tr>
+          <tr><th>Hostname</th><td>{{.OS.Hostname}}</td></tr>
+          <tr><th>Timezone</th><td>{{.OS.Timezone}}</td></tr>
+          <tr><th>Booted</th><td>{{shortTime .OS.BootTime}}</td></tr>
+          <tr><th>Installed</th><td>{{shortTime .OS.InstallDate}}</td></tr>
+        </table>
+      </div>
+
+      <div class="tabpanel" role="tabpanel" data-panel="storage" hidden>
+        {{if not (or .Disks .Filesystems)}}<p class="muted empty-state">No storage information collected.</p>{{end}}
+        {{if .Disks}}
+        <h3>Disks ({{len .Disks}})</h3>
+        <table>
+          <thead><tr><th>Device</th><th>Model</th><th>Size</th><th>Type</th><th>Health</th><th>Partitions</th></tr></thead>
+          <tbody>
+          {{range .Disks}}
+            <tr>
+              <td>{{.Name}}</td>
+              <td>{{.Model}}{{if .Serial}}<br><span class="muted">S/N {{.Serial}}</span>{{end}}</td>
+              <td>{{humanBytes .SizeBytes}}</td>
+              <td>{{.Type}}</td>
+              <td>
+                {{with .SMART}}
+                  <span class="badge state-{{if eq .OverallHealth "PASSED"}}running{{else if eq .OverallHealth "FAILED"}}exited{{else}}created{{end}}">{{.OverallHealth}}</span>
+                  {{if gt .TemperatureCelsius 0.0}}<br><span class="muted">{{printf "%.0f°C" .TemperatureCelsius}}</span>{{end}}
+                  {{if gt .PowerOnHours 0}}<br><span class="muted">{{.PowerOnHours}} hrs on</span>{{end}}
+                  {{if gt .PercentageUsed 0.0}}<br><span class="muted">NVMe used {{printf "%.0f%%" .PercentageUsed}}</span>{{end}}
+                  {{if gt .MediaWearoutPercent 0.0}}<br><span class="muted">wear {{printf "%.0f%%" .MediaWearoutPercent}}</span>{{end}}
+                  {{if gt .ReallocatedSectors 0}}<br><span class="muted">realloc {{.ReallocatedSectors}}</span>{{end}}
+                {{else}}<span class="muted">—</span>{{end}}
+              </td>
+              <td>
+                {{range .Partitions}}
+                  <div>{{.Name}}{{if .Mountpoint}} → {{.Mountpoint}} ({{.FSType}}){{end}} · {{humanBytes .SizeBytes}}</div>
+                {{end}}
+              </td>
+            </tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{end}}
+
+        {{if .Filesystems}}
+        <h3>Filesystems ({{len .Filesystems}})</h3>
+        <table>
+          <thead><tr><th>Mount</th><th>Device</th><th>Type</th><th>Used</th><th>Free</th><th>Total</th><th>Use %</th></tr></thead>
+          <tbody>
+          {{range .Filesystems}}
+            <tr>
+              <td>{{.Mountpoint}}</td>
+              <td class="mono small">{{.Device}}</td>
+              <td>{{.FSType}}</td>
+              <td>{{humanBytes .UsedBytes}}</td>
+              <td>{{humanBytes .FreeBytes}}</td>
+              <td>{{humanBytes .TotalBytes}}</td>
+              <td>{{if gt .TotalBytes 0}}{{printf "%.0f%%" (divf .UsedBytes (divf .TotalBytes 100.0))}}{{end}}</td>
+            </tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{end}}
+      </div>
+
+      <div class="tabpanel" role="tabpanel" data-panel="network" hidden>
+        <h3>Interfaces ({{len .Network.Interfaces}})</h3>
+        <table class="kv">
+          <tr><th>Default GW (v4)</th><td>{{.Network.Gateway4}}</td></tr>
+          <tr><th>Default GW (v6)</th><td>{{.Network.Gateway6}}</td></tr>
+          <tr><th>DNS Servers</th><td>{{range .Network.DNSServers}}{{.}} {{end}}</td></tr>
+          <tr><th>DNS Search</th><td>{{range .Network.DNSSearch}}{{.}} {{end}}</td></tr>
+        </table>
+        <table>
+          <thead><tr><th>Iface</th><th>Type</th><th>MAC</th><th>MTU</th><th>Speed</th><th>IPv4</th><th>IPv6</th><th>Up</th></tr></thead>
+          <tbody>
+          {{range .Network.Interfaces}}
+            <tr>
+              <td>{{.Name}}</td>
+              <td>{{.Type}}</td>
+              <td>{{.MAC}}</td>
+              <td>{{.MTU}}</td>
+              <td>{{if gt .LinkSpeedMbps 0}}{{.LinkSpeedMbps}} Mbps{{if .Duplex}} {{.Duplex}}{{end}}{{end}}</td>
+              <td>{{range .IPv4}}{{.}}<br>{{end}}</td>
+              <td>{{range .IPv6}}{{.}}<br>{{end}}</td>
+              <td>{{if .IsUp}}✓{{else}}✗{{end}}</td>
+            </tr>
+          {{end}}
+          </tbody>
+        </table>
+
+        {{if .Routes}}
+        <h3>Routes ({{len .Routes}})</h3>
+        <table>
+          <thead><tr><th>Family</th><th>Destination</th><th>Gateway</th><th>Iface</th><th>Metric</th></tr></thead>
+          <tbody>
+          {{range .Routes}}
+            <tr><td>{{.Family}}</td><td>{{.Destination}}</td><td>{{.Gateway}}</td><td>{{.Iface}}</td><td>{{.Metric}}</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{end}}
+      </div>
+
+      <div class="tabpanel" role="tabpanel" data-panel="security" hidden>
+        {{if not .Security}}<p class="muted empty-state">No security posture information collected.</p>{{end}}
+        {{with .Security}}
+        <h3>Posture</h3>
+        <table class="kv">
+          {{with .Firewall}}
+          <tr><th>Firewall</th><td>{{.Provider}} · <span class="badge state-{{if .Enabled}}running{{else}}exited{{end}}">{{if .Enabled}}enabled{{else}}disabled{{end}}</span>{{if .Default}} · default {{.Default}}{{end}}{{if .Profiles}} · {{range .Profiles}}{{.}} {{end}}{{end}}</td></tr>
+          {{end}}
+          {{if .TPMPresent}}<tr><th>TPM</th><td>{{if deref .TPMPresent}}<span class="badge state-running">present</span>{{if .TPMVersion}} v{{.TPMVersion}}{{end}}{{else}}<span class="badge state-exited">absent</span>{{end}}</td></tr>{{end}}
+          {{if .SecureBoot}}<tr><th>Secure Boot</th><td>{{if deref .SecureBoot}}<span class="badge state-running">on</span>{{else}}<span class="badge state-exited">off</span>{{end}}</td></tr>{{end}}
+          {{if .SELinuxMode}}<tr><th>SELinux / SIP</th><td>{{.SELinuxMode}}</td></tr>{{end}}
+          {{if .AppArmorMode}}<tr><th>AppArmor</th><td>{{.AppArmorMode}}</td></tr>{{end}}
+        </table>
+
+        {{if .AntiVirus}}
+        <h3>AntiVirus / EDR ({{len .AntiVirus}})</h3>
+        <table>
+          <thead><tr><th>Product</th><th>Enabled</th><th>Realtime</th><th>Up to date</th><th>Signatures</th><th>Last scan</th></tr></thead>
+          <tbody>
+          {{range .AntiVirus}}
+            <tr>
+              <td>{{.Name}}</td>
+              <td><span class="badge state-{{if .Enabled}}running{{else}}exited{{end}}">{{if .Enabled}}yes{{else}}no{{end}}</span></td>
+              <td>{{if .RealtimeProtected}}✓{{else}}✗{{end}}</td>
+              <td>{{if .UpToDate}}✓{{else}}✗{{end}}</td>
+              <td>{{.SignatureVersion}}{{if .SignatureAge}} <span class="muted">({{.SignatureAge}})</span>{{end}}</td>
+              <td>{{shortTime .LastScan}}</td>
+            </tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{end}}
+
+        {{if .DiskEncryption}}
+        <h3>Disk Encryption ({{len .DiskEncryption}})</h3>
+        <table>
+          <thead><tr><th>Mount</th><th>Device</th><th>Type</th><th>Status</th></tr></thead>
+          <tbody>
+          {{range .DiskEncryption}}
+            <tr><td>{{.Mountpoint}}</td><td class="mono small">{{.Device}}</td><td>{{.Type}}</td><td><span class="badge state-{{if eq .Status "on"}}running{{else}}exited{{end}}">{{.Status}}</span></td></tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{end}}
+        {{end}}
+      </div>
+
+      <div class="tabpanel" role="tabpanel" data-panel="docker" hidden>
+        {{if not (and .Docker .Docker.Reachable)}}<p class="muted empty-state">Docker not detected on this host.</p>{{end}}
+        {{if and .Docker .Docker.Reachable}}{{with .Docker}}
+        <p class="muted">Docker v{{.Version}} · {{len .Containers}} containers, {{len .Images}} images{{with .Engine}}{{if .OSType}} · {{.OSType}}/{{.Architecture}}{{end}}{{if .StorageDriver}} · {{.StorageDriver}}{{end}}{{end}}</p>
+        <h3>Containers</h3>
+        <table class="data">
+          <thead><tr><th>Name</th><th>State</th><th>Health</th><th>Image</th><th>Project</th><th>Status</th></tr></thead>
+          <tbody>
+          {{$agentID := $.Agent.ID}}
+          {{range .Containers}}
+            <tr>
+              <td><a href="/containers/{{$agentID}}/{{.ID}}">{{.Name}}</a></td>
+              <td><span class="badge state-{{.State}}">{{.State}}</span></td>
+              <td>{{if .Health}}<span class="badge health-{{.Health}}">{{.Health}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+              <td class="mono small">{{.Image}}</td>
+              <td>{{if .ComposeProject}}{{.ComposeProject}}{{if .ComposeService}} / {{.ComposeService}}{{end}}{{else}}<span class="muted">—</span>{{end}}</td>
+              <td class="muted small">{{.Status}}</td>
+            </tr>
+          {{end}}
+          </tbody>
+        </table>
+        <h3>Images</h3>
+        <table class="data">
+          <thead><tr><th>Repository</th><th>Tag</th><th>Size</th></tr></thead>
+          <tbody>
+          {{range .Images}}
+            <tr><td class="mono">{{.Repository}}</td><td>{{.Tag}}</td><td>{{humanBytes .SizeBytes}}</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{end}}{{end}}
+      </div>
+
+      <div class="tabpanel" role="tabpanel" data-panel="activity" hidden>
+        {{if not (or .Users (or .Listening (or .Processes .LocalUsers)))}}<p class="muted empty-state">No activity data collected.</p>{{end}}
+        {{if .Users}}
+        <h3>Logged-in Users ({{len .Users}})</h3>
+        <table>
+          <thead><tr><th>User</th><th>TTY</th><th>Host</th><th>Login</th></tr></thead>
+          <tbody>
+          {{range .Users}}
+            <tr><td>{{.User}}</td><td>{{.TTY}}</td><td>{{.Host}}</td><td>{{shortTime .LoginAt}}</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{end}}
+
+        {{if .LocalUsers}}
+        <h3>Local Accounts ({{len .LocalUsers}})</h3>
+        <table>
+          <thead><tr><th>Name</th><th>UID</th><th>Admin</th><th>Disabled</th><th>Shell</th><th>Home</th><th>Last login</th><th>Pwd age</th></tr></thead>
+          <tbody>
+          {{range .LocalUsers}}
+            <tr>
+              <td>{{.Name}}</td>
+              <td class="mono small">{{.UID}}</td>
+              <td>{{if .IsAdmin}}<span class="badge state-running">admin</span>{{end}}</td>
+              <td>{{if .Disabled}}<span class="badge state-exited">disabled</span>{{end}}</td>
+              <td class="mono small">{{.Shell}}</td>
+              <td class="mono small">{{.HomeDir}}</td>
+              <td>{{shortTime .LastLogin}}</td>
+              <td>{{if gt .PasswordAge 0}}{{.PasswordAge}}d{{end}}</td>
+            </tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{end}}
+
+        {{if .Listening}}
+        <h3>Listening Ports ({{len .Listening}})</h3>
+        <table>
+          <thead><tr><th>Proto</th><th>Address</th><th>Port</th><th>Process</th><th>PID</th></tr></thead>
+          <tbody>
+          {{range .Listening}}
+            <tr><td>{{.Proto}}</td><td>{{.Address}}</td><td>{{.Port}}</td><td>{{.ProcessName}}</td><td>{{.PID}}</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{end}}
+
+        {{if .Processes}}
+        <h3>Top Processes ({{len .Processes}})</h3>
+        <table>
+          <thead><tr><th>PID</th><th>User</th><th>Name</th><th>CPU %</th><th>Mem %</th><th>RSS</th><th>Cmd</th></tr></thead>
+          <tbody>
+          {{range .Processes}}
+            <tr><td>{{.PID}}</td><td>{{.User}}</td><td>{{.Name}}</td><td>{{printf "%.1f" .CPUPercent}}</td><td>{{printf "%.1f" .MemPercent}}</td><td>{{humanBytes .MemBytes}}</td><td class="cmd">{{.Cmd}}</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{end}}
+      </div>
+
+      <div class="tabpanel" role="tabpanel" data-panel="system" hidden>
+        {{if not (or .Reboots (or .Packages (or .Updates .Services)))}}<p class="muted empty-state">No system data collected.</p>{{end}}
+        {{with .Updates}}
+        <h3>Updates ({{.Manager}})</h3>
+        <table class="kv">
+          <tr><th>Pending</th><td>{{.Pending}}{{if gt .Security 0}} <span class="badge state-exited">{{.Security}} security</span>{{end}}</td></tr>
+          <tr><th>Reboot required</th><td>{{if .RebootRequired}}<span class="badge state-exited">yes</span>{{else}}no{{end}}</td></tr>
+          <tr><th>Checked</th><td>{{shortTime .CheckedAt}}</td></tr>
+        </table>
+        {{if .Updates}}
+        <table>
+          <thead><tr><th>Name</th><th>Current</th><th>New</th><th>Source</th><th>Security</th></tr></thead>
+          <tbody>
+          {{range .Updates}}
+            <tr><td>{{.Name}}</td><td class="mono small">{{.CurrentVersion}}</td><td class="mono small">{{.NewVersion}}</td><td>{{.Source}}</td><td>{{if .Security}}<span class="badge state-exited">sec</span>{{end}}</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{end}}
+        {{end}}
+
+        {{if .Services}}
+        <h3>Abnormal Services ({{len .Services}})</h3>
+        <table>
+          <thead><tr><th>Name</th><th>Display name</th><th>State</th><th>Sub</th><th>Start mode</th><th>Exit</th></tr></thead>
+          <tbody>
+          {{range .Services}}
+            <tr><td class="mono small">{{.Name}}</td><td>{{.DisplayName}}</td><td><span class="badge state-exited">{{.State}}</span></td><td>{{.SubState}}</td><td>{{.StartMode}}</td><td>{{if ne .ExitCode 0}}{{.ExitCode}}{{end}}</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{end}}
+
+        {{if .Reboots}}
+        <h3>Reboot History ({{len .Reboots}})</h3>
+        <table>
+          <thead><tr><th>Booted</th><th>Kernel</th></tr></thead>
+          <tbody>
+          {{range .Reboots}}
+            <tr><td>{{shortTime .BootedAt}}</td><td>{{.Kernel}}</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{end}}
+
+        {{if .Packages}}
+        <h3>Packages ({{.Packages.Manager}} · {{.Packages.Count}} installed)</h3>
+        <table>
+          <thead><tr><th>Name</th><th>Version</th><th>Arch</th></tr></thead>
+          <tbody>
+          {{range .Packages.Packages}}
+            <tr><td>{{.Name}}</td><td>{{.Version}}</td><td>{{.Arch}}</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{end}}
+      </div>
+    </div>
+  </section>
+  {{end}}
+  {{else}}
+  <section class="inventory">
+    <h2>Device Inventory</h2>
+    <p class="muted">No inventory collected yet — first sample arrives shortly after approval.</p>
+  </section>
+  {{end}}
+
+</main>
+{{template "foot" .}}

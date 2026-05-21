@@ -1,227 +1,132 @@
-# JMW.Agent
+# JMW Agent
 
-A comprehensive system monitoring and management solution built with .NET 9, featuring a client-server architecture for monitoring distributed systems.
+A lightweight home network monitoring system written in Go.
 
-## 🚀 Overview
+A single Go server hosts the dashboard + API; lightweight Go agents installed on each
+host stream metrics back over HTTPS, and double as network sensors that report ARP
+sightings of every other device on their subnet. Devices that can't run an agent
+(IoT, printers, routers) show up automatically as "discovered" entries.
 
-JMW.Agent is a distributed monitoring system that consists of:
+## Features
 
-- **Agent Client**: A lightweight service that collects system information and reports to the central server
-- **Agent Server**: A web-based dashboard with REST API for managing and monitoring connected agents
-- **Common Library**: Shared models and utilities for data collection and serialization
+- Single static binary per side — server and agent (no CGO, no runtime).
+- HTTPS by default with auto-generated self-signed certs and SHA-256 cert pinning on agents.
+- First-boot setup wizard creates the admin user; PSK is printed once at startup.
+- Live system metrics: CPU, memory, load, uptime, per-disk usage, per-interface counters.
+- Threshold alerting with email + webhook delivery and a firings/event log.
+- Distributed network discovery: every agent reports its ARP table; devices are merged
+  by MAC across observers.
+- SQLite storage in WAL mode — one file, one process.
+- Dark-mode dashboard built with vanilla JS, plain HTML templates, and a small CSS.
+- Smoke test that exercises register → approve → heartbeat → metrics → discovery.
 
-## 🏗️ Architecture
+## Build
 
-```
-┌─────────────────┐    HTTPS    ┌─────────────────┐
-│   Agent Client  │ ──────────► │  Agent Server   │
-│   (Monitoring)  │             │   (Dashboard)   │
-└─────────────────┘             └─────────────────┘
-        │                               │
-        ▼                               ▼
-┌─────────────────┐             ┌─────────────────┐
-│ System Metrics  │             │   SQLite DB     │
-│   Collection    │             │   Web UI        │
-└─────────────────┘             └─────────────────┘
-```
+Requires Go 1.26+.
 
-## 📋 Features
-
-### Agent Client
-- 🔍 **System Information Collection**: CPU, memory, disk, network interfaces
-- 🌐 **Network Monitoring**: IP addresses, interface statistics, neighbors
-- 💻 **OS Detection**: Windows (WMI) and Linux support
-- 🔐 **Secure Registration**: Automatic agent registration with authorization
-- ⚡ **Real-time Reporting**: Continuous system state updates
-- 🖥️ **Service Integration**: Systemd support for Linux deployment
-
-### Agent Server
-- 📊 **Web Dashboard**: Angular-based frontend for agent management
-- 🔌 **REST API**: Complete API for agent registration and data retrieval
-- 🗄️ **Data Persistence**: SQLite database for agent data storage
-- 🔐 **Authentication**: JWT-based security with Identity framework
-- 📈 **Monitoring**: OpenTelemetry integration for observability
-- 📱 **Responsive UI**: Modern web interface for system monitoring
-
-## 🛠️ Technology Stack
-
-- **.NET 9**: Core framework
-- **ASP.NET Core**: Web framework and API
-- **Entity Framework Core**: Data access with SQLite
-- **Angular**: Frontend framework
-- **OpenTelemetry**: Observability and monitoring
-- **System.Text.Json**: High-performance JSON serialization
-- **Microsoft Extensions**: Dependency injection, logging, configuration
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
-- [Node.js](https://nodejs.org/) (for the web UI)
-- Linux/Windows operating system
-
-### Building the Solution
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd JMW.Agent
-
-# Restore dependencies
-dotnet restore
-
-# Build the entire solution
-dotnet build
+```sh
+make build           # builds bin/jmw-server and bin/jmw-agent for the host
+make build-all       # cross-builds for linux/darwin × amd64/arm64
+make test            # runs go test ./...
+make vet             # runs go vet ./...
 ```
 
-### Running the Server
+## Run (development, single host)
 
-```bash
-cd src/Server/JMW.Agent.Server
-dotnet run
+```sh
+# 1. Start the server in one terminal. First boot prints the agent PSK.
+./bin/jmw-server -config server.toml
+
+# 2. Visit https://localhost:8443 to create the admin account.
+#    (Browser will warn about self-signed cert; proceed once.)
+
+# 3. Configure agent.toml with the printed PSK and start the agent:
+cat > agent.toml <<EOF
+server_url    = "https://localhost:8443"
+psk           = "PASTE_PSK_HERE"
+id_file       = "./agent.id"
+interval_secs = 30
+EOF
+
+./bin/jmw-agent -config agent.toml
+
+# 4. Approve the agent under https://localhost:8443/pending.
 ```
 
-The server will start on `https://localhost:5001` by default.
+## Deploy
 
-### Running an Agent Client
+Reference unit files live in [deploy/](deploy/):
 
-```bash
-cd src/Agent
-dotnet run
-```
+- [deploy/systemd/jmw-server.service](deploy/systemd/jmw-server.service)
+- [deploy/systemd/jmw-agent.service](deploy/systemd/jmw-agent.service)
+- [deploy/launchd/com.walljm.jmw.server.plist](deploy/launchd/com.walljm.jmw.server.plist)
+- [deploy/launchd/com.walljm.jmw.agent.plist](deploy/launchd/com.walljm.jmw.agent.plist)
 
-### Configuration
+### Publishing agent updates
 
-#### Agent Client Configuration (`appsettings.json`)
-
-```json
-{
-  "AgentOptions": {
-    "ServerIp": "localhost",
-    "ServerPort": 5001,
-    "ServiceName": "MyAgent",
-    "AgentIdFilePath": "agent.id"
-  }
-}
-```
-
-#### Server Configuration (`appsettings.json`)
-
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Data Source=jmw.agent.sqlite"
-  },
-  "Logging": {
-    "LogLevel": {
-      "Default": "Information"
-    }
-  }
-}
-```
-
-## 📁 Project Structure
+The server can push binary updates to agents over the same PSK + pinned-TLS
+channel. Drop release binaries into the directory named by `releases_dir` in
+`server.toml` (default `./releases`) using this layout:
 
 ```
-JMW.Agent/
-├── src/
-│   ├── Agent/                          # Agent Client
-│   │   ├── Services/                   # Agent services
-│   │   ├── AgentOptions.cs            # Configuration model
-│   │   ├── ReportingService.cs        # Main reporting logic
-│   │   └── Program.cs                 # Entry point
-│   ├── JMW.Agent.Common/              # Shared library
-│   │   ├── Models/                    # Data models
-│   │   ├── Serialization/             # JSON converters
-│   │   ├── Windows/                   # Windows-specific WMI
-│   │   └── Linux/                     # Linux-specific services
-│   └── Server/
-│       └── JMW.Agent.Server/          # Server application
-│           ├── ClientApp/             # Angular frontend
-│           ├── Data/                  # Entity Framework
-│           ├── Endpoints/             # API endpoints
-│           └── Services/              # Server services
-└── JMW.Agent.sln                     # Solution file
+releases/
+  v1.4.0/
+    jmw-agent-linux-amd64
+    jmw-agent-linux-arm64
+    jmw-agent-darwin-amd64
+    jmw-agent-darwin-arm64
+    jmw-agent-windows-amd64.exe
+  v1.5.0/
+    ...
 ```
 
-## 🔧 Development
+Filenames must match `jmw-agent-<os>-<arch>[.exe]`. The server picks the
+highest semver-clean directory per platform; dev/dirty tags are ignored on
+both sides (the agent will not auto-update from a clean release to a dirty
+one, and vice versa). On the next heartbeat after a new release lands, each
+eligible agent downloads the binary, verifies SHA-256, swaps it in, and
+re-execs in place. Docker deployments use Watchtower instead — see
+[deploy/docker/README.md](deploy/docker/README.md#auto-updating-the-agent).
 
-### Prerequisites for Development
+## Architecture
 
-- [Visual Studio 2022](https://visualstudio.microsoft.com/) or [JetBrains Rider](https://www.jetbrains.com/rider/)
-- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
-- [Node.js 18+](https://nodejs.org/)
+See [planning/architecture/overview.md](planning/architecture/overview.md) and
+[planning/implementation/plan.md](planning/implementation/plan.md).
 
-### Development Workflow
+## Layout
 
-1. **Backend Development**: Use Visual Studio or Rider to work with the .NET projects
-2. **Frontend Development**: The Angular app is in `src/Server/JMW.Agent.Server/ClientApp/`
-3. **Testing**: Run unit tests with `dotnet test`
-4. **Database**: SQLite database is created automatically on first run
-
-### Adding New System Metrics
-
-1. Add new model classes in `JMW.Agent.Common/Models/`
-2. Implement collection logic in the appropriate OS-specific service
-3. Update the reporting service to include new metrics
-4. Add corresponding UI components in the Angular frontend
-
-## 🐧 Linux Deployment
-
-The agent supports systemd for Linux deployment:
-
-```bash
-# Build and publish
-dotnet publish -c Release -o /opt/jmw-agent
-
-# Create systemd service file
-sudo nano /etc/systemd/system/jmw-agent.service
-
-# Enable and start service
-sudo systemctl enable jmw-agent
-sudo systemctl start jmw-agent
+```
+cmd/server/        # jmw-server entry
+cmd/agent/         # jmw-agent entry
+internal/server/
+  config/          # TOML config loader, PSK bootstrap
+  store/           # SQLite + embedded migrations + repos
+  tls/             # self-signed cert bootstrap
+  http/            # routes, middleware, handlers, templates, static
+  alerting/        # threshold evaluator
+  notify/          # email + webhook dispatchers
+internal/agent/
+  config/          # agent TOML config
+  identity/        # persistent agent ID
+  collect/         # OS metric collectors (linux + darwin)
+  discover/        # ARP scanners
+  transport/       # pinned-TLS HTTP client
+internal/shared/
+  proto/           # wire types (versioned API)
+  version/         # build-time version (-ldflags)
+internal/smoke/    # end-to-end test
+deploy/            # systemd + launchd unit files
 ```
 
-## 🔐 Security
+## Status
 
-- Agent registration requires server authorization
-- HTTPS communication between agent and server
-- JWT-based authentication for web interface
-- Configurable agent identification and validation
+MVP per [planning/implementation/plan.md](planning/implementation/plan.md):
 
-## 📊 Monitoring & Observability
+- P1 Foundation
+- P3 Metrics + alerting
+- P4 Network discovery (ARP)
+- P5 Deploy units + smoke test
 
-- OpenTelemetry integration for metrics and tracing
-- Prometheus metrics endpoint
-- Structured logging with Microsoft.Extensions.Logging
-- Real-time system performance monitoring
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🆘 Support
-
-For support and questions:
-
-- Create an issue in the GitHub repository
-- Check the documentation in the `/docs` folder
-- Review the API documentation at `/swagger` when the server is running
-
-## 🗺️ Roadmap
-
-- [ ] Docker containerization
-- [ ] Additional database providers (PostgreSQL, SQL Server)
-- [ ] Advanced alerting and notifications
-- [ ] Performance benchmarking tools
-- [ ] Multi-tenant support
-- [ ] Enhanced security features
+Future work (post-MVP): mDNS service discovery, topology graph, Docker/service
+inventory, retention rollups, agent auto-update with ed25519 signing,
+SMART/disk-IO, multi-user RBAC.

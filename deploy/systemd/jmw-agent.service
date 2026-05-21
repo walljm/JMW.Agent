@@ -1,0 +1,23 @@
+[Unit]
+Description=JMW Agent
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/var/lib/jmw-agent
+ExecStart=/opt/jmw/bin/jmw-agent -config /etc/jmw/agent.toml
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+# /opt/jmw/bin must be writable so the in-process updater can atomically
+# replace the running binary (rename + re-exec). /var/lib/jmw-agent holds
+# the persistent agent identity file.
+ReadWritePaths=/var/lib/jmw-agent /opt/jmw/bin
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

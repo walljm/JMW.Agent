@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.walljm.jmw.agent</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/jmw/bin/jmw-agent</string>
+    <string>-config</string>
+    <string>/usr/local/etc/jmw/agent.toml</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>WorkingDirectory</key>
+  <string>/usr/local/var/jmw-agent</string>
+  <key>StandardErrorPath</key>
+  <string>/usr/local/var/log/jmw-agent.err.log</string>
+  <key>StandardOutPath</key>
+  <string>/usr/local/var/log/jmw-agent.out.log</string>
+</dict>
+</plist>

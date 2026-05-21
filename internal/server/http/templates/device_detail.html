@@ -1,0 +1,238 @@
+{{template "head" .}}
+{{template "navbar" .}}
+<main class="container">
+  <h1>{{if .Device.Hostname}}{{.Device.Hostname}}{{else}}<span class="muted">unknown device</span>{{end}}</h1>
+
+  {{if .Device.AgentID}}
+  <div class="callout callout-ok">
+    <strong>Managed agent.</strong> This device is one of our agents:
+    <a href="/agents/{{.Device.AgentID}}">{{if .ManagedHostname}}{{.ManagedHostname}}{{else}}{{.Device.AgentID}}{{end}}</a>
+    &mdash; full inventory and metrics on the agent page.
+  </div>
+  {{end}}
+
+  <section>
+    <h2>Identity</h2>
+    <table class="kv">
+      <tr><th>Primary IP</th><td>{{.Device.IP}}</td></tr>
+      <tr><th>Primary MAC</th><td><span class="mono">{{.Device.MAC}}</span></td></tr>
+      {{if gt (len .AllIPs) 1}}
+      <tr><th>All current IPs</th><td>
+        {{range $i, $ip := .AllIPs}}{{if $i}}, {{end}}{{$ip}}{{end}}
+      </td></tr>
+      {{end}}
+      {{if gt (len .AllMACs) 1}}
+      <tr><th>All MACs</th><td class="mono small">
+        {{range $i, $m := .AllMACs}}{{if $i}}, {{end}}{{$m}}{{end}}
+      </td></tr>
+      {{end}}
+      <tr><th>Vendor</th><td>{{if .Device.Vendor}}{{.Device.Vendor}}{{else}}<span class="muted">unknown</span>{{end}}</td></tr>
+      <tr><th>Kind</th><td>{{if .Device.Kind}}{{.Device.Kind}}{{else}}<span class="muted">unclassified</span>{{end}}</td></tr>
+      <tr><th>First seen</th><td>{{shortTime .Device.FirstSeenAt}}</td></tr>
+      <tr><th>Last seen</th><td>{{shortTime .Device.LastSeenAt}}</td></tr>
+      {{if or .Device.StaticLease (not .Device.DHCPSeenAt.IsZero)}}
+      <tr><th>DHCP</th><td>
+        {{if .Device.StaticLease}}<span class="badge">Pinned (static lease)</span>{{else}}<span class="badge muted">Dynamic lease</span>{{end}}
+        {{if not .Device.DHCPSeenAt.IsZero}}<span class="muted"> &middot; last seen {{shortTime .Device.DHCPSeenAt}}</span>{{end}}
+      </td></tr>
+      {{end}}
+      <tr><th>Discovered by</th><td>
+        {{- $aid := .Device.AgentID -}}
+        {{- if not $aid}}{{$aid = .Device.SeenByAgent}}{{end -}}
+        {{- if $aid -}}
+          <a href="/agents/{{$aid}}">{{with index $.AgentNames $aid}}{{.}}{{else}}{{$aid}}{{end}}</a>
+        {{- else -}}<span class="muted">none</span>{{- end -}}
+      </td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Description &amp; tags</h2>
+    {{if .Device.Notes}}<p>{{.Device.Notes}}</p>{{end}}
+    {{if .Tags}}<p class="tag-list">{{range .Tags}}<span class="tag">{{.}}</span>{{end}}</p>{{end}}
+    <details>
+      <summary>Edit</summary>
+      <form class="edit-form" method="POST" action="/devices/{{.Device.ID}}/edit">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+        <label for="description">Description</label>
+        <textarea id="description" name="description" maxlength="2000" placeholder="Free-form notes about this device">{{.Device.Notes}}</textarea>
+        <label for="tags">Tags</label>
+        <input type="text" id="tags" name="tags" value="{{.TagsCSV}}" placeholder="comma-separated, e.g. printer, lobby, vlan-10" />
+        <p class="help">Tags are normalized to lowercase. Allowed: letters, digits, <code>-_./:</code>. Saved on this NIC row; the device list aggregates tags across all NICs in the same group.</p>
+        <div><button class="primary" type="submit">Save</button></div>
+      </form>
+    </details>
+  </section>
+
+  {{if gt (len .Members) 1}}
+  <section>
+    <h2>Interfaces ({{len .Members}})</h2>
+    <p class="muted">Multiple MAC addresses observed for this device. They may be physical NICs (Ethernet + Wi-Fi), virtual interfaces, or both.</p>
+    <div class="table-wrap">
+    <table class="data sortable">
+      <thead><tr><th>MAC</th><th>IP</th><th>Vendor</th><th>Hostname</th><th>Source</th><th>First seen</th><th>Last seen</th></tr></thead>
+      <tbody>
+      {{range .Members}}
+        <tr>
+          <td class="mono small"><a href="/devices/{{.ID}}">{{.MAC}}</a>{{if eq .ID $.Device.ID}} <span class="muted">(viewing)</span>{{end}}</td>
+          <td>{{.IP}}</td>
+          <td>{{.Vendor}}</td>
+          <td>{{.Hostname}}</td>
+          <td>{{.HostnameSource}}</td>
+          <td>{{shortTime .FirstSeenAt}}</td>
+          <td>{{shortTime .LastSeenAt}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+  </section>
+  {{end}}
+
+  <section>
+    <h2>Sightings</h2>
+    {{if .Sightings}}
+    <div class="table-wrap">
+    <table class="data sortable">
+      <thead><tr><th>By</th><th>IP</th><th>MAC</th><th>Method</th><th>First seen</th><th>Last seen</th><th>Count</th></tr></thead>
+      <tbody>
+      {{range .Sightings}}
+        <tr>
+          <td>
+            {{- if .SeenByAgent -}}
+              <a href="/agents/{{.SeenByAgent}}">{{with index $.AgentNames .SeenByAgent}}{{.}}{{else}}{{.SeenByAgent}}{{end}}</a>
+            {{- else -}}<span class="muted">—</span>{{- end -}}
+          </td>
+          <td>{{.IP}}</td>
+          <td>{{.MAC}}</td>
+          <td>{{.Method}}</td>
+          <td>{{shortTime .FirstSeenAt}}</td>
+          <td>{{shortTime .LastSeenAt}}</td>
+          <td class="num">{{.Count}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+    {{else}}
+    <p class="muted">No sightings recorded.</p>
+    {{end}}
+  </section>
+
+  <section>
+    <h2>Hostname aliases</h2>
+    {{if .Aliases}}
+    <div class="table-wrap">
+    <table class="data sortable">
+      <thead><tr><th>Name</th><th>Source</th><th>First seen</th><th>Last seen</th><th>Count</th></tr></thead>
+      <tbody>
+      {{range .Aliases}}
+        <tr>
+          <td>{{.Name}}{{if and $.Device.Hostname (eq .Name $.Device.Hostname)}} <span class="muted">(primary)</span>{{end}}</td>
+          <td>{{.Source}}</td>
+          <td>{{shortTime .FirstSeenAt}}</td>
+          <td>{{shortTime .LastSeenAt}}</td>
+          <td class="num">{{.Count}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+    {{else}}
+    <p class="muted">No alternate hostnames observed.</p>
+    {{end}}
+  </section>
+
+  {{with .DNSActivity}}
+  <section>
+    <h2>DNS activity</h2>
+    {{if .Available}}
+      {{if .InTop}}
+        <p><strong>{{.TotalQueries}}</strong> queries in last 24h
+          {{if .Source}}<span class="muted">via {{.Source}}</span>{{end}}
+          {{if gt (len .MatchedIPs) 1}}<span class="muted"> &middot; across {{len .MatchedIPs}} IPs</span>{{end}}
+        </p>
+        <p class="muted">Only the top-10 querying clients are tracked; total may understate background activity.</p>
+      {{else}}
+        <p class="muted">{{.Note}}{{if .Source}} (source: {{.Source}}){{end}}</p>
+      {{end}}
+    {{else}}
+      <p class="muted">{{.Note}}</p>
+    {{end}}
+  </section>
+  {{end}}
+
+  <section class="mdns-section">
+    <h2>mDNS</h2>
+    {{if .MDNS}}
+      {{if .MDNS.Hostname}}<p><strong>Advertised hostname:</strong> {{.MDNS.Hostname}}</p>{{end}}
+      {{if .MDNS.Services}}
+        <h3>Services</h3>
+        <ul>
+          {{range .MDNS.Services}}<li><code>{{.}}</code></li>{{end}}
+        </ul>
+      {{end}}
+      {{if .MDNS.TXT}}
+        <details class="mdns-sub">
+          <summary>TXT records ({{len .MDNS.TXT}})</summary>
+          <table class="data">
+            <thead><tr><th>Key</th><th>Value</th></tr></thead>
+            <tbody>
+            {{range $k, $v := .MDNS.TXT}}<tr><td><code>{{$k}}</code></td><td>{{$v}}</td></tr>{{end}}
+            </tbody>
+          </table>
+        </details>
+      {{end}}
+      {{with .MDNS.Eureka}}
+        <details class="mdns-sub"><summary>Google Cast / Nest <span class="muted small">(eureka)</span></summary>
+          <table class="kv">{{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}</table>
+        </details>
+      {{end}}
+      {{with .MDNS.IPP}}
+        <details class="mdns-sub"><summary>Printer <span class="muted small">(ipp)</span></summary>
+          <table class="kv">{{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}</table>
+        </details>
+      {{end}}
+      {{with .MDNS.Roku}}
+        <details class="mdns-sub"><summary>Roku <span class="muted small">(ecp)</span></summary>
+          <table class="kv">{{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}</table>
+        </details>
+      {{end}}
+      {{with .MDNS.AirPlay}}
+        <details class="mdns-sub"><summary>AirPlay</summary>
+          <table class="kv">{{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}</table>
+        </details>
+      {{end}}
+      {{with .MDNS.LDAP}}
+        <details class="mdns-sub"><summary>LDAP / Directory <span class="muted small">(rootDSE)</span></summary>
+          <table class="kv">{{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}</table>
+        </details>
+      {{end}}
+      {{with .MDNS.SSHFP}}
+        <details class="mdns-sub"><summary>SSH host key</summary>
+          <table class="kv">{{range $k, $v := .}}<tr><th>{{$k}}</th><td class="mono small">{{$v}}</td></tr>{{end}}</table>
+        </details>
+      {{end}}
+      {{with .MDNS.DHCP}}
+        <details class="mdns-sub"><summary>DHCP</summary>
+          <table class="kv">{{range $k, $v := .}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}</table>
+        </details>
+      {{end}}
+      {{with .MDNS.Probes}}
+        {{range $name, $kv := .}}
+        <details class="mdns-sub"><summary>{{$name}} <span class="muted small">(probe)</span></summary>
+          <table class="kv">{{range $k, $v := $kv}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}</table>
+        </details>
+        {{end}}
+      {{end}}
+      {{if and (not .MDNS.Services) (not .MDNS.TXT) (not .MDNS.Hostname)}}
+        <p class="muted">No mDNS data captured.</p>
+      {{end}}
+    {{else}}
+      <p class="muted">No mDNS profile recorded for this device yet.</p>
+    {{end}}
+  </section>
+
+  <p><a href="/devices">&larr; All devices</a></p>
+</main>
+{{template "foot" .}}

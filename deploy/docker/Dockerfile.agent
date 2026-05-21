@@ -1,0 +1,30 @@
+# Multi-stage build keeps the final image at the binary + a CA bundle only.
+# Build the agent for linux/amd64; ASUSTOR ADM x86 NAS units (e.g. AS6810T,
+# AS5304T) are Intel x86_64 and run upstream Linux kernels under the hood.
+
+FROM golang:1.26-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+ARG TARGETARCH=amd64
+# VERSION is stamped into the binary and reported on register/heartbeat.
+# Pass via --build-arg VERSION=$(git describe --tags --always --dirty); the
+# Makefile target docker-build-agent does this automatically.
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \
+    go build -trimpath \
+        -ldflags="-s -w -X github.com/walljm/jmwagent/internal/shared/version.Version=${VERSION}" \
+        -o /out/jmw-agent ./cmd/agent
+
+# Distroless static is tiny (~2 MB) and has no shell — fine because the agent
+# is a single static binary that talks to /proc, /sys, and the network.
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /out/jmw-agent /jmw-agent
+USER nonroot:nonroot
+
+# Agent reads the host filesystem through this prefix when set; the host root
+# must be bind-mounted into the container at /host (read-only).
+ENV JMW_HOST_ROOT=/host
+
+ENTRYPOINT ["/jmw-agent", "--config", "/etc/jmw-agent/agent.toml"]

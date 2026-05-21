@@ -1,0 +1,15 @@
+{{template "authhead" .}}
+<main class="auth-shell">
+  <div class="auth-card">
+    <h1>Welcome to JMW Agent</h1>
+    <p class="muted">Create your administrator account to begin.</p>
+    <form method="POST" action="/setup">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+      <label>Username<input name="username" autocomplete="username" required /></label>
+      <label>Password<input type="password" name="password" autocomplete="new-password" minlength="6" required /></label>
+      <label>Confirm<input type="password" name="confirm" autocomplete="new-password" minlength="6" required /></label>
+      <button type="submit" class="primary">Create account</button>
+    </form>
+  </div>
+</main>
+{{template "foot" .}}

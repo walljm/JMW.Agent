@@ -1,0 +1,491 @@
+package httpsrv
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/walljm/jmwagent/internal/server/releases"
+	"github.com/walljm/jmwagent/internal/server/store"
+	"github.com/walljm/jmwagent/internal/shared/proto"
+)
+
+// pickPrimaryIP picks the most reasonable IPv4 to display for an agent:
+// the first non-loopback, non-link-local, non-private-fallback IPv4 from an
+// up interface. Falls back to the first non-loopback IPv4 found.
+func pickPrimaryIP(inv proto.Inventory) string {
+	var fallback string
+	for _, ifc := range inv.Network.Interfaces {
+		if ifc.IsLoopback || !ifc.IsUp {
+			continue
+		}
+		for _, cidr := range ifc.IPv4 {
+			ip := cidr
+			if i := strings.IndexByte(ip, '/'); i > 0 {
+				ip = ip[:i]
+			}
+			parsed := net.ParseIP(ip)
+			if parsed == nil || parsed.IsLoopback() || parsed.IsLinkLocalUnicast() {
+				continue
+			}
+			if fallback == "" {
+				fallback = ip
+			}
+			// Prefer non-private if available; otherwise return first match.
+			return ip
+		}
+	}
+	return fallback
+}
+
+func (s *Server) agentRegister(w http.ResponseWriter, r *http.Request) {
+	var req proto.RegisterRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "bad_request", "invalid JSON")
+		return
+	}
+	if req.AgentID == "" || req.Hostname == "" {
+		writeJSONError(w, http.StatusBadRequest, "bad_request", "agent_id and hostname required")
+		return
+	}
+
+	existing, err := s.Store.GetAgent(r.Context(), req.AgentID)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	if existing == nil {
+		err := s.Store.CreateAgent(r.Context(), &store.Agent{
+			ID:                req.AgentID,
+			Hostname:          req.Hostname,
+			OS:                req.OS,
+			Arch:              req.Arch,
+			Version:           req.Version,
+			Status:            store.AgentStatusPending,
+			EnabledSubsystems: req.EnabledSubsystems,
+		})
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+			return
+		}
+		_ = s.Store.LogEvent(r.Context(), &store.Event{
+			Type: "agent.registered", Severity: store.SeverityInfo,
+			SourceKind: "agent", SourceID: req.AgentID,
+			Summary: "Agent registered (pending approval): " + req.Hostname,
+		})
+	}
+
+	a, _ := s.Store.GetAgent(r.Context(), req.AgentID)
+	resp := proto.RegisterResponse{
+		Status:            a.Status,
+		HeartbeatInterval: s.heartbeatInterval,
+		ServerCertSHA256:  s.ServerCertSHA,
+	}
+	if a.Status == store.AgentStatusPending {
+		resp.Message = "Awaiting administrator approval."
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) agentHeartbeat(w http.ResponseWriter, r *http.Request) {
+	var req proto.HeartbeatRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "bad_request", "invalid JSON")
+		return
+	}
+	if req.AgentID == "" {
+		writeJSONError(w, http.StatusBadRequest, "bad_request", "agent_id required")
+		return
+	}
+	a, err := s.Store.GetAgent(r.Context(), req.AgentID)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	if a == nil {
+		writeJSONError(w, http.StatusNotFound, "not_found", "agent not found")
+		return
+	}
+	if err := s.Store.TouchAgentHeartbeat(r.Context(), req.AgentID, req.Version, req.EnabledSubsystems); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	resp := proto.HeartbeatResponse{
+		Approved:        a.Status == store.AgentStatusApproved,
+		NextHeartbeatIn: s.heartbeatInterval,
+	}
+	// Offer an update when a strictly-newer clean release exists on disk
+	// for the agent's platform. The agent's own version may be a dev/dirty
+	// build — semver ordering still places clean releases above prerelease
+	// builds at the same MAJOR.MINOR.PATCH, so the comparison Just Works.
+	if s.Releases != nil && s.Releases.Enabled() && a.OS != "" && a.Arch != "" {
+		if e, ok := s.Releases.Latest(a.OS, a.Arch); ok && releases.SemverGreater(req.Version, e.Version) {
+			resp.Update = &proto.UpdateInfo{
+				Version: e.Version,
+				URL:     "/api/v1/agent/releases/" + e.Version + "/" + e.Filename,
+				SHA256:  e.SHA256,
+				Size:    e.Size,
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) agentMetrics(w http.ResponseWriter, r *http.Request) {
+	var req proto.MetricsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "bad_request", "invalid JSON")
+		return
+	}
+	if req.AgentID == "" {
+		writeJSONError(w, http.StatusBadRequest, "bad_request", "agent_id required")
+		return
+	}
+	a, err := s.Store.GetAgent(r.Context(), req.AgentID)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	if a == nil || a.Status != store.AgentStatusApproved {
+		writeJSONError(w, http.StatusForbidden, "not_approved", "agent not approved")
+		return
+	}
+	if err := s.Store.InsertSnapshots(r.Context(), req.AgentID, req.Snapshots); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, proto.MetricsResponse{Accepted: len(req.Snapshots)})
+}
+
+func (s *Server) agentDiscoveries(w http.ResponseWriter, r *http.Request) {
+	var req proto.DiscoveryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "bad_request", "invalid JSON")
+		return
+	}
+	if req.AgentID == "" {
+		writeJSONError(w, http.StatusBadRequest, "bad_request", "agent_id required")
+		return
+	}
+	a, err := s.Store.GetAgent(r.Context(), req.AgentID)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	if a == nil || a.Status != store.AgentStatusApproved {
+		writeJSONError(w, http.StatusForbidden, "not_approved", "agent not approved")
+		return
+	}
+	accepted := 0
+	for _, sn := range req.Sightings {
+		if sn.MAC == "" {
+			continue
+		}
+		var servicesJSON string
+		if len(sn.Services) > 0 || len(sn.TXT) > 0 || sn.Hostname != "" || len(sn.Probes) > 0 {
+			payload := map[string]any{
+				"hostname": sn.Hostname,
+				"services": sn.Services,
+				"txt":      sn.TXT,
+			}
+			// Splay each known probe under its own top-level key so the
+			// detail page template can render it directly without a
+			// generic key-walker. Unknown probes still ship through under
+			// "probes" for forward-compat.
+			known := map[string]bool{
+				"eureka": true, "ipp": true, "roku": true, "airplay": true,
+				"ldap": true, "ssh_fp": true, "dhcp": true, "title": true,
+			}
+			extras := map[string]map[string]string{}
+			for k, v := range sn.Probes {
+				if known[k] {
+					payload[k] = v
+				} else {
+					extras[k] = v
+				}
+			}
+			if len(extras) > 0 {
+				payload["probes"] = extras
+			}
+			blob, err := json.Marshal(payload)
+			if err == nil {
+				servicesJSON = string(blob)
+			}
+		}
+		// Pick the best name + its source so the canonical hostname update is
+		// priority-aware. Fall back to sn.Hostname (treated as unknown source) if
+		// the agent didn't supply HostnameSources.
+		bestName, bestSource := pickBestHostname(sn.HostnameSources)
+		if bestName == "" && sn.Hostname != "" {
+			bestName = sn.Hostname
+		}
+		dev := &store.Device{
+			ID:             strings.ToLower(sn.MAC), // canonical id = MAC
+			MAC:            strings.ToLower(sn.MAC),
+			IP:             sn.IP,
+			Hostname:       bestName,
+			HostnameSource: bestSource,
+			Vendor:         sn.Vendor,
+			Kind:           sn.Kind,
+			LastSeenAt:     sn.SeenAt,
+			SeenByAgent:    req.AgentID,
+			ServicesJSON:   servicesJSON,
+		}
+		if err := s.Store.UpsertDevice(r.Context(), dev); err != nil {
+			continue
+		}
+		_ = s.Store.AddSighting(r.Context(), dev.ID, req.AgentID, sn.IP, sn.MAC, sn.Method, sn.SeenAt)
+		// Record every observed alias so the detail page can surface conflicts.
+		for src, name := range sn.HostnameSources {
+			_ = s.Store.AddHostname(r.Context(), dev.ID, name, src, sn.SeenAt)
+		}
+		// Best-effort grouping: a host's name (via mDNS, NBNS, rDNS, etc.)
+		// almost always identifies the same physical machine across all of
+		// its NICs. SetDeviceGroup is priority-aware (agent > mdns > nbns >
+		// rdns > ...), so a later, lower-priority sighting can't steal a
+		// NIC away from a higher-priority group. We try sources in priority
+		// order and stop at the first hit.
+		grouped := false
+		for _, src := range hostnameSourcesByPriority() {
+			name := sn.HostnameSources[src]
+			if name == "" {
+				continue
+			}
+			if g := hostnameGroupID(src, name); g != "" {
+				_ = s.Store.SetDeviceGroup(r.Context(), dev.ID, g)
+				grouped = true
+				break
+			}
+		}
+		// Container/VM sightings classified by the reporting agent (e.g. an
+		// ARP entry seen on docker0, br-<id>, virbr*, lxcbr*, or a podman
+		// bridge) belong to that agent's host: the bridge is per-host and
+		// addresses on it can only be reached via the host. Roll them up
+		// into the agent's group so 172.17.0.x rows merge with their host
+		// instead of appearing as orphan strangers on the device list.
+		if !grouped && (sn.Kind == "container" || sn.Kind == "vm") {
+			_ = s.Store.SetDeviceGroup(r.Context(), dev.ID, "agent:"+req.AgentID)
+		}
+		accepted++
+	}
+	writeJSON(w, http.StatusOK, proto.DiscoveryResponse{Accepted: accepted})
+}
+
+func (s *Server) agentInventory(w http.ResponseWriter, r *http.Request) {
+	var req proto.InventoryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "bad_request", "invalid JSON")
+		return
+	}
+	if req.AgentID == "" {
+		writeJSONError(w, http.StatusBadRequest, "bad_request", "agent_id required")
+		return
+	}
+	a, err := s.Store.GetAgent(r.Context(), req.AgentID)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	if a == nil || a.Status != store.AgentStatusApproved {
+		writeJSONError(w, http.StatusForbidden, "not_approved", "agent not approved")
+		return
+	}
+	blob, err := json.Marshal(req.Inventory)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "bad_request", "marshal inventory: "+err.Error())
+		return
+	}
+	collected := req.Inventory.CollectedAt
+	if collected.IsZero() {
+		collected = time.Now().UTC()
+	}
+	primaryIP := pickPrimaryIP(req.Inventory)
+	if err := s.Store.SetAgentInventory(r.Context(), req.AgentID, string(blob), primaryIP, collected); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	// Cross-correlate: register each non-loopback agent interface as a known device
+	// so neighbor sightings from other agents merge by MAC and surface this agent.
+	now := time.Now().UTC()
+	for _, ifc := range req.Inventory.Network.Interfaces {
+		if ifc.IsLoopback || ifc.MAC == "" {
+			continue
+		}
+		ip := ""
+		for _, cidr := range ifc.IPv4 {
+			s := cidr
+			if i := strings.IndexByte(s, '/'); i > 0 {
+				s = s[:i]
+			}
+			parsed := net.ParseIP(s)
+			if parsed == nil || parsed.IsLoopback() || parsed.IsLinkLocalUnicast() {
+				continue
+			}
+			ip = s
+			break
+		}
+		_ = s.Store.UpsertDevice(r.Context(), &store.Device{
+			ID:             strings.ToLower(ifc.MAC),
+			MAC:            strings.ToLower(ifc.MAC),
+			IP:             ip,
+			Hostname:       a.Hostname,
+			HostnameSource: "agent",
+			Kind:           "agent",
+			AgentID:        req.AgentID,
+			SeenByAgent:    req.AgentID,
+			FirstSeenAt:    now,
+			LastSeenAt:     now,
+			GroupID:        "agent:" + req.AgentID,
+		})
+		_ = s.Store.AddHostname(r.Context(), strings.ToLower(ifc.MAC), a.Hostname, "agent", now)
+	}
+	// Catch up any prior NIC rows for this agent (e.g. transient virtual
+	// interfaces no longer in the report) so they remain merged under the
+	// agent's group instead of drifting back into ungrouped singletons.
+	_ = s.Store.BackfillAgentGroup(r.Context(), req.AgentID, a.Hostname)
+	// Sync Docker containers and engine info reported alongside inventory.
+	// Containers are first-class entities (their own list/detail views) but
+	// their lifecycle follows this host: containers absent from the report
+	// are removed.
+	if di := req.Inventory.Docker; di != nil {
+		_ = s.Store.UpsertDockerEngine(r.Context(), req.AgentID, di, collected)
+		if di.Reachable {
+			added, _, removed, syncErr := s.Store.SyncContainers(r.Context(), req.AgentID, di.Containers, collected)
+			if syncErr == nil && (added > 0 || removed > 0) {
+				_ = s.Store.LogEvent(r.Context(), &store.Event{
+					Type: "containers.changed", Severity: store.SeverityInfo,
+					SourceKind: "agent", SourceID: req.AgentID,
+					Summary: fmt.Sprintf("Containers on %s: +%d / -%d", a.Hostname, added, removed),
+					Detail:  map[string]any{"added": added, "removed": removed},
+				})
+			}
+			// Register each container's network attachment as a Device keyed
+			// by its container MAC, owned by the host's agent group. That way
+			// when another agent (or this agent running in-cluster) ARPs the
+			// docker bridge subnet and sees those container MACs, the rows
+			// merge into the host's group instead of appearing as orphaned
+			// 172.x strangers on the discovered-devices list.
+			for _, dc := range di.Containers {
+				cname := dc.Name
+				for _, n := range dc.Networks {
+					mac := strings.ToLower(strings.TrimSpace(n.MAC))
+					if mac == "" {
+						continue
+					}
+					_ = s.Store.UpsertDevice(r.Context(), &store.Device{
+						ID:             mac,
+						MAC:            mac,
+						IP:             n.IPv4,
+						Hostname:       cname,
+						HostnameSource: "agent",
+						Kind:           "container",
+						AgentID:        req.AgentID,
+						SeenByAgent:    req.AgentID,
+						FirstSeenAt:    now,
+						LastSeenAt:     now,
+						GroupID:        "agent:" + req.AgentID,
+					})
+				}
+			}
+		}
+	} else {
+		// Docker not reported: clear out any prior engine record.
+		_ = s.Store.UpsertDockerEngine(r.Context(), req.AgentID, nil, collected)
+	}
+	_ = s.Store.LogEvent(r.Context(), &store.Event{
+		Type: "agent.inventory", Severity: store.SeverityInfo,
+		SourceKind: "agent", SourceID: req.AgentID,
+		Summary: "Inventory updated: " + a.Hostname,
+	})
+	writeJSON(w, http.StatusOK, proto.InventoryResponse{Accepted: true})
+}
+
+// pickBestHostname returns the highest-priority (name, source) from a
+// per-source map, mirroring store.HostnameSourcePriority.
+func pickBestHostname(srcs map[string]string) (string, string) {
+	for _, src := range hostnameSourcesByPriority() {
+		if v, ok := srcs[src]; ok && v != "" {
+			return v, src
+		}
+	}
+	return "", ""
+}
+
+// hostnameSourcesByPriority returns known hostname source names ordered
+// most-to-least authoritative according to store.HostnameSourcePriority.
+// Mirrors discover.sourcesByPriority on the agent side.
+func hostnameSourcesByPriority() []string {
+	srcs := []string{"agent", "docker", "dhcp", "mdns", "llmnr", "smb", "nbns", "ldap", "snmp", "eureka", "ipp", "roku", "airplay", "wsd", "ssdp", "garp", "tls", "rdns", "http", "ssh"}
+	sort.Slice(srcs, func(i, j int) bool {
+		return store.HostnameSourcePriority(srcs[i]) > store.HostnameSourcePriority(srcs[j])
+	})
+	return srcs
+}
+
+// hostnameGroupID normalizes a (source, hostname) pair into a device group
+// ID. Returns "" if the name is empty after normalization. Strips a trailing
+// ".local" (with or without final dot) and lowercases — so "Macbook.local."
+// and "macbook.local" collapse onto the same group within a source.
+func hostnameGroupID(source, name string) string {
+	n := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(name)), ".")
+	n = strings.TrimSuffix(n, ".local")
+	if n == "" || source == "" {
+		return ""
+	}
+	return source + ":" + n
+}
+
+// mdnsGroupID is a thin convenience wrapper retained for callers that only
+// deal with mDNS names.
+func mdnsGroupID(name string) string {
+	return hostnameGroupID("mdns", name)
+}
+
+func writeJSON(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeJSONError(w http.ResponseWriter, code int, errCode, msg string) {
+	writeJSON(w, code, proto.ErrorResponse{Error: errCode, Code: errCode, Message: msg})
+}
+
+// agentReleaseDownload serves an agent binary from the configured releases
+// directory. It is PSK-authenticated (router middleware) and limited to
+// entries that the manager has indexed; arbitrary path access is refused.
+func (s *Server) agentReleaseDownload(w http.ResponseWriter, r *http.Request) {
+	if s.Releases == nil || !s.Releases.Enabled() {
+		writeJSONError(w, http.StatusNotFound, "not_found", "releases not configured")
+		return
+	}
+	version := chi.URLParam(r, "version")
+	filename := chi.URLParam(r, "filename")
+	if version == "" || filename == "" || strings.ContainsAny(version, "/\\") || strings.ContainsAny(filename, "/\\") {
+		writeJSONError(w, http.StatusBadRequest, "bad_request", "invalid path")
+		return
+	}
+	entry, ok := s.Releases.Lookup(version, filename)
+	if !ok {
+		writeJSONError(w, http.StatusNotFound, "not_found", "release not found")
+		return
+	}
+	f, err := s.Releases.Open(entry)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "open_failed", err.Error())
+		return
+	}
+	defer f.Close()
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", entry.Size))
+	w.Header().Set("X-JMW-Release-Version", entry.Version)
+	w.Header().Set("X-JMW-Release-SHA256", entry.SHA256)
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+entry.Filename+"\"")
+	_, _ = io.Copy(w, f)
+}

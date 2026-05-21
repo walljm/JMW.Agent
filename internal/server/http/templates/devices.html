@@ -1,0 +1,55 @@
+{{template "head" .}}
+{{template "navbar" .}}
+<main class="container">
+  <h1>Discovered devices</h1>
+  {{if .Groups}}
+  <div class="table-wrap">
+  <table class="data sortable devices">
+    <thead><tr><th>Hostname</th><th>IP</th><th>MAC</th><th>Vendor</th><th>Kind</th><th>Description</th><th>Tags</th><th>First seen</th><th>Last seen</th><th>Via</th></tr></thead>
+    <tbody>
+    {{range .Groups}}
+      {{$p := .Primary}}
+      <tr>
+        <td>
+          <a href="/devices/{{$p.ID}}">{{if $p.Hostname}}{{$p.Hostname}}{{else if $p.IP}}{{$p.IP}}{{else if $p.MAC}}{{$p.MAC}}{{else}}unknown{{end}}</a>
+          {{if not $p.Hostname}}<span class="muted small">(no hostname)</span>{{end}}
+        </td>
+        <td>
+          {{$p.IP}}
+          {{if gt .ExtraIPs 0}}<span class="muted small">+{{.ExtraIPs}}</span>{{end}}
+        </td>
+        <td>
+          <span class="mono small">{{$p.MAC}}</span>
+          {{if $p.StaticLease}}<span class="badge small" title="Static / reserved DHCP lease">static</span>{{end}}
+          {{if gt .ExtraMACs 0}}<span class="muted small">+{{.ExtraMACs}} NIC{{if gt .ExtraMACs 1}}s{{end}}</span>{{end}}
+        </td>
+        <td>{{$p.Vendor}}</td>
+        <td>{{$p.Kind}}</td>
+        <td>
+          {{- $desc := index $.GroupDesc $p.ID -}}
+          {{- if $desc -}}<span class="desc-cell" title="{{$desc}}">{{$desc}}</span>{{- else -}}<span class="muted">—</span>{{- end -}}
+        </td>
+        <td>
+          {{- $ts := index $.GroupTags $p.ID -}}
+          {{- if $ts -}}
+            <span class="tag-list">{{range $ts}}<span class="tag">{{.}}</span>{{end}}</span>
+          {{- else -}}<span class="muted">—</span>{{- end -}}
+        </td>
+        <td>{{shortTime $p.FirstSeenAt}}</td>
+        <td>{{shortTime .LastSeenAt}}</td>
+        <td>
+          {{- $aid := $p.AgentID -}}
+          {{- if not $aid}}{{$aid = $p.SeenByAgent}}{{end -}}
+          {{- if $aid -}}
+            <a href="/agents/{{$aid}}">{{with index $.AgentNames $aid}}{{.}}{{else}}{{$aid}}{{end}}</a>
+          {{- end -}}
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}<p class="muted">No devices discovered yet. Agents will report ARP/mDNS sightings during their normal cycle.</p>{{end}}
+</main>
+{{template "foot" .}}
+
