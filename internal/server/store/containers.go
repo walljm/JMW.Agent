@@ -341,10 +341,10 @@ func (s *Store) GetContainer(ctx context.Context, agentID, containerID string) (
 
 // ContainerStats summarizes counts per state across all hosts.
 type ContainerStats struct {
-	Total    int
-	Running  int
-	Exited   int
-	Paused   int
+	Total     int
+	Running   int
+	Exited    int
+	Paused    int
 	Unhealthy int
 }
 

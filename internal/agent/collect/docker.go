@@ -125,16 +125,16 @@ type apiInfo struct {
 }
 
 type apiContainerSummary struct {
-	ID         string            `json:"Id"`
-	Names      []string          `json:"Names"`
-	Image      string            `json:"Image"`
-	ImageID    string            `json:"ImageID"`
-	Command    string            `json:"Command"`
-	Created    int64             `json:"Created"` // unix seconds
-	State      string            `json:"State"`
-	Status     string            `json:"Status"`
-	Labels     map[string]string `json:"Labels"`
-	Ports      []struct {
+	ID      string            `json:"Id"`
+	Names   []string          `json:"Names"`
+	Image   string            `json:"Image"`
+	ImageID string            `json:"ImageID"`
+	Command string            `json:"Command"`
+	Created int64             `json:"Created"` // unix seconds
+	State   string            `json:"State"`
+	Status  string            `json:"Status"`
+	Labels  map[string]string `json:"Labels"`
+	Ports   []struct {
 		IP          string `json:"IP"`
 		PrivatePort int    `json:"PrivatePort"`
 		PublicPort  int    `json:"PublicPort"`
@@ -143,14 +143,14 @@ type apiContainerSummary struct {
 }
 
 type apiContainerInspect struct {
-	ID      string `json:"Id"`
-	Name    string `json:"Name"`
-	Created string `json:"Created"`
-	Path    string `json:"Path"`
-	Args    []string `json:"Args"`
-	Image   string `json:"Image"`
-	Platform string `json:"Platform"`
-	State   struct {
+	ID       string   `json:"Id"`
+	Name     string   `json:"Name"`
+	Created  string   `json:"Created"`
+	Path     string   `json:"Path"`
+	Args     []string `json:"Args"`
+	Image    string   `json:"Image"`
+	Platform string   `json:"Platform"`
+	State    struct {
 		Status     string `json:"Status"`
 		Running    bool   `json:"Running"`
 		Paused     bool   `json:"Paused"`
@@ -220,9 +220,9 @@ type apiContainerInspect struct {
 }
 
 type apiImageSummary struct {
-	ID          string   `json:"Id"`
-	RepoTags    []string `json:"RepoTags"`
-	Size        int64    `json:"Size"`
+	ID       string   `json:"Id"`
+	RepoTags []string `json:"RepoTags"`
+	Size     int64    `json:"Size"`
 }
 
 type apiNetwork struct {

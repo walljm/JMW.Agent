@@ -13,8 +13,8 @@ type AlertRule struct {
 	ID              int64
 	Name            string
 	Enabled         bool
-	Metric          string  // cpu_pct | mem_pct | disk_pct | offline_minutes
-	Op              string  // gt | lt
+	Metric          string // cpu_pct | mem_pct | disk_pct | offline_minutes
+	Op              string // gt | lt
 	Threshold       float64
 	DurationSeconds int
 	TargetKind      string // agent | group | all
@@ -150,8 +150,8 @@ func (s *Store) MarkFiringNotified(ctx context.Context, id int64) error {
 
 // AlertStats summarizes alert firings for dashboard KPIs.
 type AlertStats struct {
-	Open     int // firings with resolved_at IS NULL
-	Last24h  int // firings whose started_at is within the last 24h
+	Open    int // firings with resolved_at IS NULL
+	Last24h int // firings whose started_at is within the last 24h
 }
 
 // AlertStats returns aggregate firing counts in a single round trip.

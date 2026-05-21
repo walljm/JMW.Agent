@@ -181,9 +181,9 @@ func getVolumeFSType(rootPtr *uint16) string {
 	if err := windows.GetVolumeInformation(
 		rootPtr,
 		nil, 0, // volume name buffer
-		nil,    // serial
-		nil,    // max component len
-		nil,    // fs flags
+		nil, // serial
+		nil, // max component len
+		nil, // fs flags
 		&fsName[0], uint32(len(fsName)),
 	); err != nil {
 		return ""

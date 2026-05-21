@@ -116,10 +116,10 @@ func ScanARP() []Sighting {
 				continue
 			}
 			out = append(out, Sighting{
-				IP:       l.IP,
-				MAC:      l.MAC,
-				Method:   "dhcp",
-				SeenAt:   now,
+				IP:     l.IP,
+				MAC:    l.MAC,
+				Method: "dhcp",
+				SeenAt: now,
 			})
 			if l.Hostname != "" {
 				addSource(&out[len(out)-1], "dhcp", l.Hostname)

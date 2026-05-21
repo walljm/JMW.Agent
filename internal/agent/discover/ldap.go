@@ -12,12 +12,12 @@ import (
 // attribute gives us the DC's FQDN — the most authoritative identity
 // available for a Windows DC.
 type LDAPInfo struct {
-	DNSHostName            string `json:"dns_hostname,omitempty"`
-	DefaultNamingContext   string `json:"default_naming_context,omitempty"`
-	DomainFunctionality    string `json:"domain_functionality,omitempty"`
-	ForestFunctionality    string `json:"forest_functionality,omitempty"`
-	LDAPServiceName        string `json:"ldap_service_name,omitempty"`
-	ServerName             string `json:"server_name,omitempty"`
+	DNSHostName          string `json:"dns_hostname,omitempty"`
+	DefaultNamingContext string `json:"default_naming_context,omitempty"`
+	DomainFunctionality  string `json:"domain_functionality,omitempty"`
+	ForestFunctionality  string `json:"forest_functionality,omitempty"`
+	LDAPServiceName      string `json:"ldap_service_name,omitempty"`
+	ServerName           string `json:"server_name,omitempty"`
 }
 
 // ldapProbe sends a single anonymous LDAPv3 SearchRequest against the
@@ -90,12 +90,12 @@ func buildLDAPRootDSESearch() []byte {
 		),
 	)
 	searchBody := concat(
-		berOctetString([]byte("")),    // baseObject
-		berEnum(0),                    // scope: baseObject
-		berEnum(0),                    // derefAliases: neverDerefAliases
-		berInt(0),                     // sizeLimit
-		berInt(5),                     // timeLimit
-		berBool(false),                // typesOnly
+		berOctetString([]byte("")), // baseObject
+		berEnum(0),                 // scope: baseObject
+		berEnum(0),                 // derefAliases: neverDerefAliases
+		berInt(0),                  // sizeLimit
+		berInt(5),                  // timeLimit
+		berBool(false),             // typesOnly
 		filter,
 		attrs,
 	)

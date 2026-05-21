@@ -23,14 +23,14 @@ type RokuInfo struct {
 
 // rokuQuery is the XML schema returned by /query/device-info.
 type rokuQuery struct {
-	XMLName              xml.Name `xml:"device-info"`
-	UserDeviceName       string   `xml:"user-device-name"`
-	FriendlyDeviceName   string   `xml:"friendly-device-name"`
-	ModelName            string   `xml:"model-name"`
-	ModelNumber          string   `xml:"model-number"`
-	SerialNumber         string   `xml:"serial-number"`
-	SoftwareVersion      string   `xml:"software-version"`
-	SoftwareBuild        string   `xml:"software-build"`
+	XMLName            xml.Name `xml:"device-info"`
+	UserDeviceName     string   `xml:"user-device-name"`
+	FriendlyDeviceName string   `xml:"friendly-device-name"`
+	ModelName          string   `xml:"model-name"`
+	ModelNumber        string   `xml:"model-number"`
+	SerialNumber       string   `xml:"serial-number"`
+	SoftwareVersion    string   `xml:"software-version"`
+	SoftwareBuild      string   `xml:"software-build"`
 }
 
 // rokuProbe asks the Roku ECP service for device-info. Returns nil if the

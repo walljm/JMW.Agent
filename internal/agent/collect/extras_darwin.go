@@ -198,11 +198,11 @@ func collectGPUs(ctx context.Context) []proto.GPU {
 	}
 	var dump struct {
 		Displays []struct {
-			Model    string `json:"sppci_model"`
-			Vendor   string `json:"spdisplays_vendor"`
-			Cores    string `json:"sppci_cores"`
-			Driver   string `json:"spdisplays_metalfamily"`
-			VRAM     string `json:"spdisplays_vram"`
+			Model      string `json:"sppci_model"`
+			Vendor     string `json:"spdisplays_vendor"`
+			Cores      string `json:"sppci_cores"`
+			Driver     string `json:"spdisplays_metalfamily"`
+			VRAM       string `json:"spdisplays_vram"`
 			VRAMShared string `json:"spdisplays_vram_shared"`
 		} `json:"SPDisplaysDataType"`
 	}

@@ -347,11 +347,11 @@ type adguardStatus struct {
 
 // adguardStats is the response from GET /control/stats.
 type adguardStats struct {
-	NumDNSQueries         int64            `json:"num_dns_queries"`
-	NumBlockedFiltering   int64            `json:"num_blocked_filtering"`
-	TopQueriedDomains     []map[string]int `json:"top_queried_domains"`
-	TopBlockedDomains     []map[string]int `json:"top_blocked_domains"`
-	TopClients            []map[string]int `json:"top_clients"`
+	NumDNSQueries       int64            `json:"num_dns_queries"`
+	NumBlockedFiltering int64            `json:"num_blocked_filtering"`
+	TopQueriedDomains   []map[string]int `json:"top_queried_domains"`
+	TopBlockedDomains   []map[string]int `json:"top_blocked_domains"`
+	TopClients          []map[string]int `json:"top_clients"`
 }
 
 // adguardDHCP is the response from GET /control/dhcp/status.
@@ -359,10 +359,10 @@ type adguardDHCP struct {
 	Enabled       bool   `json:"enabled"`
 	InterfaceName string `json:"interface_name"`
 	V4            struct {
-		GatewayIP   string `json:"gateway_ip"`
-		SubnetMask  string `json:"subnet_mask"`
-		RangeStart  string `json:"range_start"`
-		RangeEnd    string `json:"range_end"`
+		GatewayIP  string `json:"gateway_ip"`
+		SubnetMask string `json:"subnet_mask"`
+		RangeStart string `json:"range_start"`
+		RangeEnd   string `json:"range_end"`
 	} `json:"v4"`
 	Leases []struct {
 		IP       string `json:"ip"`
@@ -505,13 +505,13 @@ type technitiumLeasesList struct {
 }
 
 type technitiumLease struct {
-	Scope            string `json:"scope"`
-	Type             string `json:"type"` // "Dynamic", "Reserved", "Static"
-	HardwareAddress  string `json:"hardwareAddress"`
-	Address          string `json:"address"`
-	HostName         string `json:"hostName"`
-	LeaseObtained    string `json:"leaseObtained"`
-	LeaseExpires     string `json:"leaseExpires"`
+	Scope           string `json:"scope"`
+	Type            string `json:"type"` // "Dynamic", "Reserved", "Static"
+	HardwareAddress string `json:"hardwareAddress"`
+	Address         string `json:"address"`
+	HostName        string `json:"hostName"`
+	LeaseObtained   string `json:"leaseObtained"`
+	LeaseExpires    string `json:"leaseExpires"`
 }
 
 // technitiumLeaseTimeFmt matches the format Technitium emits, e.g. "08/25/2020 17:52:51".

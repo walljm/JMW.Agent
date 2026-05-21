@@ -18,8 +18,8 @@ import (
 // device that survives hostname/IP changes — useful for deduping mobile
 // laptops that hop subnets.
 type SSHFingerprint struct {
-	Algorithm   string `json:"algo,omitempty"`        // ssh-rsa | ssh-ed25519 | ecdsa-sha2-nistp256 | ...
-	SHA256      string `json:"sha256,omitempty"`      // SHA256:<base64-no-padding>
+	Algorithm   string `json:"algo,omitempty"`   // ssh-rsa | ssh-ed25519 | ecdsa-sha2-nistp256 | ...
+	SHA256      string `json:"sha256,omitempty"` // SHA256:<base64-no-padding>
 	BannerShort string `json:"banner_short,omitempty"`
 }
 

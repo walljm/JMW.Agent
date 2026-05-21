@@ -97,9 +97,9 @@ func nbssWrap(payload []byte) []byte {
 func smb2Header(cmd uint16, msgID uint64) []byte {
 	h := make([]byte, 64)
 	copy(h[0:4], []byte{0xFE, 'S', 'M', 'B'})
-	binary.LittleEndian.PutUint16(h[4:6], 64)  // StructureSize
-	binary.LittleEndian.PutUint16(h[6:8], 0)   // CreditCharge
-	binary.LittleEndian.PutUint32(h[8:12], 0)  // Status
+	binary.LittleEndian.PutUint16(h[4:6], 64) // StructureSize
+	binary.LittleEndian.PutUint16(h[6:8], 0)  // CreditCharge
+	binary.LittleEndian.PutUint32(h[8:12], 0) // Status
 	binary.LittleEndian.PutUint16(h[12:14], cmd)
 	binary.LittleEndian.PutUint16(h[14:16], 1) // CreditRequest
 	binary.LittleEndian.PutUint32(h[16:20], 0) // Flags

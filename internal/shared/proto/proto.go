@@ -8,19 +8,19 @@ import "time"
 
 // RegisterRequest is sent by an agent on first contact.
 type RegisterRequest struct {
-	AgentID    string `json:"agent_id"`
-	Hostname   string `json:"hostname"`
-	OS         string `json:"os"`
-	Arch       string `json:"arch"`
-	Version    string `json:"version"`
-	PSK        string `json:"psk,omitempty"`
-	PublicKey  string `json:"public_key,omitempty"` // base64-encoded ed25519 pubkey (future)
+	AgentID           string   `json:"agent_id"`
+	Hostname          string   `json:"hostname"`
+	OS                string   `json:"os"`
+	Arch              string   `json:"arch"`
+	Version           string   `json:"version"`
+	PSK               string   `json:"psk,omitempty"`
+	PublicKey         string   `json:"public_key,omitempty"` // base64-encoded ed25519 pubkey (future)
 	EnabledSubsystems []string `json:"enabled_subsystems"`
 }
 
 // RegisterResponse tells the agent what happened.
 type RegisterResponse struct {
-	Status            string `json:"status"`             // "approved" | "pending"
+	Status            string `json:"status"` // "approved" | "pending"
 	Message           string `json:"message"`
 	HeartbeatInterval int    `json:"heartbeat_interval"` // seconds
 	ServerCertSHA256  string `json:"server_cert_sha256"` // hex; agent pins this
@@ -54,15 +54,15 @@ type UpdateInfo struct {
 
 // MetricSnapshot is one point-in-time system metrics reading.
 type MetricSnapshot struct {
-	Timestamp     time.Time          `json:"ts"`
-	CPUPercent    float64            `json:"cpu_pct"`
-	MemUsedBytes  uint64             `json:"mem_used_bytes"`
-	MemTotalBytes uint64             `json:"mem_total_bytes"`
-	Load1         float64            `json:"load_1,omitempty"`
-	Load5         float64            `json:"load_5,omitempty"`
-	Load15        float64            `json:"load_15,omitempty"`
-	UptimeSeconds int64              `json:"uptime_seconds"`
-	Disks         []DiskSnapshot     `json:"disks,omitempty"`
+	Timestamp     time.Time           `json:"ts"`
+	CPUPercent    float64             `json:"cpu_pct"`
+	MemUsedBytes  uint64              `json:"mem_used_bytes"`
+	MemTotalBytes uint64              `json:"mem_total_bytes"`
+	Load1         float64             `json:"load_1,omitempty"`
+	Load5         float64             `json:"load_5,omitempty"`
+	Load15        float64             `json:"load_15,omitempty"`
+	UptimeSeconds int64               `json:"uptime_seconds"`
+	Disks         []DiskSnapshot      `json:"disks,omitempty"`
 	Interfaces    []InterfaceSnapshot `json:"interfaces,omitempty"`
 }
 

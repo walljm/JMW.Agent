@@ -80,7 +80,7 @@ type PendingUpdate struct {
 	Name           string `json:"name"`
 	CurrentVersion string `json:"current_version,omitempty"`
 	NewVersion     string `json:"new_version,omitempty"`
-	Source         string `json:"source,omitempty"`   // repo / channel
+	Source         string `json:"source,omitempty"` // repo / channel
 	Security       bool   `json:"security,omitempty"`
 }
 
@@ -89,29 +89,29 @@ type PendingUpdate struct {
 type ServiceStatus struct {
 	Name        string `json:"name"`
 	DisplayName string `json:"display_name,omitempty"`
-	State       string `json:"state,omitempty"`        // running|stopped|failed|...
-	StartMode   string `json:"start_mode,omitempty"`   // auto|manual|disabled
-	SubState    string `json:"sub_state,omitempty"`    // systemd: running|dead|exited|...
+	State       string `json:"state,omitempty"`      // running|stopped|failed|...
+	StartMode   string `json:"start_mode,omitempty"` // auto|manual|disabled
+	SubState    string `json:"sub_state,omitempty"`  // systemd: running|dead|exited|...
 	ExitCode    int    `json:"exit_code,omitempty"`
 }
 
 // SecurityPosture aggregates firewall, AV, TPM, SecureBoot, encryption.
 type SecurityPosture struct {
-	Firewall       *FirewallStatus    `json:"firewall,omitempty"`
-	AntiVirus      []AVProduct        `json:"antivirus,omitempty"`
-	TPMPresent     *bool              `json:"tpm_present,omitempty"`
-	TPMVersion     string             `json:"tpm_version,omitempty"`
-	SecureBoot     *bool              `json:"secure_boot,omitempty"`
-	DiskEncryption []EncryptedVolume  `json:"disk_encryption,omitempty"`
-	SELinuxMode    string             `json:"selinux_mode,omitempty"`   // enforcing|permissive|disabled|""
-	AppArmorMode   string             `json:"apparmor_mode,omitempty"`  // enforce|complain|""
+	Firewall       *FirewallStatus   `json:"firewall,omitempty"`
+	AntiVirus      []AVProduct       `json:"antivirus,omitempty"`
+	TPMPresent     *bool             `json:"tpm_present,omitempty"`
+	TPMVersion     string            `json:"tpm_version,omitempty"`
+	SecureBoot     *bool             `json:"secure_boot,omitempty"`
+	DiskEncryption []EncryptedVolume `json:"disk_encryption,omitempty"`
+	SELinuxMode    string            `json:"selinux_mode,omitempty"`  // enforcing|permissive|disabled|""
+	AppArmorMode   string            `json:"apparmor_mode,omitempty"` // enforce|complain|""
 }
 
 // FirewallStatus describes the host firewall.
 type FirewallStatus struct {
 	Provider string   `json:"provider,omitempty"` // ufw|firewalld|nftables|iptables|pf|windows
 	Enabled  bool     `json:"enabled"`
-	Default  string   `json:"default,omitempty"` // default policy: allow|deny|reject
+	Default  string   `json:"default,omitempty"`  // default policy: allow|deny|reject
 	Profiles []string `json:"profiles,omitempty"` // windows: domain/private/public state
 }
 
@@ -130,7 +130,7 @@ type AVProduct struct {
 type EncryptedVolume struct {
 	Mountpoint string `json:"mountpoint,omitempty"`
 	Device     string `json:"device,omitempty"`
-	Type       string `json:"type,omitempty"` // bitlocker|luks|filevault|apfs-encrypted
+	Type       string `json:"type,omitempty"`   // bitlocker|luks|filevault|apfs-encrypted
 	Status     string `json:"status,omitempty"` // on|off|partial|suspended
 }
 
@@ -152,20 +152,20 @@ type ChassisInfo struct {
 type Battery struct {
 	DesignCapacityWh  float64 `json:"design_capacity_wh,omitempty"`
 	CurrentCapacityWh float64 `json:"current_capacity_wh,omitempty"`
-	HealthPercent     float64 `json:"health_pct,omitempty"`   // current / design * 100
+	HealthPercent     float64 `json:"health_pct,omitempty"` // current / design * 100
 	CycleCount        int     `json:"cycle_count,omitempty"`
-	State             string  `json:"state,omitempty"`        // charging|discharging|full|...
+	State             string  `json:"state,omitempty"` // charging|discharging|full|...
 	ChargePercent     float64 `json:"charge_pct,omitempty"`
 }
 
 // LocalUser is one local account on the host.
 type LocalUser struct {
 	Name        string    `json:"name"`
-	UID         string    `json:"uid,omitempty"`     // string for cross-platform (Windows uses SIDs)
+	UID         string    `json:"uid,omitempty"` // string for cross-platform (Windows uses SIDs)
 	GID         string    `json:"gid,omitempty"`
 	HomeDir     string    `json:"home_dir,omitempty"`
 	Shell       string    `json:"shell,omitempty"`
-	IsAdmin     bool      `json:"is_admin,omitempty"`     // sudo / wheel / Administrators
+	IsAdmin     bool      `json:"is_admin,omitempty"` // sudo / wheel / Administrators
 	Disabled    bool      `json:"disabled,omitempty"`
 	LastLogin   time.Time `json:"last_login,omitempty"`
 	PasswordAge int       `json:"password_age_days,omitempty"`
@@ -196,33 +196,33 @@ type HardwareInfo struct {
 
 // TempReading is one thermal sensor sample.
 type TempReading struct {
-	Name    string  `json:"name"`              // e.g. "soc-thermal", "cpu_thermal"
-	Type    string  `json:"type,omitempty"`    // kernel-reported zone type
+	Name    string  `json:"name"`           // e.g. "soc-thermal", "cpu_thermal"
+	Type    string  `json:"type,omitempty"` // kernel-reported zone type
 	Celsius float64 `json:"celsius"`
 }
 
 // OSInfo describes the operating system.
 type OSInfo struct {
-	Family       string    `json:"family"`        // linux | darwin | windows | ...
-	Distro       string    `json:"distro,omitempty"`
-	Version      string    `json:"version,omitempty"`
-	Build        string    `json:"build,omitempty"`
-	Kernel       string    `json:"kernel,omitempty"`
-	KernelArch   string    `json:"kernel_arch,omitempty"`
-	Hostname     string    `json:"hostname,omitempty"`
-	Timezone     string    `json:"timezone,omitempty"`
-	BootTime     time.Time `json:"boot_time,omitempty"`
-	InstallDate  time.Time `json:"install_date,omitempty"`
+	Family      string    `json:"family"` // linux | darwin | windows | ...
+	Distro      string    `json:"distro,omitempty"`
+	Version     string    `json:"version,omitempty"`
+	Build       string    `json:"build,omitempty"`
+	Kernel      string    `json:"kernel,omitempty"`
+	KernelArch  string    `json:"kernel_arch,omitempty"`
+	Hostname    string    `json:"hostname,omitempty"`
+	Timezone    string    `json:"timezone,omitempty"`
+	BootTime    time.Time `json:"boot_time,omitempty"`
+	InstallDate time.Time `json:"install_date,omitempty"`
 }
 
 // DiskDevice describes a physical disk (not a mountpoint).
 type DiskDevice struct {
-	Name       string         `json:"name"`             // sda, nvme0n1, disk0
-	Model      string         `json:"model,omitempty"`
-	Serial     string         `json:"serial,omitempty"`
-	SizeBytes  uint64         `json:"size_bytes,omitempty"`
-	Type       string         `json:"type,omitempty"`   // hdd|ssd|nvme|virtual|unknown
-	Removable  bool           `json:"removable,omitempty"`
+	Name       string          `json:"name"` // sda, nvme0n1, disk0
+	Model      string          `json:"model,omitempty"`
+	Serial     string          `json:"serial,omitempty"`
+	SizeBytes  uint64          `json:"size_bytes,omitempty"`
+	Type       string          `json:"type,omitempty"` // hdd|ssd|nvme|virtual|unknown
+	Removable  bool            `json:"removable,omitempty"`
 	Partitions []DiskPartition `json:"partitions,omitempty"`
 	SMART      *SMARTHealth    `json:"smart,omitempty"`
 }
@@ -231,18 +231,18 @@ type DiskDevice struct {
 // indicate impending failure. Full attribute dumps are huge and noisy; we
 // only carry what an operator looks at.
 type SMARTHealth struct {
-	OverallHealth        string  `json:"overall_health,omitempty"` // PASSED|FAILED|UNKNOWN
-	TemperatureCelsius   float64 `json:"temperature_c,omitempty"`
-	PowerOnHours         uint64  `json:"power_on_hours,omitempty"`
-	PowerCycleCount      uint64  `json:"power_cycle_count,omitempty"`
-	ReallocatedSectors   uint64  `json:"reallocated_sectors,omitempty"` // SAS/SATA
-	PendingSectors       uint64  `json:"pending_sectors,omitempty"`
-	UncorrectableErrors  uint64  `json:"uncorrectable_errors,omitempty"`
-	MediaWearoutPercent  float64 `json:"media_wearout_pct,omitempty"`   // SSD wear (0=new, 100=spent)
-	PercentageUsed       float64 `json:"percentage_used,omitempty"`     // NVMe (0=new, 100=spent)
-	AvailableSparePct    float64 `json:"available_spare_pct,omitempty"` // NVMe
-	DataUnitsReadGB      float64 `json:"data_units_read_gb,omitempty"`  // NVMe
-	DataUnitsWrittenGB   float64 `json:"data_units_written_gb,omitempty"`
+	OverallHealth       string  `json:"overall_health,omitempty"` // PASSED|FAILED|UNKNOWN
+	TemperatureCelsius  float64 `json:"temperature_c,omitempty"`
+	PowerOnHours        uint64  `json:"power_on_hours,omitempty"`
+	PowerCycleCount     uint64  `json:"power_cycle_count,omitempty"`
+	ReallocatedSectors  uint64  `json:"reallocated_sectors,omitempty"` // SAS/SATA
+	PendingSectors      uint64  `json:"pending_sectors,omitempty"`
+	UncorrectableErrors uint64  `json:"uncorrectable_errors,omitempty"`
+	MediaWearoutPercent float64 `json:"media_wearout_pct,omitempty"`   // SSD wear (0=new, 100=spent)
+	PercentageUsed      float64 `json:"percentage_used,omitempty"`     // NVMe (0=new, 100=spent)
+	AvailableSparePct   float64 `json:"available_spare_pct,omitempty"` // NVMe
+	DataUnitsReadGB     float64 `json:"data_units_read_gb,omitempty"`  // NVMe
+	DataUnitsWrittenGB  float64 `json:"data_units_written_gb,omitempty"`
 }
 
 // DiskPartition is one partition on a DiskDevice.
@@ -266,16 +266,16 @@ type NetworkInfo struct {
 
 // NetInterface is per-interface static config.
 type NetInterface struct {
-	Name        string   `json:"name"`
-	MAC         string   `json:"mac,omitempty"`
-	MTU         int      `json:"mtu,omitempty"`
-	IsUp        bool     `json:"is_up"`
-	IsLoopback  bool     `json:"is_loopback,omitempty"`
-	LinkSpeedMbps int    `json:"link_speed_mbps,omitempty"`
-	Duplex      string   `json:"duplex,omitempty"`
-	IPv4        []string `json:"ipv4,omitempty"` // CIDR strings
-	IPv6        []string `json:"ipv6,omitempty"` // CIDR strings
-	Type        string   `json:"type,omitempty"` // ethernet|wifi|virtual|loopback
+	Name          string   `json:"name"`
+	MAC           string   `json:"mac,omitempty"`
+	MTU           int      `json:"mtu,omitempty"`
+	IsUp          bool     `json:"is_up"`
+	IsLoopback    bool     `json:"is_loopback,omitempty"`
+	LinkSpeedMbps int      `json:"link_speed_mbps,omitempty"`
+	Duplex        string   `json:"duplex,omitempty"`
+	IPv4          []string `json:"ipv4,omitempty"` // CIDR strings
+	IPv6          []string `json:"ipv6,omitempty"` // CIDR strings
+	Type          string   `json:"type,omitempty"` // ethernet|wifi|virtual|loopback
 }
 
 // RouteEntry is one entry in the routing table.
@@ -297,8 +297,8 @@ type UserSession struct {
 
 // ListeningPort is one bound TCP/UDP socket.
 type ListeningPort struct {
-	Proto       string `json:"proto"`        // tcp|udp|tcp6|udp6
-	Address     string `json:"address"`      // bind address (v4 or v6)
+	Proto       string `json:"proto"`   // tcp|udp|tcp6|udp6
+	Address     string `json:"address"` // bind address (v4 or v6)
 	Port        int    `json:"port"`
 	ProcessName string `json:"process,omitempty"`
 	PID         int    `json:"pid,omitempty"`
@@ -332,11 +332,11 @@ type DockerInfo struct {
 
 // DockerEngine carries engine-wide facts (one per host).
 type DockerEngine struct {
-	ID                string `json:"id,omitempty"`                // Docker daemon ID
-	Version           string `json:"version,omitempty"`           // server version
+	ID                string `json:"id,omitempty"`      // Docker daemon ID
+	Version           string `json:"version,omitempty"` // server version
 	APIVersion        string `json:"api_version,omitempty"`
-	OS                string `json:"os,omitempty"`                // operating-system label from daemon
-	OSType            string `json:"os_type,omitempty"`           // linux | windows
+	OS                string `json:"os,omitempty"`      // operating-system label from daemon
+	OSType            string `json:"os_type,omitempty"` // linux | windows
 	Architecture      string `json:"architecture,omitempty"`
 	KernelVersion     string `json:"kernel_version,omitempty"`
 	StorageDriver     string `json:"storage_driver,omitempty"`
@@ -362,20 +362,20 @@ type DockerEngine struct {
 // publication, mounts, resource limits, and current resource usage.
 type DockerContainer struct {
 	// Identity
-	ID         string `json:"id"`                    // full 64-char ID
-	Name       string `json:"name,omitempty"`        // primary name without leading slash
-	Names      []string `json:"names,omitempty"`     // all names (containers can have aliases)
-	Image      string `json:"image,omitempty"`       // image reference as run (may be a tag or digest)
-	ImageID    string `json:"image_id,omitempty"`    // sha256:...
-	Command    string `json:"command,omitempty"`     // entrypoint+cmd flattened
+	ID         string    `json:"id"`                 // full 64-char ID
+	Name       string    `json:"name,omitempty"`     // primary name without leading slash
+	Names      []string  `json:"names,omitempty"`    // all names (containers can have aliases)
+	Image      string    `json:"image,omitempty"`    // image reference as run (may be a tag or digest)
+	ImageID    string    `json:"image_id,omitempty"` // sha256:...
+	Command    string    `json:"command,omitempty"`  // entrypoint+cmd flattened
 	CreatedAt  time.Time `json:"created_at,omitempty"`
 	StartedAt  time.Time `json:"started_at,omitempty"`
 	FinishedAt time.Time `json:"finished_at,omitempty"`
 
 	// Lifecycle
-	State        string `json:"state,omitempty"`         // running|exited|paused|restarting|created|dead|removing
-	Status       string `json:"status,omitempty"`        // human "Up 3 hours" / "Exited (0) 5 minutes ago"
-	Health       string `json:"health,omitempty"`        // healthy|unhealthy|starting|none
+	State        string `json:"state,omitempty"`  // running|exited|paused|restarting|created|dead|removing
+	Status       string `json:"status,omitempty"` // human "Up 3 hours" / "Exited (0) 5 minutes ago"
+	Health       string `json:"health,omitempty"` // healthy|unhealthy|starting|none
 	ExitCode     int    `json:"exit_code,omitempty"`
 	OOMKilled    bool   `json:"oom_killed,omitempty"`
 	RestartCount int    `json:"restart_count,omitempty"`
@@ -388,7 +388,7 @@ type DockerContainer struct {
 	SwarmService   string            `json:"swarm_service,omitempty"`   // com.docker.swarm.service.name
 
 	// Config (curated)
-	RestartPolicy   string `json:"restart_policy,omitempty"`   // no|always|on-failure|unless-stopped
+	RestartPolicy   string `json:"restart_policy,omitempty"` // no|always|on-failure|unless-stopped
 	RestartMaxRetry int    `json:"restart_max_retry,omitempty"`
 	LogDriver       string `json:"log_driver,omitempty"`
 	User            string `json:"user,omitempty"`
@@ -405,33 +405,33 @@ type DockerContainer struct {
 	Mounts []ContainerMount `json:"mounts,omitempty"`
 
 	// Resource limits (0 = unlimited / unset)
-	NanoCPUs       int64  `json:"nano_cpus,omitempty"`        // 1e9 = 1 CPU
-	CPUShares      int64  `json:"cpu_shares,omitempty"`
-	MemoryLimit    uint64 `json:"memory_limit_bytes,omitempty"`
-	MemorySwap     int64  `json:"memory_swap_bytes,omitempty"` // -1 = unlimited
-	PidsLimit      int64  `json:"pids_limit,omitempty"`
+	NanoCPUs    int64  `json:"nano_cpus,omitempty"` // 1e9 = 1 CPU
+	CPUShares   int64  `json:"cpu_shares,omitempty"`
+	MemoryLimit uint64 `json:"memory_limit_bytes,omitempty"`
+	MemorySwap  int64  `json:"memory_swap_bytes,omitempty"` // -1 = unlimited
+	PidsLimit   int64  `json:"pids_limit,omitempty"`
 
 	// Current usage (best-effort; populated only when stats are sampled)
-	CPUPercent     float64 `json:"cpu_pct,omitempty"`
-	MemUsageBytes  uint64  `json:"mem_usage_bytes,omitempty"`
-	MemPercent     float64 `json:"mem_pct,omitempty"`
-	NetRxBytes     uint64  `json:"net_rx_bytes,omitempty"`
-	NetTxBytes     uint64  `json:"net_tx_bytes,omitempty"`
-	BlockReadBytes uint64  `json:"block_read_bytes,omitempty"`
-	BlockWriteBytes uint64 `json:"block_write_bytes,omitempty"`
+	CPUPercent      float64 `json:"cpu_pct,omitempty"`
+	MemUsageBytes   uint64  `json:"mem_usage_bytes,omitempty"`
+	MemPercent      float64 `json:"mem_pct,omitempty"`
+	NetRxBytes      uint64  `json:"net_rx_bytes,omitempty"`
+	NetTxBytes      uint64  `json:"net_tx_bytes,omitempty"`
+	BlockReadBytes  uint64  `json:"block_read_bytes,omitempty"`
+	BlockWriteBytes uint64  `json:"block_write_bytes,omitempty"`
 }
 
 // ContainerNetwork is one network the container is attached to.
 type ContainerNetwork struct {
-	Name        string `json:"name"`
-	NetworkID   string `json:"network_id,omitempty"`
-	IPv4        string `json:"ipv4,omitempty"`
-	IPv4Prefix  int    `json:"ipv4_prefix,omitempty"`
-	IPv6        string `json:"ipv6,omitempty"`
-	IPv6Prefix  int    `json:"ipv6_prefix,omitempty"`
-	Gateway     string `json:"gateway,omitempty"`
-	MAC         string `json:"mac,omitempty"`
-	Aliases     []string `json:"aliases,omitempty"`
+	Name       string   `json:"name"`
+	NetworkID  string   `json:"network_id,omitempty"`
+	IPv4       string   `json:"ipv4,omitempty"`
+	IPv4Prefix int      `json:"ipv4_prefix,omitempty"`
+	IPv6       string   `json:"ipv6,omitempty"`
+	IPv6Prefix int      `json:"ipv6_prefix,omitempty"`
+	Gateway    string   `json:"gateway,omitempty"`
+	MAC        string   `json:"mac,omitempty"`
+	Aliases    []string `json:"aliases,omitempty"`
 }
 
 // PortBinding is one published port mapping.
@@ -444,12 +444,12 @@ type PortBinding struct {
 
 // ContainerMount describes one mount (volume, bind, tmpfs).
 type ContainerMount struct {
-	Type        string `json:"type"`                  // volume|bind|tmpfs
-	Name        string `json:"name,omitempty"`        // volume name (volume mounts only)
-	Source      string `json:"source,omitempty"`      // host path or volume name
-	Destination string `json:"destination"`           // container path
+	Type        string `json:"type"`             // volume|bind|tmpfs
+	Name        string `json:"name,omitempty"`   // volume name (volume mounts only)
+	Source      string `json:"source,omitempty"` // host path or volume name
+	Destination string `json:"destination"`      // container path
 	Driver      string `json:"driver,omitempty"`
-	Mode        string `json:"mode,omitempty"`        // rw|ro|... raw mode string
+	Mode        string `json:"mode,omitempty"` // rw|ro|... raw mode string
 	RW          bool   `json:"rw,omitempty"`
 	Propagation string `json:"propagation,omitempty"`
 }
@@ -515,7 +515,7 @@ type HassioInfo struct {
 	Hostname          string        `json:"hostname,omitempty"`   // host's real hostname (Supervisor's view)
 	HostOS            string        `json:"host_os,omitempty"`    // e.g. "Home Assistant OS 14.2"
 	HostKernel        string        `json:"host_kernel,omitempty"`
-	Chassis           string        `json:"chassis,omitempty"`    // embedded | desktop | server | vm
+	Chassis           string        `json:"chassis,omitempty"` // embedded | desktop | server | vm
 	BootTime          time.Time     `json:"boot_time,omitempty"`
 	Addons            []HassioAddon `json:"addons,omitempty"`
 }

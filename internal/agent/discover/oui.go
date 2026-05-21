@@ -3,8 +3,8 @@ package discover
 import (
 	"bytes"
 	"compress/gzip"
-	"encoding/csv"
 	_ "embed"
+	"encoding/csv"
 	"io"
 	"strings"
 	"sync"

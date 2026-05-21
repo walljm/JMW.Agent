@@ -182,12 +182,12 @@ func (s *Server) devicesList(w http.ResponseWriter, r *http.Request) {
 		groupTags[key] = agg
 	}
 	s.render(w, r, "devices.html", map[string]any{
-		"Title":         "Devices",
-		"Active":        "devices",
-		"Groups":        groups,
-		"AgentNames":    names,
-		"GroupTags":     groupTags,
-		"GroupDesc":     groupDesc,
+		"Title":      "Devices",
+		"Active":     "devices",
+		"Groups":     groups,
+		"AgentNames": names,
+		"GroupTags":  groupTags,
+		"GroupDesc":  groupDesc,
 	})
 }
 
@@ -308,6 +308,7 @@ func compareIPStr(a, b string) int {
 	}
 	return 0
 }
+
 // MDNSProfile mirrors the JSON blob stored in devices.services_json.
 // Despite the name (kept for backwards-compat), it now carries the full
 // per-device probe payload, not just mDNS records.

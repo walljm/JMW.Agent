@@ -11,13 +11,13 @@ import (
 
 // Config is the agent configuration.
 type Config struct {
-	ServerURL              string `toml:"server_url"`
-	PSK                    string `toml:"psk"`
-	PinnedSHA              string `toml:"pinned_sha"`
-	IDFile                 string `toml:"id_file"`
-	IntervalSecs           int    `toml:"interval_secs"`
-	InventoryIntervalSecs  int    `toml:"inventory_interval_secs"`
-	IncludePackages        bool   `toml:"include_packages"`
+	ServerURL             string `toml:"server_url"`
+	PSK                   string `toml:"psk"`
+	PinnedSHA             string `toml:"pinned_sha"`
+	IDFile                string `toml:"id_file"`
+	IntervalSecs          int    `toml:"interval_secs"`
+	InventoryIntervalSecs int    `toml:"inventory_interval_secs"`
+	IncludePackages       bool   `toml:"include_packages"`
 }
 
 // Defaults returns a config with reasonable defaults.

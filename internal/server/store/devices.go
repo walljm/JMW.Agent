@@ -26,10 +26,10 @@ type Device struct {
 	SeenByAgent    string
 	Kind           string
 	Notes          string
-	AgentID        string // if this device is one of our agents, the agent.id
-	ServicesJSON   string // JSON: {hostname, services:[], txt:{}} from latest mDNS
-	GroupID        string // logical-device group; "" means ungrouped
-	StaticLease    bool   // true when the DHCP server has this MAC pinned (Reserved/Static lease)
+	AgentID        string    // if this device is one of our agents, the agent.id
+	ServicesJSON   string    // JSON: {hostname, services:[], txt:{}} from latest mDNS
+	GroupID        string    // logical-device group; "" means ungrouped
+	StaticLease    bool      // true when the DHCP server has this MAC pinned (Reserved/Static lease)
 	DHCPSeenAt     time.Time // most recent time a DHCP lease for this MAC was observed; zero if never
 }
 
@@ -254,6 +254,7 @@ func (s *Store) BackfillAgentGroup(ctx context.Context, agentID, hostname string
 		target, agentID, norm, target)
 	return err
 }
+
 // last_seen_at and count on collision.
 func (s *Store) AddHostname(ctx context.Context, deviceID, name, source string, t time.Time) error {
 	if name == "" || source == "" {
@@ -743,4 +744,3 @@ func (s *Store) UpsertFromDHCPLease(ctx context.Context, lease DHCPLeaseEntry, s
 	_ = s.AddSighting(ctx, mac, sourceAgent, lease.IP, mac, "dhcp", observedAt)
 	return nil
 }
-

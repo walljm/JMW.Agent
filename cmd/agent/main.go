@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	agentcfg "github.com/walljm/jmwagent/internal/agent/config"
 	"github.com/walljm/jmwagent/internal/agent/collect"
+	agentcfg "github.com/walljm/jmwagent/internal/agent/config"
 	"github.com/walljm/jmwagent/internal/agent/discover"
 	"github.com/walljm/jmwagent/internal/agent/hostfs"
 	"github.com/walljm/jmwagent/internal/agent/identity"

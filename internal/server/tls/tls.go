@@ -39,14 +39,14 @@ func EnsureCert(certPath, keyPath, hostname string) (string, error) {
 	}
 
 	tpl := x509.Certificate{
-		SerialNumber: serial,
-		Subject:      pkix.Name{CommonName: hostname},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().AddDate(5, 0, 0),
-		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
-		DNSNames:     []string{hostname, "localhost"},
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: hostname},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().AddDate(5, 0, 0),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
+		DNSNames:              []string{hostname, "localhost"},
 		BasicConstraintsValid: true,
 	}
 

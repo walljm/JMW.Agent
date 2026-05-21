@@ -137,7 +137,8 @@ func (s *Server) agentHeartbeat(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (s *Server) agentMetrics(w http.ResponseWriter, r *http.Request) {	var req proto.MetricsRequest
+func (s *Server) agentMetrics(w http.ResponseWriter, r *http.Request) {
+	var req proto.MetricsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "bad_request", "invalid JSON")
 		return

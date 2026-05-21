@@ -90,10 +90,10 @@ func collectHardware(ctx context.Context) proto.HardwareInfo {
 			Product      string `json:"Product"`
 		} `json:"Board"`
 		CPU struct {
-			Name              string `json:"Name"`
-			Manufacturer      string `json:"Manufacturer"`
-			NumberOfCores     int    `json:"NumberOfCores"`
-			MaxClockSpeed     int    `json:"MaxClockSpeed"`
+			Name          string `json:"Name"`
+			Manufacturer  string `json:"Manufacturer"`
+			NumberOfCores int    `json:"NumberOfCores"`
+			MaxClockSpeed int    `json:"MaxClockSpeed"`
 		} `json:"CPU"`
 	}
 	script := `$o = [ordered]@{
@@ -200,12 +200,12 @@ func collectOS(ctx context.Context) proto.OSInfo {
 
 func collectDisks(ctx context.Context) []proto.DiskDevice {
 	var rows []struct {
-		FriendlyName  string `json:"FriendlyName"`
-		SerialNumber  string `json:"SerialNumber"`
-		Size          uint64 `json:"Size"`
-		MediaType     string `json:"MediaType"`
-		BusType       string `json:"BusType"`
-		DeviceID      string `json:"DeviceId"`
+		FriendlyName string `json:"FriendlyName"`
+		SerialNumber string `json:"SerialNumber"`
+		Size         uint64 `json:"Size"`
+		MediaType    string `json:"MediaType"`
+		BusType      string `json:"BusType"`
+		DeviceID     string `json:"DeviceId"`
 	}
 	script := `Get-PhysicalDisk | Select-Object FriendlyName, SerialNumber, Size, MediaType, BusType, DeviceId | ConvertTo-Json -Compress`
 	if err := runPSJSON(ctx, script, &rows); err != nil {
@@ -271,11 +271,11 @@ func diskFallback(ctx context.Context) []proto.DiskDevice {
 
 func collectRoutes(ctx context.Context) []proto.RouteEntry {
 	var rows []struct {
-		AddressFamily      string `json:"AddressFamily"`
-		DestinationPrefix  string `json:"DestinationPrefix"`
-		NextHop            string `json:"NextHop"`
-		InterfaceAlias     string `json:"InterfaceAlias"`
-		RouteMetric        int    `json:"RouteMetric"`
+		AddressFamily     string `json:"AddressFamily"`
+		DestinationPrefix string `json:"DestinationPrefix"`
+		NextHop           string `json:"NextHop"`
+		InterfaceAlias    string `json:"InterfaceAlias"`
+		RouteMetric       int    `json:"RouteMetric"`
 	}
 	script := `Get-NetRoute -ErrorAction SilentlyContinue | Select-Object @{n='AddressFamily';e={$_.AddressFamily.ToString()}}, DestinationPrefix, NextHop, InterfaceAlias, RouteMetric | ConvertTo-Json -Compress`
 	if err := runPSJSON(ctx, script, &rows); err != nil {
@@ -355,10 +355,10 @@ func collectListening(ctx context.Context) []proto.ListeningPort {
 
 func collectProcesses(ctx context.Context) []proto.ProcessSummary {
 	var rows []struct {
-		Id       int     `json:"Id"`
-		Name     string  `json:"ProcessName"`
-		WS       uint64  `json:"WorkingSet64"`
-		CPU      float64 `json:"CPU"`
+		Id   int     `json:"Id"`
+		Name string  `json:"ProcessName"`
+		WS   uint64  `json:"WorkingSet64"`
+		CPU  float64 `json:"CPU"`
 	}
 	// Top 25 by working set; CPU column is total seconds since process start
 	// (PerformanceCounter would be needed for instantaneous %).
