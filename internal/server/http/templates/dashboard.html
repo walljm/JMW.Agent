@@ -41,10 +41,17 @@
 
   <!-- Needs attention: a triaged feed that beats raw event chronology.
        Surfaces only what an admin would want to act on right now. -->
-  {{if or .RecentlyStale .PendingPreview (gt .DeviceStats.UngroupedNoAgent 0) (gt .ContainerStats.Unhealthy 0)}}
+  {{if or .RecentlyStale .PendingPreview (gt .DeviceStats.UngroupedNoAgent 0) (gt .ContainerStats.Unhealthy 0) (gt .DiscoveredNetworks 0)}}
   <section>
     <h2>Needs attention</h2>
     <div class="attn-grid">
+      {{if gt .DiscoveredNetworks 0}}
+      <div class="attn-card">
+        <div class="attn-title">{{.DiscoveredNetworks}} new network{{if ne .DiscoveredNetworks 1}}s{{end}} discovered</div>
+        <div class="muted small">New networks detected. Promote to "monitored" to include their devices in your dashboard.</div>
+        <a class="card-link" href="/networks">Manage →</a>
+      </div>
+      {{end}}
       {{if .PendingPreview}}
       <div class="attn-card">
         <div class="attn-title">{{.PendingCount}} agent{{if ne .PendingCount 1}}s{{end}} pending approval</div>

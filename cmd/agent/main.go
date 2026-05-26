@@ -238,6 +238,7 @@ func sendDiscoveries(ctx context.Context, cli *transport.Client, id string) erro
 	_, err := cli.Discoveries(ctx, &proto.DiscoveryRequest{
 		AgentID:   id,
 		Sightings: out,
+		Network:   discover.NetworkContext(),
 	})
 	return err
 }

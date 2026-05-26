@@ -25,7 +25,7 @@
 {{- $active := .Active -}}
 {{- $group := "" -}}
 {{- if or (eq $active "agents") (eq $active "pending") (eq $active "alerts") (eq $active "containers") -}}{{- $group = "fleet" -}}{{- end -}}
-{{- if or (eq $active "devices") (eq $active "terrain") -}}{{- $group = "network" -}}{{- end -}}
+{{- if or (eq $active "devices") (eq $active "terrain") (eq $active "networks") -}}{{- $group = "network" -}}{{- end -}}
 {{- if eq $active "events" -}}{{- $group = "system" -}}{{- end -}}
 <nav class="navbar" aria-label="Primary">
   <div class="brand"><a href="/">JMW Agent</a></div>
@@ -47,6 +47,7 @@
       <button type="button" class="navgroup-label" aria-haspopup="true" aria-expanded="false">Network</button>
       <ul class="navmenu" role="menu">
         <li role="none"><a role="menuitem" href="/devices" class="{{if eq $active "devices"}}active{{end}}">Devices</a></li>
+        <li role="none"><a role="menuitem" href="/networks" class="{{if eq $active "networks"}}active{{end}}">Networks</a></li>
         <li role="none"><a role="menuitem" href="/terrain" class="{{if eq $active "terrain"}}active{{end}}">Key Cyber Terrain</a></li>
       </ul>
     </li>

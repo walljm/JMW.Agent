@@ -46,7 +46,14 @@ func (s *Server) dashboardGet(w http.ResponseWriter, r *http.Request) {
 	})
 
 	// Aggregate KPIs (one round trip each, all cheap).
-	devStats, _ := s.Store.DeviceStats(ctx)
+	// Device stats are scoped to monitored networks when any exist.
+	monCount, _ := s.Store.MonitoredNetworkCount(ctx)
+	var devStats store.DeviceStats
+	if monCount > 0 {
+		devStats, _ = s.Store.DeviceStatsForMonitored(ctx)
+	} else {
+		devStats, _ = s.Store.DeviceStats(ctx)
+	}
 	conStats, _ := s.Store.ContainersSummary(ctx)
 	alertStats, _ := s.Store.AlertStats(ctx)
 	dbSize, _ := s.Store.DBSize(ctx)
@@ -54,6 +61,9 @@ func (s *Server) dashboardGet(w http.ResponseWriter, r *http.Request) {
 	// Top-N panels.
 	topSources, _ := s.Store.TopEventSources(ctx, 24*time.Hour, 5)
 	recentDevices, _ := s.Store.ListRecentDevices(ctx, 5)
+
+	// New-network count for attention card.
+	discoveredNetworks, _ := s.Store.DiscoveredNetworkCount(ctx)
 
 	// Pending preview (first 3) — surfaced inline so admins don't have to
 	// click through if there's nothing else demanding attention.
@@ -66,25 +76,26 @@ func (s *Server) dashboardGet(w http.ResponseWriter, r *http.Request) {
 	uptime := time.Since(s.StartedAt).Round(time.Second)
 
 	s.render(w, r, "dashboard.html", map[string]any{
-		"CSRFToken":      csrf,
-		"Title":          "Dashboard",
-		"Active":         "dashboard",
-		"Approved":       approved,
-		"Pending":        pending,
-		"PendingPreview": pendingPreview,
-		"Events":         events,
-		"OnlineCount":    online,
-		"StaleCount":     stale,
-		"PendingCount":   len(pending),
-		"RecentlyStale":  recentlyStale,
-		"DeviceStats":    devStats,
-		"ContainerStats": conStats,
-		"AlertStats":     alertStats,
-		"TopSources":     topSources,
-		"RecentDevices":  recentDevices,
-		"Uptime":         uptime.String(),
-		"DBSize":         dbSize,
-		"IngestCount":    s.IngestCount(),
+		"CSRFToken":          csrf,
+		"Title":              "Dashboard",
+		"Active":             "dashboard",
+		"Approved":           approved,
+		"Pending":            pending,
+		"PendingPreview":     pendingPreview,
+		"Events":             events,
+		"OnlineCount":        online,
+		"StaleCount":         stale,
+		"PendingCount":       len(pending),
+		"RecentlyStale":      recentlyStale,
+		"DeviceStats":        devStats,
+		"ContainerStats":     conStats,
+		"AlertStats":         alertStats,
+		"TopSources":         topSources,
+		"RecentDevices":      recentDevices,
+		"Uptime":             uptime.String(),
+		"DBSize":             dbSize,
+		"IngestCount":        s.IngestCount(),
+		"DiscoveredNetworks": discoveredNetworks,
 	})
 }
 

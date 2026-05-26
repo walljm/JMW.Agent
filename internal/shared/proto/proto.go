@@ -117,10 +117,21 @@ type Sighting struct {
 	Probes map[string]map[string]string `json:"probes,omitempty"`
 }
 
+// NetworkContext identifies the network segment an agent was on when it
+// performed a discovery scan. The server uses this to auto-create and
+// associate devices with logical network records.
+type NetworkContext struct {
+	GatewayMAC string `json:"gateway_mac"`          // primary stable identity of the network
+	CIDR       string `json:"cidr,omitempty"`       // agent's interface CIDR (e.g. "192.168.1.0/24")
+	Interface  string `json:"interface,omitempty"`   // OS interface name (e.g. "en0", "eth0")
+	SSID       string `json:"ssid,omitempty"`       // Wi-Fi SSID, empty for wired
+}
+
 // DiscoveryRequest carries a batch of sightings from one agent.
 type DiscoveryRequest struct {
-	AgentID   string     `json:"agent_id"`
-	Sightings []Sighting `json:"sightings"`
+	AgentID   string          `json:"agent_id"`
+	Sightings []Sighting      `json:"sightings"`
+	Network   *NetworkContext `json:"network,omitempty"` // nil for legacy agents that haven't upgraded
 }
 
 // DiscoveryResponse acks how many sightings were accepted.

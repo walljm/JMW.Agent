@@ -138,7 +138,7 @@ func (s *Store) UpsertDevice(ctx context.Context, d *Device) error {
 		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		 ON CONFLICT(id) DO UPDATE SET
 		   mac = excluded.mac,
-		   ip = excluded.ip,
+		   ip = COALESCE(NULLIF(excluded.ip,''), devices.ip),
 		   hostname = CASE
 		     WHEN excluded.hostname = '' THEN devices.hostname
 		     WHEN ? >= `+storedCase+` THEN excluded.hostname
@@ -149,8 +149,10 @@ func (s *Store) UpsertDevice(ctx context.Context, d *Device) error {
 		     ELSE devices.hostname_source END,
 		   vendor = COALESCE(NULLIF(excluded.vendor,''), devices.vendor),
 		   kind = COALESCE(NULLIF(excluded.kind,''), devices.kind),
-		   last_seen_at = excluded.last_seen_at,
-		   seen_by_agent = excluded.seen_by_agent,
+		   last_seen_at = CASE
+		     WHEN excluded.last_seen_at > devices.last_seen_at THEN excluded.last_seen_at
+		     ELSE devices.last_seen_at END,
+		   seen_by_agent = COALESCE(NULLIF(excluded.seen_by_agent,''), devices.seen_by_agent),
 		   agent_id = COALESCE(NULLIF(excluded.agent_id,''), devices.agent_id),
 		   services_json = COALESCE(NULLIF(excluded.services_json,''), devices.services_json),
 		   device_group_id = COALESCE(NULLIF(excluded.device_group_id,''), devices.device_group_id)`,
@@ -709,8 +711,11 @@ func (s *Store) UpsertFromDHCPLease(ctx context.Context, lease DHCPLeaseEntry, s
 	}
 
 	// UpsertDevice handles priority-aware hostname merging and first/last seen.
-	// Leave Kind/Vendor/ServicesJSON empty so a richer agent sighting always
-	// wins those fields.
+	// Leave Kind/Vendor/ServicesJSON/SeenByAgent empty so a richer agent
+	// sighting always wins those fields. We deliberately omit SeenByAgent
+	// ("terrain" is not a real agent) and LastSeenAt (the device wasn't
+	// truly *seen* on the wire — a DHCP record was observed) so we don't
+	// clobber the real discoverer or make the device appear perpetually online.
 	dev := &Device{
 		ID:             mac,
 		MAC:            mac,
@@ -718,8 +723,6 @@ func (s *Store) UpsertFromDHCPLease(ctx context.Context, lease DHCPLeaseEntry, s
 		Hostname:       strings.TrimSpace(lease.Hostname),
 		HostnameSource: "dhcp",
 		Vendor:         lease.Vendor,
-		LastSeenAt:     observedAt,
-		SeenByAgent:    sourceAgent,
 	}
 	if err := s.UpsertDevice(ctx, dev); err != nil {
 		return err

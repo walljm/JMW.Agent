@@ -151,14 +151,41 @@ func (s *Server) channelDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) devicesList(w http.ResponseWriter, r *http.Request) {
-	devices, _ := s.Store.ListDevices(r.Context())
-	agents, _ := s.Store.ListAgents(r.Context(), "")
+	ctx := r.Context()
+	networkID := r.URL.Query().Get("network")
+
+	// Determine which devices to show based on network filter.
+	var devices []*store.Device
+	var err error
+	switch networkID {
+	case "", "monitored":
+		// Default: show only devices on monitored networks.
+		// If no networks are monitored yet, fall back to showing all devices
+		// (graceful transition for existing installs).
+		monCount, _ := s.Store.MonitoredNetworkCount(ctx)
+		if monCount > 0 {
+			devices, err = s.Store.ListDevicesOnMonitoredNetworks(ctx)
+		} else {
+			devices, err = s.Store.ListDevices(ctx)
+		}
+		networkID = "monitored"
+	case "all":
+		devices, err = s.Store.ListDevices(ctx)
+	default:
+		// Specific network selected.
+		devices, err = s.Store.ListDevicesOnNetwork(ctx, networkID)
+	}
+	if err != nil {
+		devices = nil
+	}
+
+	agents, _ := s.Store.ListAgents(ctx, "")
 	names := make(map[string]string, len(agents))
 	for _, a := range agents {
 		names[a.ID] = a.Hostname
 	}
 	groups := groupDevices(devices)
-	tagsByID, _ := s.Store.ListTagsForTargets(r.Context(), store.TagTargetDevice)
+	tagsByID, _ := s.Store.ListTagsForTargets(ctx, store.TagTargetDevice)
 	// Aggregate tags + descriptions across each group's member device rows so
 	// the list view reflects the whole logical machine, not just the primary.
 	groupTags := make(map[string][]string, len(groups))
@@ -181,13 +208,19 @@ func (s *Server) devicesList(w http.ResponseWriter, r *http.Request) {
 		sort.Strings(agg)
 		groupTags[key] = agg
 	}
+
+	// Load networks for the selector dropdown.
+	networks, _ := s.Store.ListNetworks(ctx, "")
+
 	s.render(w, r, "devices.html", map[string]any{
-		"Title":      "Devices",
-		"Active":     "devices",
-		"Groups":     groups,
-		"AgentNames": names,
-		"GroupTags":  groupTags,
-		"GroupDesc":  groupDesc,
+		"Title":         "Devices",
+		"Active":        "devices",
+		"Groups":        groups,
+		"AgentNames":    names,
+		"GroupTags":     groupTags,
+		"GroupDesc":     groupDesc,
+		"Networks":      networks,
+		"NetworkFilter": networkID,
 	})
 }
 
@@ -384,6 +417,9 @@ func (s *Server) deviceDetail(w http.ResponseWriter, r *http.Request) {
 	// query volume relative to other clients, not necessarily zero.
 	dnsActivity := buildDNSActivity(s.Terrain.Status(), ips)
 
+	// Networks this device has been seen on.
+	deviceNetworks, _ := s.Store.NetworksForDevice(r.Context(), memberIDs)
+
 	s.render(w, r, "device_detail.html", map[string]any{
 		"CSRFToken":       csrf,
 		"Title":           "Device " + d.Hostname,
@@ -400,6 +436,7 @@ func (s *Server) deviceDetail(w http.ResponseWriter, r *http.Request) {
 		"Tags":            tags,
 		"TagsCSV":         strings.Join(tags, ", "),
 		"DNSActivity":     dnsActivity,
+		"Networks":        deviceNetworks,
 	})
 }
 

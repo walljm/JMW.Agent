@@ -46,6 +46,28 @@
     </table>
   </section>
 
+  {{if .Networks}}
+  <section>
+    <h2>Networks</h2>
+    <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th>Name</th><th>Gateway MAC</th><th>CIDR</th><th>SSID</th><th>Status</th></tr></thead>
+      <tbody>
+      {{range .Networks}}
+        <tr>
+          <td><a href="/devices?network={{.ID}}">{{if .Name}}{{.Name}}{{else}}{{.GatewayMAC}}{{end}}</a></td>
+          <td class="mono small">{{.GatewayMAC}}</td>
+          <td>{{if .CIDR}}{{.CIDR}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td>{{if .SSID}}{{.SSID}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td><span class="badge state-{{.Status}}">{{.Status}}</span></td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+  </section>
+  {{end}}
+
   <section>
     <h2>Description &amp; tags</h2>
     {{if .Device.Notes}}<p>{{.Device.Notes}}</p>{{end}}

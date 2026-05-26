@@ -275,6 +275,26 @@ func (s *Server) agentDiscoveries(w http.ResponseWriter, r *http.Request) {
 		}
 		accepted++
 	}
+
+	// Associate all accepted devices with the reporting network.
+	// Skip container/VM sightings — bridge IPs aren't on the physical network.
+	if req.Network != nil && req.Network.GatewayMAC != "" {
+		networkID, err := s.Store.UpsertNetwork(r.Context(),
+			req.Network.GatewayMAC, req.Network.CIDR, req.Network.SSID, time.Now().UTC())
+		if err == nil && networkID != "" {
+			for _, sn := range req.Sightings {
+				if sn.MAC == "" {
+					continue
+				}
+				if sn.Kind == "container" || sn.Kind == "vm" {
+					continue
+				}
+				devID := strings.ToLower(sn.MAC)
+				_ = s.Store.AssociateDeviceNetwork(r.Context(), devID, networkID, sn.SeenAt)
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, proto.DiscoveryResponse{Accepted: accepted})
 }
 
