@@ -5,6 +5,7 @@ package collect
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -172,10 +173,22 @@ func readDTStringList(path string) []string {
 	return out
 }
 
-// collectTemperatures samples every kernel thermal zone. Returns nil when no
-// /sys/class/thermal/thermal_zone* nodes exist (most VMs, containers without
-// /sys mounted, x86 servers without lm-sensors style zones).
+// collectTemperatures samples kernel thermal zones and hwmon chips.
+// thermal_zone* is populated on ARM SoCs and some Intel platforms; hwmon is
+// the primary path on x86 NAS/server hardware (coretemp, it87, nct67xx, etc.)
+// Both sources are read and merged — duplicates are unlikely because they come
+// from different driver subsystems.
 func collectTemperatures() []proto.TempReading {
+	var out []proto.TempReading
+	out = append(out, thermalZoneTemps()...)
+	out = append(out, hwmonTemps()...)
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func thermalZoneTemps() []proto.TempReading {
 	entries, err := os.ReadDir(hostfs.Path("/sys/class/thermal"))
 	if err != nil {
 		return nil
@@ -191,7 +204,6 @@ func collectTemperatures() []proto.TempReading {
 		if err != nil {
 			continue
 		}
-		// Kernel reports millidegrees Celsius.
 		milli, err := strconv.ParseInt(strings.TrimSpace(string(raw)), 10, 64)
 		if err != nil {
 			continue
@@ -202,12 +214,57 @@ func collectTemperatures() []proto.TempReading {
 		if c <= 0 || c > 150 {
 			continue
 		}
-		t := proto.TempReading{
+		out = append(out, proto.TempReading{
 			Name:    name,
 			Type:    strings.TrimSpace(readSafe(base + "/type")),
 			Celsius: c,
+		})
+	}
+	return out
+}
+
+// hwmonTemps reads every temp*_input under /sys/class/hwmon/hwmon*/. This is
+// the primary temperature source on x86 hardware (NAS boxes, servers, desktops)
+// where thermal_zone* nodes are absent or sparse. Each reading is named
+// "<chip>/<label>" where label comes from temp*_label when present, otherwise
+// "temp<N>".
+func hwmonTemps() []proto.TempReading {
+	chips, err := os.ReadDir(hostfs.Path("/sys/class/hwmon"))
+	if err != nil {
+		return nil
+	}
+	var out []proto.TempReading
+	for _, chip := range chips {
+		base := hostfs.Path("/sys/class/hwmon/" + chip.Name())
+		chipName := strings.TrimSpace(readSafe(base + "/name"))
+		if chipName == "" {
+			chipName = chip.Name()
 		}
-		out = append(out, t)
+		// Walk temp1_input, temp2_input, ...
+		for n := 1; n <= 32; n++ {
+			inputPath := fmt.Sprintf("%s/temp%d_input", base, n)
+			raw, err := os.ReadFile(inputPath)
+			if err != nil {
+				break // inputs are numbered contiguously; first miss means done
+			}
+			milli, err := strconv.ParseInt(strings.TrimSpace(string(raw)), 10, 64)
+			if err != nil {
+				continue
+			}
+			c := float64(milli) / 1000.0
+			if c <= 0 || c > 150 {
+				continue
+			}
+			label := strings.TrimSpace(readSafe(fmt.Sprintf("%s/temp%d_label", base, n)))
+			if label == "" {
+				label = fmt.Sprintf("temp%d", n)
+			}
+			out = append(out, proto.TempReading{
+				Name:    chipName + "/" + label,
+				Type:    "hwmon",
+				Celsius: c,
+			})
+		}
 	}
 	return out
 }

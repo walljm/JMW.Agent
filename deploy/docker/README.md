@@ -61,6 +61,7 @@ docker run -d \
   --restart=always \
   --network=host \
   --pid=host \
+  --privileged \
   -v /:/host:ro \
   -v /volume1/jmw-agent/data:/data \
   -v /volume1/jmw-agent/etc:/etc/jmw-agent:ro \
@@ -76,6 +77,9 @@ Flag rationale:
 - `--pid=host` — needed for `who`, `ps`, and the listening-port collector to
   see host processes. Drop this if you only care about the metrics under
   `--network=host` + `JMW_HOST_ROOT`.
+- `--privileged` — required for `smartctl` to open raw disk devices
+  (`/dev/sda`, etc.) and read SMART data. If you prefer a tighter grant, omit
+  `--privileged` and instead pass one `--device=/dev/sdX` flag per disk.
 - `-v /:/host:ro` — host filesystem mounted read-only; the agent reads `/proc`,
   `/sys`, `/etc/os-release`, `/etc/hostname`, and `statfs`'s mountpoints
   through this prefix.
@@ -100,10 +104,6 @@ keeps the same agent ID.
 
 ## What this deployment does NOT give you
 
-- **SMART / disk health**: requires either `--privileged` plus `--cap-add=SYS_RAWIO`,
-  or explicit `--device=/dev/sdX` flags for every disk. The current collector
-  doesn't shell out to `smartctl` anyway, so this is a future enhancement, not
-  a regression.
 - **Survival across major ADM upgrades**: ADM 4 → 5 has historically required
   Docker reinstalls. You'll need to redo step 1 if that happens.
 - **Docker container inventory**: the agent's Docker collector reads

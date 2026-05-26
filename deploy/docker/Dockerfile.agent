@@ -17,10 +17,18 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \
         -ldflags="-s -w -X github.com/walljm/jmwagent/internal/shared/version.Version=${VERSION}" \
         -o /out/jmw-agent ./cmd/agent
 
+# Extract a statically-linked smartctl from the alpine smartmontools package so
+# it can be copied into the distroless final image (which has no package manager
+# or shell). smartctl needs direct device access at runtime — the container must
+# be started with --privileged or explicit --device flags; see deploy/docker/README.md.
+FROM alpine:3 AS smartctl
+RUN apk add --no-cache smartmontools && cp /usr/sbin/smartctl /smartctl
+
 # Distroless static is tiny (~2 MB) and has no shell — fine because the agent
 # is a single static binary that talks to /proc, /sys, and the network.
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/jmw-agent /jmw-agent
+COPY --from=smartctl /smartctl /usr/sbin/smartctl
 USER nonroot:nonroot
 
 # Agent reads the host filesystem through this prefix when set; the host root
