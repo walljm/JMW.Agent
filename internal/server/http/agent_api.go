@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/walljm/jmwagent/internal/server/releases"
 	"github.com/walljm/jmwagent/internal/server/store"
+	"github.com/walljm/jmwagent/internal/shared/oui"
 	"github.com/walljm/jmwagent/internal/shared/proto"
 )
 
@@ -336,6 +337,7 @@ func (s *Server) agentInventory(w http.ResponseWriter, r *http.Request) {
 			IP:             ip,
 			Hostname:       a.Hostname,
 			HostnameSource: "agent",
+			Vendor:         oui.Lookup(ifc.MAC),
 			Kind:           "agent",
 			AgentID:        req.AgentID,
 			SeenByAgent:    req.AgentID,
@@ -384,6 +386,7 @@ func (s *Server) agentInventory(w http.ResponseWriter, r *http.Request) {
 						IP:             n.IPv4,
 						Hostname:       cname,
 						HostnameSource: "agent",
+						Vendor:         oui.Lookup(mac),
 						Kind:           "container",
 						AgentID:        req.AgentID,
 						SeenByAgent:    req.AgentID,

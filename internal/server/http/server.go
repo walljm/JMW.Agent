@@ -21,6 +21,7 @@ import (
 	"github.com/walljm/jmwagent/internal/server/releases"
 	"github.com/walljm/jmwagent/internal/server/store"
 	"github.com/walljm/jmwagent/internal/server/terrain"
+	"github.com/walljm/jmwagent/internal/shared/oui"
 	"github.com/walljm/jmwagent/internal/shared/version"
 )
 
@@ -84,6 +85,7 @@ func (d dhcpSink) UpsertFromDHCPLease(ctx context.Context, lease terrain.DHCPLea
 		Hostname: lease.Hostname,
 		Static:   lease.Static,
 		Expires:  lease.Expires,
+		Vendor:   oui.Lookup(lease.MAC),
 	}, sourceAgent, observedAt)
 }
 

@@ -682,6 +682,7 @@ type DHCPLeaseEntry struct {
 	Hostname string
 	Static   bool
 	Expires  time.Time
+	Vendor   string
 }
 
 // UpsertFromDHCPLease overlays a DHCP lease onto the devices table:
@@ -716,6 +717,7 @@ func (s *Store) UpsertFromDHCPLease(ctx context.Context, lease DHCPLeaseEntry, s
 		IP:             lease.IP,
 		Hostname:       strings.TrimSpace(lease.Hostname),
 		HostnameSource: "dhcp",
+		Vendor:         lease.Vendor,
 		LastSeenAt:     observedAt,
 		SeenByAgent:    sourceAgent,
 	}
