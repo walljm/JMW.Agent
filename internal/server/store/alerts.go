@@ -13,7 +13,9 @@ type AlertRule struct {
 	ID              int64
 	Name            string
 	Enabled         bool
-	Metric          string // cpu_pct | mem_pct | disk_pct | offline_minutes
+	Metric          string // legacy: cpu_pct | mem_pct | disk_pct | offline_minutes
+	MetricKind      string // v2: numeric_snapshot | disk_usage | temperature | offline | source_health
+	MetricPath      string // v2: sub-path within the kind (e.g., sensor name, device name)
 	Op              string // gt | lt
 	Threshold       float64
 	DurationSeconds int
@@ -30,9 +32,9 @@ func (s *Store) CreateAlertRule(ctx context.Context, r *AlertRule) error {
 		r.CreatedAt = time.Now().UTC()
 	}
 	res, err := s.DB.ExecContext(ctx,
-		`INSERT INTO alert_rules(name, enabled, metric, op, threshold, duration_seconds, target_kind, target_id, severity, channel_id, created_at)
-		 VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-		r.Name, boolToInt(r.Enabled), r.Metric, r.Op, r.Threshold, r.DurationSeconds,
+		`INSERT INTO alert_rules(name, enabled, metric, metric_kind, metric_path, op, threshold, duration_seconds, target_kind, target_id, severity, channel_id, created_at)
+		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		r.Name, boolToInt(r.Enabled), r.Metric, r.MetricKind, r.MetricPath, r.Op, r.Threshold, r.DurationSeconds,
 		r.TargetKind, r.TargetID, r.Severity, nullInt64(r.ChannelID),
 		r.CreatedAt.Format(time.RFC3339))
 	if err != nil {
@@ -45,7 +47,7 @@ func (s *Store) CreateAlertRule(ctx context.Context, r *AlertRule) error {
 // ListAlertRules returns all rules.
 func (s *Store) ListAlertRules(ctx context.Context) ([]*AlertRule, error) {
 	rows, err := s.DB.QueryContext(ctx,
-		`SELECT id, name, enabled, metric, op, threshold, duration_seconds,
+		`SELECT id, name, enabled, metric, metric_kind, metric_path, op, threshold, duration_seconds,
 		        target_kind, COALESCE(target_id,''), severity, channel_id, created_at
 		 FROM alert_rules ORDER BY id ASC`)
 	if err != nil {
@@ -58,7 +60,7 @@ func (s *Store) ListAlertRules(ctx context.Context) ([]*AlertRule, error) {
 		var enabled int
 		var chanID sql.NullInt64
 		var created string
-		if err := rows.Scan(&r.ID, &r.Name, &enabled, &r.Metric, &r.Op, &r.Threshold,
+		if err := rows.Scan(&r.ID, &r.Name, &enabled, &r.Metric, &r.MetricKind, &r.MetricPath, &r.Op, &r.Threshold,
 			&r.DurationSeconds, &r.TargetKind, &r.TargetID, &r.Severity, &chanID, &created); err != nil {
 			return nil, err
 		}
@@ -291,3 +293,66 @@ func nullInt64(p *int64) any {
 	}
 	return *p
 }
+
+// MaintenanceWindow is a time-based suppression window for alerts.
+type MaintenanceWindow struct {
+	ID         int64
+	Name       string
+	TargetKind string
+	TargetID   string
+	StartsAt   time.Time
+	EndsAt     time.Time
+	Recurrence string
+	CreatedAt  time.Time
+	CreatedBy  string
+}
+
+// CreateMaintenanceWindow inserts a new window.
+func (s *Store) CreateMaintenanceWindow(ctx context.Context, mw *MaintenanceWindow) error {
+	if mw.CreatedAt.IsZero() {
+		mw.CreatedAt = time.Now().UTC()
+	}
+	res, err := s.DB.ExecContext(ctx,
+		`INSERT INTO maintenance_windows (name, target_kind, target_id, starts_at, ends_at, recurrence, created_at, created_by)
+		 VALUES (?,?,?,?,?,?,?,?)`,
+		mw.Name, mw.TargetKind, mw.TargetID,
+		mw.StartsAt.Format(time.RFC3339), mw.EndsAt.Format(time.RFC3339),
+		mw.Recurrence, mw.CreatedAt.Format(time.RFC3339), mw.CreatedBy)
+	if err != nil {
+		return err
+	}
+	mw.ID, _ = res.LastInsertId()
+	return nil
+}
+
+// ListMaintenanceWindows returns all windows, ordered by start time.
+func (s *Store) ListMaintenanceWindows(ctx context.Context) ([]*MaintenanceWindow, error) {
+	rows, err := s.DB.QueryContext(ctx,
+		`SELECT id, name, target_kind, target_id, starts_at, ends_at, recurrence, created_at, created_by
+		 FROM maintenance_windows ORDER BY starts_at ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*MaintenanceWindow
+	for rows.Next() {
+		var mw MaintenanceWindow
+		var startsAt, endsAt, createdAt string
+		if err := rows.Scan(&mw.ID, &mw.Name, &mw.TargetKind, &mw.TargetID,
+			&startsAt, &endsAt, &mw.Recurrence, &createdAt, &mw.CreatedBy); err != nil {
+			return nil, err
+		}
+		mw.StartsAt, _ = time.Parse(time.RFC3339, startsAt)
+		mw.EndsAt, _ = time.Parse(time.RFC3339, endsAt)
+		mw.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+		out = append(out, &mw)
+	}
+	return out, rows.Err()
+}
+
+// DeleteMaintenanceWindow removes a window by ID.
+func (s *Store) DeleteMaintenanceWindow(ctx context.Context, id int64) error {
+	_, err := s.DB.ExecContext(ctx, `DELETE FROM maintenance_windows WHERE id = ?`, id)
+	return err
+}
+

@@ -48,6 +48,26 @@ func (e *Evaluator) evaluateOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	// Load maintenance windows once per cycle.
+	storeWindows, err := e.Store.ListMaintenanceWindows(ctx)
+	if err != nil {
+		return err
+	}
+	windows := make([]MaintenanceWindow, len(storeWindows))
+	for i, mw := range storeWindows {
+		windows[i] = MaintenanceWindow{
+			ID:         mw.ID,
+			Name:       mw.Name,
+			TargetKind: mw.TargetKind,
+			TargetID:   mw.TargetID,
+			StartsAt:   mw.StartsAt,
+			EndsAt:     mw.EndsAt,
+			Recurrence: mw.Recurrence,
+		}
+	}
+
+	now := time.Now().UTC()
 	for _, r := range rules {
 		if !r.Enabled {
 			continue
@@ -56,10 +76,24 @@ func (e *Evaluator) evaluateOnce(ctx context.Context) error {
 			if r.TargetKind == "agent" && r.TargetID != "" && r.TargetID != a.ID {
 				continue
 			}
-			val, ok := metricValueFor(ctx, e.Store, r.Metric, a)
+
+			// Check maintenance window.
+			if IsInMaintenance(windows, "agent", a.ID, now) {
+				continue
+			}
+
+			// Use new dispatch if metric_kind is set; fall back to legacy.
+			var val float64
+			var ok bool
+			if r.MetricKind != "" {
+				val, ok = FetchMetric(ctx, e.Store, r.MetricKind, r.MetricPath, a.ID)
+			} else {
+				val, ok = metricValueFor(ctx, e.Store, r.Metric, a)
+			}
 			if !ok {
 				continue
 			}
+
 			breach := false
 			switch r.Op {
 			case "gt":
@@ -75,7 +109,7 @@ func (e *Evaluator) evaluateOnce(ctx context.Context) error {
 						RuleID:    r.ID,
 						AgentID:   a.ID,
 						LastValue: val,
-						Summary:   fmt.Sprintf("%s on %s: %s %s %.2f (was %.2f)", r.Name, a.Hostname, r.Metric, r.Op, r.Threshold, val),
+						Summary:   FormatSummary(r.Name, a.Hostname, r.MetricKind, r.MetricPath, r.Op, r.Threshold, val),
 					}
 					if err := e.Store.StartFiring(ctx, f); err != nil {
 						slog.Warn("start firing", "err", err)

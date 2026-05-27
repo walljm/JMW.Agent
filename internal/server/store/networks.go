@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"net"
 	"strings"
 	"time"
 )
@@ -70,19 +71,6 @@ func (s *Store) UpsertNetwork(ctx context.Context, gatewayMAC, cidr, ssid string
 	return id, nil
 }
 
-// AssociateDeviceNetwork links a device to a network, creating or updating
-// the junction row.
-func (s *Store) AssociateDeviceNetwork(ctx context.Context, deviceID, networkID string, seenAt time.Time) error {
-	now := seenAt.UTC().Format(time.RFC3339)
-	_, err := s.DB.ExecContext(ctx,
-		`INSERT INTO device_networks (device_id, network_id, first_seen_at, last_seen_at)
-		 VALUES (?, ?, ?, ?)
-		 ON CONFLICT(device_id, network_id) DO UPDATE SET
-		   last_seen_at = excluded.last_seen_at`,
-		deviceID, networkID, now, now)
-	return err
-}
-
 // GetNetwork returns a single network by ID.
 func (s *Store) GetNetwork(ctx context.Context, id string) (*Network, error) {
 	row := s.DB.QueryRowContext(ctx,
@@ -124,11 +112,8 @@ func (s *Store) ListNetworks(ctx context.Context, status string) ([]*Network, er
 	if status == "" {
 		rows, err = s.DB.QueryContext(ctx,
 			`SELECT n.id, n.name, n.gateway_mac, COALESCE(n.cidr,''), COALESCE(n.ssid,''),
-			        n.status, n.created_at, n.last_seen_at,
-			        COUNT(dn.device_id)
+			        n.status, n.created_at, n.last_seen_at
 			 FROM networks n
-			 LEFT JOIN device_networks dn ON dn.network_id = n.id
-			 GROUP BY n.id
 			 ORDER BY CASE n.status
 			   WHEN 'monitored' THEN 0
 			   WHEN 'discovered' THEN 1
@@ -138,12 +123,9 @@ func (s *Store) ListNetworks(ctx context.Context, status string) ([]*Network, er
 	} else {
 		rows, err = s.DB.QueryContext(ctx,
 			`SELECT n.id, n.name, n.gateway_mac, COALESCE(n.cidr,''), COALESCE(n.ssid,''),
-			        n.status, n.created_at, n.last_seen_at,
-			        COUNT(dn.device_id)
+			        n.status, n.created_at, n.last_seen_at
 			 FROM networks n
-			 LEFT JOIN device_networks dn ON dn.network_id = n.id
 			 WHERE n.status = ?
-			 GROUP BY n.id
 			 ORDER BY n.last_seen_at DESC`, status)
 	}
 	if err != nil {
@@ -156,14 +138,87 @@ func (s *Store) ListNetworks(ctx context.Context, status string) ([]*Network, er
 		var n Network
 		var ca, la string
 		if err := rows.Scan(&n.ID, &n.Name, &n.GatewayMAC, &n.CIDR, &n.SSID,
-			&n.Status, &ca, &la, &n.DeviceCount); err != nil {
+			&n.Status, &ca, &la); err != nil {
 			return nil, err
 		}
 		n.CreatedAt, _ = time.Parse(time.RFC3339, ca)
 		n.LastSeenAt, _ = time.Parse(time.RFC3339, la)
 		out = append(out, &n)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Populate DeviceCount per network by bucketing all unique IPv4 addresses
+	// against each network's CIDR. SQLite has no CIDR operator, so we do this
+	// in Go with a single sweep over the address table.
+	if err := s.populateNetworkDeviceCounts(ctx, out); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
+// populateNetworkDeviceCounts fills DeviceCount on each network by matching
+// IPv4 addresses (one per interface) against the network CIDR. Networks with
+// an empty or unparseable CIDR are left at zero.
+func (s *Store) populateNetworkDeviceCounts(ctx context.Context, nets []*Network) error {
+	if len(nets) == 0 {
+		return nil
+	}
+	type parsedNet struct {
+		idx int
+		n   *net.IPNet
+	}
+	var parsed []parsedNet
+	for i, nw := range nets {
+		if nw.CIDR == "" {
+			continue
+		}
+		_, ipNet, err := net.ParseCIDR(nw.CIDR)
+		if err != nil {
+			continue
+		}
+		parsed = append(parsed, parsedNet{idx: i, n: ipNet})
+	}
+	if len(parsed) == 0 {
+		return nil
+	}
+
+	// One IPv4 address per interface, choosing the most recently seen.
+	rows, err := s.DB.QueryContext(ctx,
+		`SELECT interface_id, address FROM interface_addresses
+		 WHERE family = 'ipv4'
+		 ORDER BY interface_id, last_seen_at DESC`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	seen := make(map[string]bool)
+	for rows.Next() {
+		var ifID, addr string
+		if err := rows.Scan(&ifID, &addr); err != nil {
+			return err
+		}
+		if seen[ifID] {
+			continue
+		}
+		seen[ifID] = true
+		if i := strings.IndexByte(addr, '/'); i > 0 {
+			addr = addr[:i]
+		}
+		ip := net.ParseIP(addr)
+		if ip == nil {
+			continue
+		}
+		for _, p := range parsed {
+			if p.n.Contains(ip) {
+				nets[p.idx].DeviceCount++
+				break
+			}
+		}
+	}
+	return rows.Err()
 }
 
 // UpdateNetworkStatus changes the status of a network.
@@ -180,99 +235,34 @@ func (s *Store) UpdateNetworkName(ctx context.Context, id, name string) error {
 	return err
 }
 
-// ListDevicesOnNetwork returns devices associated with a specific network.
-// Includes all group members of matched devices so grouping works correctly.
+// ListDevicesOnNetwork returns devices whose IPv4 address falls within the
+// network's CIDR range. Looks up the network's CIDR, then filters interfaces
+// that have a matching address.
 func (s *Store) ListDevicesOnNetwork(ctx context.Context, networkID string) ([]*Device, error) {
-	rows, err := s.DB.QueryContext(ctx,
-		`SELECT d.id, COALESCE(d.mac,''), COALESCE(d.ip,''), COALESCE(d.hostname,''),
-		        COALESCE(d.hostname_source,''),
-		        COALESCE(d.vendor,''), d.first_seen_at, d.last_seen_at,
-		        COALESCE(d.seen_by_agent,''), COALESCE(d.kind,''), COALESCE(d.notes,''),
-		        COALESCE(d.agent_id,''), COALESCE(d.services_json,''),
-		        COALESCE(d.device_group_id,''),
-		        COALESCE(d.static_lease,0), COALESCE(d.dhcp_seen_at,'')
-		 FROM devices d
-		 WHERE d.id IN (
-		   SELECT dn.device_id FROM device_networks dn WHERE dn.network_id = ?
-		 )
-		 OR (d.device_group_id != '' AND d.device_group_id IN (
-		   SELECT d2.device_group_id FROM devices d2
-		   INNER JOIN device_networks dn2 ON dn2.device_id = d2.id
-		   WHERE dn2.network_id = ? AND d2.device_group_id != ''
-		 ))
-		 ORDER BY d.ip`, networkID, networkID)
-	if err != nil {
-		return nil, err
+	net, err := s.GetNetwork(ctx, networkID)
+	if err != nil || net == nil || net.CIDR == "" {
+		// Fallback: can't filter without CIDR.
+		return s.ListDevices(ctx)
 	}
-	defer rows.Close()
-	var out []*Device
-	for rows.Next() {
-		var d Device
-		var fs, ls, ds string
-		var staticLease int
-		if err := rows.Scan(&d.ID, &d.MAC, &d.IP, &d.Hostname, &d.HostnameSource, &d.Vendor,
-			&fs, &ls, &d.SeenByAgent, &d.Kind, &d.Notes, &d.AgentID, &d.ServicesJSON, &d.GroupID,
-			&staticLease, &ds); err != nil {
-			return nil, err
-		}
-		d.FirstSeenAt, _ = time.Parse(time.RFC3339, fs)
-		d.LastSeenAt, _ = time.Parse(time.RFC3339, ls)
-		d.StaticLease = staticLease != 0
-		if ds != "" {
-			d.DHCPSeenAt, _ = time.Parse(time.RFC3339, ds)
-		}
-		out = append(out, &d)
-	}
-	return out, rows.Err()
+	return s.ListDevicesInCIDR(ctx, net.CIDR)
 }
 
-// ListDevicesOnMonitoredNetworks returns all devices that are associated
-// with at least one monitored network, including group members.
+// ListDevicesOnMonitoredNetworks returns devices on any monitored network.
 func (s *Store) ListDevicesOnMonitoredNetworks(ctx context.Context) ([]*Device, error) {
-	rows, err := s.DB.QueryContext(ctx,
-		`SELECT DISTINCT d.id, COALESCE(d.mac,''), COALESCE(d.ip,''), COALESCE(d.hostname,''),
-		        COALESCE(d.hostname_source,''),
-		        COALESCE(d.vendor,''), d.first_seen_at, d.last_seen_at,
-		        COALESCE(d.seen_by_agent,''), COALESCE(d.kind,''), COALESCE(d.notes,''),
-		        COALESCE(d.agent_id,''), COALESCE(d.services_json,''),
-		        COALESCE(d.device_group_id,''),
-		        COALESCE(d.static_lease,0), COALESCE(d.dhcp_seen_at,'')
-		 FROM devices d
-		 WHERE d.id IN (
-		   SELECT dn.device_id FROM device_networks dn
-		   INNER JOIN networks n ON n.id = dn.network_id
-		   WHERE n.status = ?
-		 )
-		 OR (d.device_group_id != '' AND d.device_group_id IN (
-		   SELECT d2.device_group_id FROM devices d2
-		   INNER JOIN device_networks dn2 ON dn2.device_id = d2.id
-		   INNER JOIN networks n2 ON n2.id = dn2.network_id
-		   WHERE n2.status = ? AND d2.device_group_id != ''
-		 ))
-		 ORDER BY d.ip`, NetworkStatusMonitored, NetworkStatusMonitored)
-	if err != nil {
-		return nil, err
+	nets, err := s.ListNetworks(ctx, NetworkStatusMonitored)
+	if err != nil || len(nets) == 0 {
+		return s.ListDevices(ctx)
 	}
-	defer rows.Close()
-	var out []*Device
-	for rows.Next() {
-		var d Device
-		var fs, ls, ds string
-		var staticLease int
-		if err := rows.Scan(&d.ID, &d.MAC, &d.IP, &d.Hostname, &d.HostnameSource, &d.Vendor,
-			&fs, &ls, &d.SeenByAgent, &d.Kind, &d.Notes, &d.AgentID, &d.ServicesJSON, &d.GroupID,
-			&staticLease, &ds); err != nil {
-			return nil, err
+	var cidrs []string
+	for _, n := range nets {
+		if n.CIDR != "" {
+			cidrs = append(cidrs, n.CIDR)
 		}
-		d.FirstSeenAt, _ = time.Parse(time.RFC3339, fs)
-		d.LastSeenAt, _ = time.Parse(time.RFC3339, ls)
-		d.StaticLease = staticLease != 0
-		if ds != "" {
-			d.DHCPSeenAt, _ = time.Parse(time.RFC3339, ds)
-		}
-		out = append(out, &d)
 	}
-	return out, rows.Err()
+	if len(cidrs) == 0 {
+		return s.ListDevices(ctx)
+	}
+	return s.ListDevicesInCIDRs(ctx, cidrs)
 }
 
 // MonitoredNetworkCount returns the number of networks with status "monitored".
@@ -292,62 +282,15 @@ func (s *Store) DiscoveredNetworkCount(ctx context.Context) (int, error) {
 	return count, err
 }
 
-// DeviceStatsForMonitored returns device aggregate stats scoped to monitored
-// networks only. Returns the same DeviceStats shape but only counting devices
-// that have at least one monitored-network association.
+// DeviceStatsForMonitored returns entity stats. Since per-network device
+// tracking is no longer maintained, this delegates to DeviceStats.
 func (s *Store) DeviceStatsForMonitored(ctx context.Context) (DeviceStats, error) {
-	var st DeviceStats
-	cutoff := time.Now().UTC().Add(-24 * time.Hour).Format(time.RFC3339)
-	err := s.DB.QueryRowContext(ctx,
-		`SELECT
-		   COUNT(DISTINCT d.id),
-		   COUNT(DISTINCT COALESCE(NULLIF(d.device_group_id,''), '_ungrouped:' || d.id)),
-		   COALESCE(SUM(CASE WHEN d.first_seen_at >= ? THEN 1 ELSE 0 END), 0),
-		   COALESCE(SUM(CASE WHEN (d.device_group_id IS NULL OR d.device_group_id = '')
-		                      AND (d.agent_id IS NULL OR d.agent_id = '') THEN 1 ELSE 0 END), 0)
-		 FROM devices d
-		 INNER JOIN device_networks dn ON dn.device_id = d.id
-		 INNER JOIN networks n ON n.id = dn.network_id
-		 WHERE n.status = ?`, cutoff, NetworkStatusMonitored).
-		Scan(&st.Total, &st.Groups, &st.NewLast24h, &st.UngroupedNoAgent)
-	return st, err
+	return s.DeviceStats(ctx)
 }
 
-// NetworksForDevice returns all networks any of the given device IDs have
-// been seen on (deduplicated). Pass all group member IDs to get the full
-// picture for a logical device.
-func (s *Store) NetworksForDevice(ctx context.Context, deviceIDs []string) ([]*Network, error) {
-	if len(deviceIDs) == 0 {
-		return nil, nil
-	}
-	placeholders := make([]string, len(deviceIDs))
-	args := make([]any, len(deviceIDs))
-	for i, id := range deviceIDs {
-		placeholders[i] = "?"
-		args[i] = id
-	}
-	query := `SELECT DISTINCT n.id, n.name, n.gateway_mac, COALESCE(n.cidr,''), COALESCE(n.ssid,''),
-	                 n.status, n.created_at, n.last_seen_at, 0
-	          FROM networks n
-	          INNER JOIN device_networks dn ON dn.network_id = n.id
-	          WHERE dn.device_id IN (` + strings.Join(placeholders, ",") + `)
-	          ORDER BY n.name`
-	rows, err := s.DB.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []*Network
-	for rows.Next() {
-		var n Network
-		var ca, la string
-		if err := rows.Scan(&n.ID, &n.Name, &n.GatewayMAC, &n.CIDR, &n.SSID,
-			&n.Status, &ca, &la, &n.DeviceCount); err != nil {
-			return nil, err
-		}
-		n.CreatedAt, _ = time.Parse(time.RFC3339, ca)
-		n.LastSeenAt, _ = time.Parse(time.RFC3339, la)
-		out = append(out, &n)
-	}
-	return out, rows.Err()
+// NetworksForDevice returns networks associated with the given interface IDs.
+// In the entity model, per-device network associations are not maintained.
+// Returns empty until the network model is extended.
+func (s *Store) NetworksForDevice(_ context.Context, _ []string) ([]*Network, error) {
+	return nil, nil
 }

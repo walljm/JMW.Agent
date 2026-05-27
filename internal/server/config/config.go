@@ -14,22 +14,29 @@ import (
 
 // Config is the server configuration.
 type Config struct {
-	Addr                 string        `toml:"addr"`
+	Listen               string        `toml:"listen"`
 	DataDir              string        `toml:"data_dir"`
 	ReleasesDir          string        `toml:"releases_dir"`
 	TLSCertFile          string        `toml:"tls_cert_file"`
 	TLSKeyFile           string        `toml:"tls_key_file"`
+	LogLevel             string        `toml:"log_level"`
 	AgentPSK             string        `toml:"agent_psk"`
 	SessionLifetimeHours int           `toml:"session_lifetime_hours"`
-	Terrain              TerrainConfig `toml:"terrain"`
+	Retention            Retention     `toml:"retention"`
+
+	// Deprecated: Legacy terrain config. If present at boot and no terrain
+	// Source row exists in the database, the server performs a one-time import
+	// into the sources table and logs a migration notice. This field will be
+	// removed in a future release.
+	Terrain TerrainConfig `toml:"terrain"`
+
+	// Addr is the legacy name for Listen. If both are set, Listen wins.
+	Addr string `toml:"addr"`
 }
 
 // TerrainConfig holds optional Key Cyber Terrain polling configuration.
-// If URL is empty, auto-detection is attempted against LAN candidates.
-//
-// For Technitium DNS, prefer setting Token (a pre-created API token) over
-// username/password. If only username/password are set, the poller will
-// log in to obtain a session token.
+// Deprecated: use the Sources table via the admin UI instead. This struct
+// exists only for one-time migration into the database.
 type TerrainConfig struct {
 	URL      string `toml:"url"`
 	Token    string `toml:"token"`
@@ -37,13 +44,32 @@ type TerrainConfig struct {
 	Password string `toml:"password"`
 }
 
+// Retention holds default retention durations. These can be overridden per-tier
+// from the admin UI without a restart.
+type Retention struct {
+	RawMetrics        string `toml:"raw_metrics"`
+	Rollup5Min        string `toml:"rollup_5min"`
+	RollupHourly      string `toml:"rollup_hourly"`
+	RollupDaily       string `toml:"rollup_daily"`
+	RemovedContainers string `toml:"removed_containers"`
+	StaleObservations string `toml:"stale_observations"`
+}
+
 // Defaults returns sensible defaults.
 func Defaults() *Config {
 	return &Config{
-		Addr:                 ":8443",
+		Listen:               ":8443",
 		DataDir:              "./data",
 		ReleasesDir:          "./releases",
+		LogLevel:             "info",
 		SessionLifetimeHours: 24 * 7,
+		Retention: Retention{
+			RawMetrics:        "48h",
+			Rollup5Min:        "7d",
+			RollupHourly:      "90d",
+			RollupDaily:       "365d",
+			RemovedContainers: "7d",
+		},
 	}
 }
 
@@ -62,8 +88,12 @@ func Load(path string) (*Config, error) {
 	if err := toml.Unmarshal(b, c); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
-	if c.Addr == "" {
-		c.Addr = ":8443"
+	// Support legacy "addr" field renamed to "listen".
+	if c.Listen == "" && c.Addr != "" {
+		c.Listen = c.Addr
+	}
+	if c.Listen == "" {
+		c.Listen = ":8443"
 	}
 	if c.DataDir == "" {
 		c.DataDir = "./data"

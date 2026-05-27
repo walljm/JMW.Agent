@@ -86,29 +86,18 @@ type Config struct {
 	Password string
 }
 
-// DeviceSink receives DHCP leases observed by the poller so the server can
-// overlay them onto its devices table. Implemented by *store.Store; defined
-// as an interface here to keep the terrain package free of a store import.
-type DeviceSink interface {
-	UpsertFromDHCPLease(ctx context.Context, lease DHCPLeaseToSink, sourceAgent string, observedAt time.Time) error
-}
-
-// DHCPLeaseToSink is the lease shape the poller hands to the sink. Kept
-// separate from DHCPLease so the sink doesn't pick up presentation-only
-// fields that may be added later.
-type DHCPLeaseToSink struct {
-	MAC      string
-	IP       string
-	Hostname string
-	Static   bool
-	Expires  time.Time
+// PipelineSink receives the full DHCP status after each successful poll so it
+// can be fed into the entity pipeline. Implemented by *pipeline.Ingestor via
+// a thin wrapper; defined as an interface to avoid an import cycle.
+type PipelineSink interface {
+	IngestDHCP(ctx context.Context, status *DHCPStatus) error
 }
 
 // Poller periodically polls the LAN DNS/DHCP server and caches the result.
 type Poller struct {
-	cfg    Config
-	sink   DeviceSink
-	client *http.Client
+	cfg          Config
+	pipelineSink PipelineSink
+	client       *http.Client
 
 	mu        sync.RWMutex
 	status    Status
@@ -129,11 +118,11 @@ func New(cfg Config) *Poller {
 	}
 }
 
-// SetDeviceSink wires a sink that receives DHCP leases after each successful
-// poll. Optional; if nil, lease overlay is skipped.
-func (p *Poller) SetDeviceSink(s DeviceSink) {
+// SetPipelineSink wires a sink that receives the full DHCP status after each
+// successful poll for entity pipeline processing. Optional.
+func (p *Poller) SetPipelineSink(s PipelineSink) {
 	p.mu.Lock()
-	p.sink = s
+	p.pipelineSink = s
 	p.mu.Unlock()
 }
 
@@ -199,35 +188,14 @@ func (p *Poller) poll(ctx context.Context) {
 func (p *Poller) setStatus(s Status) {
 	p.mu.Lock()
 	p.status = s
+	ps := p.pipelineSink
 	p.mu.Unlock()
-	p.overlayLeases(s)
-}
-
-// overlayLeases hands every fresh DHCP lease to the configured sink. Stale
-// (expired, non-static) leases are skipped because most DHCP servers retain
-// expired leases in their list endpoint for a while.
-func (p *Poller) overlayLeases(s Status) {
-	p.mu.RLock()
-	sink := p.sink
-	p.mu.RUnlock()
-	if sink == nil || !s.Reachable || s.DHCP == nil || len(s.DHCP.Leases) == 0 {
-		return
-	}
-	now := time.Now().UTC()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	for _, l := range s.DHCP.Leases {
-		if !l.Static && !l.Expires.IsZero() && l.Expires.Before(now) {
-			continue
-		}
-		if err := sink.UpsertFromDHCPLease(ctx, DHCPLeaseToSink{
-			MAC:      l.MAC,
-			IP:       l.IP,
-			Hostname: l.Hostname,
-			Static:   l.Static,
-			Expires:  l.Expires,
-		}, "terrain", now); err != nil {
-			slog.Warn("terrain: dhcp overlay failed", "mac", l.MAC, "err", err)
+	// Feed DHCP data into entity pipeline.
+	if ps != nil && s.Reachable && s.DHCP != nil && len(s.DHCP.Leases) > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := ps.IngestDHCP(ctx, s.DHCP); err != nil {
+			slog.Warn("terrain: pipeline ingest failed", "err", err)
 		}
 	}
 }

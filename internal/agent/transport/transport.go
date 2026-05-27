@@ -105,6 +105,15 @@ func (c *Client) Inventory(ctx context.Context, req *proto.InventoryRequest) (*p
 	return &resp, nil
 }
 
+// Tick sends a coalesced tick containing metrics, discoveries, and/or inventory.
+func (c *Client) Tick(ctx context.Context, req *proto.TickRequest) (*proto.TickResponse, error) {
+	var resp proto.TickResponse
+	if err := c.do(ctx, "/api/v1/agent/tick", req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // Download fetches a binary blob from the server. path must begin with "/".
 // The caller is responsible for closing the returned reader. Uses a fresh
 // context-bound request rather than the JSON helper because update payloads

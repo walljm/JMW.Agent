@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"sort"
@@ -11,9 +12,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/walljm/jmwagent/internal/server/pipeline/adapters"
 	"github.com/walljm/jmwagent/internal/server/releases"
 	"github.com/walljm/jmwagent/internal/server/store"
-	"github.com/walljm/jmwagent/internal/shared/oui"
 	"github.com/walljm/jmwagent/internal/shared/proto"
 )
 
@@ -157,10 +158,32 @@ func (s *Server) agentMetrics(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusForbidden, "not_approved", "agent not approved")
 		return
 	}
-	if err := s.Store.InsertSnapshots(r.Context(), req.AgentID, req.Snapshots); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
-		return
+
+	// Feed through the metrics adapter as the sole write path.
+	if s.Ingestor != nil {
+		srcID, srcErr := s.Store.EnsureAgentSource(r.Context(), req.AgentID, a.Hostname)
+		if srcErr == nil {
+			payload := &adapters.AgentMetricsPayload{
+				AgentID:   req.AgentID,
+				Snapshots: req.Snapshots,
+			}
+			if _, pErr := s.Ingestor.Ingest(r.Context(), "agent-metrics", srcID, payload); pErr != nil {
+				slog.Warn("pipeline ingest failed", "kind", "agent-metrics", "agent", req.AgentID, "err", pErr)
+				writeJSONError(w, http.StatusInternalServerError, "db_error", pErr.Error())
+				return
+			}
+		} else {
+			writeJSONError(w, http.StatusInternalServerError, "db_error", srcErr.Error())
+			return
+		}
+	} else {
+		// Fallback: direct write if Ingestor not wired (shouldn't happen in prod).
+		if err := s.Store.InsertSnapshots(r.Context(), req.AgentID, req.Snapshots); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+			return
+		}
 	}
+
 	writeJSON(w, http.StatusOK, proto.MetricsResponse{Accepted: len(req.Snapshots)})
 }
 
@@ -183,114 +206,20 @@ func (s *Server) agentDiscoveries(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusForbidden, "not_approved", "agent not approved")
 		return
 	}
+	// Count accepted sightings (those with a MAC).
 	accepted := 0
 	for _, sn := range req.Sightings {
-		if sn.MAC == "" {
-			continue
+		if sn.MAC != "" {
+			accepted++
 		}
-		var servicesJSON string
-		if len(sn.Services) > 0 || len(sn.TXT) > 0 || sn.Hostname != "" || len(sn.Probes) > 0 {
-			payload := map[string]any{
-				"hostname": sn.Hostname,
-				"services": sn.Services,
-				"txt":      sn.TXT,
-			}
-			// Splay each known probe under its own top-level key so the
-			// detail page template can render it directly without a
-			// generic key-walker. Unknown probes still ship through under
-			// "probes" for forward-compat.
-			known := map[string]bool{
-				"eureka": true, "ipp": true, "roku": true, "airplay": true,
-				"ldap": true, "ssh_fp": true, "dhcp": true, "title": true,
-			}
-			extras := map[string]map[string]string{}
-			for k, v := range sn.Probes {
-				if known[k] {
-					payload[k] = v
-				} else {
-					extras[k] = v
-				}
-			}
-			if len(extras) > 0 {
-				payload["probes"] = extras
-			}
-			blob, err := json.Marshal(payload)
-			if err == nil {
-				servicesJSON = string(blob)
-			}
-		}
-		// Pick the best name + its source so the canonical hostname update is
-		// priority-aware. Fall back to sn.Hostname (treated as unknown source) if
-		// the agent didn't supply HostnameSources.
-		bestName, bestSource := pickBestHostname(sn.HostnameSources)
-		if bestName == "" && sn.Hostname != "" {
-			bestName = sn.Hostname
-		}
-		dev := &store.Device{
-			ID:             strings.ToLower(sn.MAC), // canonical id = MAC
-			MAC:            strings.ToLower(sn.MAC),
-			IP:             sn.IP,
-			Hostname:       bestName,
-			HostnameSource: bestSource,
-			Vendor:         sn.Vendor,
-			Kind:           sn.Kind,
-			LastSeenAt:     sn.SeenAt,
-			SeenByAgent:    req.AgentID,
-			ServicesJSON:   servicesJSON,
-		}
-		if err := s.Store.UpsertDevice(r.Context(), dev); err != nil {
-			continue
-		}
-		_ = s.Store.AddSighting(r.Context(), dev.ID, req.AgentID, sn.IP, sn.MAC, sn.Method, sn.SeenAt)
-		// Record every observed alias so the detail page can surface conflicts.
-		for src, name := range sn.HostnameSources {
-			_ = s.Store.AddHostname(r.Context(), dev.ID, name, src, sn.SeenAt)
-		}
-		// Best-effort grouping: a host's name (via mDNS, NBNS, rDNS, etc.)
-		// almost always identifies the same physical machine across all of
-		// its NICs. SetDeviceGroup is priority-aware (agent > mdns > nbns >
-		// rdns > ...), so a later, lower-priority sighting can't steal a
-		// NIC away from a higher-priority group. We try sources in priority
-		// order and stop at the first hit.
-		grouped := false
-		for _, src := range hostnameSourcesByPriority() {
-			name := sn.HostnameSources[src]
-			if name == "" {
-				continue
-			}
-			if g := hostnameGroupID(src, name); g != "" {
-				_ = s.Store.SetDeviceGroup(r.Context(), dev.ID, g)
-				grouped = true
-				break
-			}
-		}
-		// Container/VM sightings classified by the reporting agent (e.g. an
-		// ARP entry seen on docker0, br-<id>, virbr*, lxcbr*, or a podman
-		// bridge) belong to that agent's host: the bridge is per-host and
-		// addresses on it can only be reached via the host. Roll them up
-		// into the agent's group so 172.17.0.x rows merge with their host
-		// instead of appearing as orphan strangers on the device list.
-		if !grouped && (sn.Kind == "container" || sn.Kind == "vm") {
-			_ = s.Store.SetDeviceGroup(r.Context(), dev.ID, "agent:"+req.AgentID)
-		}
-		accepted++
 	}
 
-	// Associate all accepted devices with the reporting network.
-	// Skip container/VM sightings — bridge IPs aren't on the physical network.
-	if req.Network != nil && req.Network.GatewayMAC != "" {
-		networkID, err := s.Store.UpsertNetwork(r.Context(),
-			req.Network.GatewayMAC, req.Network.CIDR, req.Network.SSID, time.Now().UTC())
-		if err == nil && networkID != "" {
-			for _, sn := range req.Sightings {
-				if sn.MAC == "" {
-					continue
-				}
-				if sn.Kind == "container" || sn.Kind == "vm" {
-					continue
-				}
-				devID := strings.ToLower(sn.MAC)
-				_ = s.Store.AssociateDeviceNetwork(r.Context(), devID, networkID, sn.SeenAt)
+	// Feed through the entity pipeline as the sole write path.
+	if s.Ingestor != nil {
+		srcID, srcErr := s.Store.EnsureAgentSource(r.Context(), req.AgentID, a.Hostname)
+		if srcErr == nil {
+			if _, pErr := s.Ingestor.Ingest(r.Context(), "agent-discovery", srcID, &req); pErr != nil {
+				slog.Warn("pipeline ingest failed", "kind", "agent-discovery", "agent", req.AgentID, "err", pErr)
 			}
 		}
 	}
@@ -331,101 +260,35 @@ func (s *Server) agentInventory(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
 	}
-	// Cross-correlate: register each non-loopback agent interface as a known device
-	// so neighbor sightings from other agents merge by MAC and surface this agent.
-	now := time.Now().UTC()
-	for _, ifc := range req.Inventory.Network.Interfaces {
-		if ifc.IsLoopback || ifc.MAC == "" {
-			continue
-		}
-		ip := ""
-		for _, cidr := range ifc.IPv4 {
-			s := cidr
-			if i := strings.IndexByte(s, '/'); i > 0 {
-				s = s[:i]
-			}
-			parsed := net.ParseIP(s)
-			if parsed == nil || parsed.IsLoopback() || parsed.IsLinkLocalUnicast() {
-				continue
-			}
-			ip = s
-			break
-		}
-		_ = s.Store.UpsertDevice(r.Context(), &store.Device{
-			ID:             strings.ToLower(ifc.MAC),
-			MAC:            strings.ToLower(ifc.MAC),
-			IP:             ip,
-			Hostname:       a.Hostname,
-			HostnameSource: "agent",
-			Vendor:         oui.Lookup(ifc.MAC),
-			Kind:           "agent",
-			AgentID:        req.AgentID,
-			SeenByAgent:    req.AgentID,
-			FirstSeenAt:    now,
-			LastSeenAt:     now,
-			GroupID:        "agent:" + req.AgentID,
-		})
-		_ = s.Store.AddHostname(r.Context(), strings.ToLower(ifc.MAC), a.Hostname, "agent", now)
-	}
-	// Catch up any prior NIC rows for this agent (e.g. transient virtual
-	// interfaces no longer in the report) so they remain merged under the
-	// agent's group instead of drifting back into ungrouped singletons.
-	_ = s.Store.BackfillAgentGroup(r.Context(), req.AgentID, a.Hostname)
-	// Sync Docker containers and engine info reported alongside inventory.
-	// Containers are first-class entities (their own list/detail views) but
-	// their lifecycle follows this host: containers absent from the report
-	// are removed.
-	if di := req.Inventory.Docker; di != nil {
-		_ = s.Store.UpsertDockerEngine(r.Context(), req.AgentID, di, collected)
-		if di.Reachable {
-			added, _, removed, syncErr := s.Store.SyncContainers(r.Context(), req.AgentID, di.Containers, collected)
-			if syncErr == nil && (added > 0 || removed > 0) {
-				_ = s.Store.LogEvent(r.Context(), &store.Event{
-					Type: "containers.changed", Severity: store.SeverityInfo,
-					SourceKind: "agent", SourceID: req.AgentID,
-					Summary: fmt.Sprintf("Containers on %s: +%d / -%d", a.Hostname, added, removed),
-					Detail:  map[string]any{"added": added, "removed": removed},
-				})
-			}
-			// Register each container's network attachment as a Device keyed
-			// by its container MAC, owned by the host's agent group. That way
-			// when another agent (or this agent running in-cluster) ARPs the
-			// docker bridge subnet and sees those container MACs, the rows
-			// merge into the host's group instead of appearing as orphaned
-			// 172.x strangers on the discovered-devices list.
-			for _, dc := range di.Containers {
-				cname := dc.Name
-				for _, n := range dc.Networks {
-					mac := strings.ToLower(strings.TrimSpace(n.MAC))
-					if mac == "" {
-						continue
-					}
-					_ = s.Store.UpsertDevice(r.Context(), &store.Device{
-						ID:             mac,
-						MAC:            mac,
-						IP:             n.IPv4,
-						Hostname:       cname,
-						HostnameSource: "agent",
-						Vendor:         oui.Lookup(mac),
-						Kind:           "container",
-						AgentID:        req.AgentID,
-						SeenByAgent:    req.AgentID,
-						FirstSeenAt:    now,
-						LastSeenAt:     now,
-						GroupID:        "agent:" + req.AgentID,
-					})
-				}
-			}
-		}
-	} else {
-		// Docker not reported: clear out any prior engine record.
-		_ = s.Store.UpsertDockerEngine(r.Context(), req.AgentID, nil, collected)
-	}
 	_ = s.Store.LogEvent(r.Context(), &store.Event{
 		Type: "agent.inventory", Severity: store.SeverityInfo,
 		SourceKind: "agent", SourceID: req.AgentID,
 		Summary: "Inventory updated: " + a.Hostname,
 	})
+
+	// Feed through the entity pipeline as the sole write path.
+	if s.Ingestor != nil {
+		srcID, srcErr := s.Store.EnsureAgentSource(r.Context(), req.AgentID, a.Hostname)
+		if srcErr == nil {
+			if _, pErr := s.Ingestor.Ingest(r.Context(), "agent-inventory", srcID, &req.Inventory); pErr != nil {
+				slog.Warn("pipeline ingest failed", "kind", "agent-inventory", "agent", req.AgentID, "err", pErr)
+			}
+		}
+	}
+
+	// Write expanded metric snapshots from inventory data (temperature, battery).
+	if len(req.Inventory.Hardware.Temperatures) > 0 {
+		temps := make([]store.TempSnapshot, len(req.Inventory.Hardware.Temperatures))
+		for i, t := range req.Inventory.Hardware.Temperatures {
+			temps[i] = store.TempSnapshot{Sensor: t.Name, Celsius: t.Celsius}
+		}
+		_ = s.Store.InsertTemperatureSnapshots(r.Context(), req.AgentID, collected, temps)
+	}
+	if ch := req.Inventory.Chassis; ch != nil && ch.Battery != nil {
+		_ = s.Store.InsertBatterySnapshot(r.Context(), req.AgentID, collected,
+			ch.Battery.ChargePercent, ch.Battery.State, ch.Battery.HealthPercent)
+	}
+
 	writeJSON(w, http.StatusOK, proto.InventoryResponse{Accepted: true})
 }
 

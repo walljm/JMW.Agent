@@ -38,7 +38,6 @@
         </td>
         <td>
           <span class="mono small">{{$p.MAC}}</span>
-          {{if $p.StaticLease}}<span class="badge small" title="Static / reserved DHCP lease">static</span>{{end}}
           {{if gt .ExtraMACs 0}}<span class="muted small">+{{.ExtraMACs}} NIC{{if gt .ExtraMACs 1}}s{{end}}</span>{{end}}
         </td>
         <td>{{$p.Vendor}}</td>

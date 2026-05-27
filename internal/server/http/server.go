@@ -18,10 +18,11 @@ import (
 
 	"github.com/walljm/jmwagent/internal/server/alerting"
 	"github.com/walljm/jmwagent/internal/server/config"
+	"github.com/walljm/jmwagent/internal/server/pipeline"
+	"github.com/walljm/jmwagent/internal/server/pipeline/adapters"
 	"github.com/walljm/jmwagent/internal/server/releases"
 	"github.com/walljm/jmwagent/internal/server/store"
 	"github.com/walljm/jmwagent/internal/server/terrain"
-	"github.com/walljm/jmwagent/internal/shared/oui"
 	"github.com/walljm/jmwagent/internal/shared/version"
 )
 
@@ -37,6 +38,7 @@ type Server struct {
 	Store         *store.Store
 	Terrain       *terrain.Poller
 	Releases      *releases.Manager
+	Ingestor      *pipeline.Ingestor
 	templates     *template.Template
 	ServerCertSHA string
 	StartedAt     time.Time
@@ -57,16 +59,30 @@ func New(cfg *config.Config, st *store.Store, certSHA string) (*Server, error) {
 		return nil, err
 	}
 	poller := terrain.New(terrain.Config{URL: cfg.Terrain.URL, Token: cfg.Terrain.Token, Username: cfg.Terrain.Username, Password: cfg.Terrain.Password})
-	poller.SetDeviceSink(dhcpSink{st: st})
+	// Legacy DeviceSink removed — entity pipeline is the sole write path.
 	rel := releases.New(cfg.ReleasesDir)
 	if err := rel.Scan(); err != nil {
 		slog.Warn("initial releases scan failed", "dir", cfg.ReleasesDir, "err", err)
 	}
+
+	// Build the entity pipeline ingestor with all known adapters.
+	ing := pipeline.NewIngestor(st,
+		&adapters.AgentDiscovery{},
+		&adapters.AgentInventory{},
+		&adapters.AgentMetrics{Store: st},
+		&adapters.TerrainDHCP{},
+		&adapters.TerrainDNS{},
+	)
+
+	// Wire pipeline sink so terrain polls also feed entity pipeline.
+	poller.SetPipelineSink(&terrainPipelineSink{ingestor: ing, store: st})
+
 	return &Server{
 		Config:            cfg,
 		Store:             st,
 		Terrain:           poller,
 		Releases:          rel,
+		Ingestor:          ing,
 		templates:         tmpl,
 		ServerCertSHA:     certSHA,
 		StartedAt:         time.Now().UTC(),
@@ -74,19 +90,20 @@ func New(cfg *config.Config, st *store.Store, certSHA string) (*Server, error) {
 	}, nil
 }
 
-// dhcpSink adapts *store.Store to terrain.DeviceSink so the poller can stay
-// store-agnostic.
-type dhcpSink struct{ st *store.Store }
+// terrainPipelineSink adapts *pipeline.Ingestor to terrain.PipelineSink.
+type terrainPipelineSink struct {
+	ingestor *pipeline.Ingestor
+	store    *store.Store
+}
 
-func (d dhcpSink) UpsertFromDHCPLease(ctx context.Context, lease terrain.DHCPLeaseToSink, sourceAgent string, observedAt time.Time) error {
-	return d.st.UpsertFromDHCPLease(ctx, store.DHCPLeaseEntry{
-		MAC:      lease.MAC,
-		IP:       lease.IP,
-		Hostname: lease.Hostname,
-		Static:   lease.Static,
-		Expires:  lease.Expires,
-		Vendor:   oui.Lookup(lease.MAC),
-	}, sourceAgent, observedAt)
+func (t *terrainPipelineSink) IngestDHCP(ctx context.Context, status *terrain.DHCPStatus) error {
+	// Look up (or create) the terrain source.
+	srcID, err := t.store.EnsureTerrainSource(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = t.ingestor.Ingest(ctx, "terrain-dhcp", srcID, status)
+	return err
 }
 
 // countIngest counts each agent-API request so the dashboard can show an
@@ -137,6 +154,7 @@ func (s *Server) Router() http.Handler {
 	r.Use(chimw.RealIP)
 	r.Use(chimw.Recoverer)
 	r.Use(secHeaders)
+	r.Use(apiVersionHeader)
 	r.Use(chimw.Timeout(60 * time.Second))
 
 	// Static assets.
@@ -158,6 +176,7 @@ func (s *Server) Router() http.Handler {
 		ar.Post("/metrics", s.agentMetrics)
 		ar.Post("/discoveries", s.agentDiscoveries)
 		ar.Post("/inventory", s.agentInventory)
+		ar.Post("/tick", s.agentTick)
 		ar.Get("/releases/{version}/{filename}", s.agentReleaseDownload)
 	})
 
@@ -199,6 +218,16 @@ func (s *Server) Router() http.Handler {
 
 		// Dashboard JSON for charts.
 		pr.Get("/api/v1/ui/agents/{id}/metrics", s.uiAgentMetrics)
+
+		// Sources CRUD API (session-authenticated).
+		pr.Get("/api/v1/ui/sources", s.sourcesAPIList)
+		pr.Get("/api/v1/ui/sources/{id}", s.sourcesAPIGet)
+		pr.With(s.requireCSRF).Post("/api/v1/ui/sources", s.sourcesAPICreate)
+		pr.With(s.requireCSRF).Delete("/api/v1/ui/sources/{id}", s.sourcesAPIDelete)
+
+		// Entity-based views.
+		pr.Get("/api/v1/ui/hardware", s.hardwareListAPI)
+		pr.Get("/api/v1/ui/hardware/{id}", s.hardwareDetailAPI)
 	})
 
 	return r
@@ -231,6 +260,16 @@ func secHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Content-Security-Policy",
 			"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// apiVersionHeader sets X-API-Version on all /api/ responses.
+func apiVersionHeader(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			w.Header().Set("X-API-Version", "1")
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -290,6 +329,7 @@ func (s *Server) StartBackground(ctx context.Context) {
 	}()
 	go (&alerting.Evaluator{Store: s.Store, Interval: 30 * time.Second}).Run(ctx)
 	go s.Terrain.Run(ctx)
+	go s.RunRollups(ctx)
 	if s.Releases != nil && s.Releases.Enabled() {
 		go func() {
 			t := time.NewTicker(2 * time.Minute)

@@ -60,10 +60,23 @@ func (s *Server) alertCreate(w http.ResponseWriter, r *http.Request) {
 	if dur <= 0 {
 		dur = 60
 	}
+
+	// Accept either the v2 schema (metric_kind + metric_path) directly or the
+	// legacy `metric` shorthand. When only the legacy value is supplied, derive
+	// the v2 fields so the runtime dispatcher (FetchMetric) can serve the rule.
+	metric := strings.TrimSpace(r.FormValue("metric"))
+	metricKind := strings.TrimSpace(r.FormValue("metric_kind"))
+	metricPath := strings.TrimSpace(r.FormValue("metric_path"))
+	if metricKind == "" {
+		metricKind, metricPath = legacyMetricToV2(metric)
+	}
+
 	rule := &store.AlertRule{
 		Name:            strings.TrimSpace(r.FormValue("name")),
 		Enabled:         true,
-		Metric:          r.FormValue("metric"),
+		Metric:          metric,
+		MetricKind:      metricKind,
+		MetricPath:      metricPath,
 		Op:              r.FormValue("op"),
 		Threshold:       threshold,
 		DurationSeconds: dur,
@@ -82,7 +95,7 @@ func (s *Server) alertCreate(w http.ResponseWriter, r *http.Request) {
 			rule.ChannelID = &id
 		}
 	}
-	if rule.Name == "" || rule.Metric == "" || rule.Op == "" {
+	if rule.Name == "" || rule.Op == "" || rule.MetricKind == "" {
 		http.Error(w, "name, metric, op required", http.StatusBadRequest)
 		return
 	}
@@ -91,6 +104,21 @@ func (s *Server) alertCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/alerts", http.StatusSeeOther)
+}
+
+// legacyMetricToV2 maps the legacy `metric` shorthand to v2 (kind, path).
+// Returns ("", "") if the legacy name is unknown.
+func legacyMetricToV2(metric string) (kind, path string) {
+	switch metric {
+	case "cpu_pct", "mem_pct", "load_1", "load_5", "load_15":
+		return "numeric_snapshot", metric
+	case "offline_minutes", "offline":
+		return "offline", ""
+	case "disk_pct":
+		return "disk_usage", ""
+	default:
+		return "", ""
+	}
 }
 
 func (s *Server) alertDelete(w http.ResponseWriter, r *http.Request) {

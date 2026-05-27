@@ -111,3 +111,55 @@ func (s *Store) SnapshotsSince(ctx context.Context, agentID string, since time.T
 	}
 	return out, rows.Err()
 }
+
+// LatestDiskSnapshots returns the most recent disk snapshot set for an agent.
+func (s *Store) LatestDiskSnapshots(ctx context.Context, agentID string) ([]proto.DiskSnapshot, error) {
+	// Find the latest timestamp.
+	var ts string
+	err := s.DB.QueryRowContext(ctx,
+		`SELECT ts FROM disk_snapshots WHERE agent_id = ? ORDER BY ts DESC LIMIT 1`, agentID).Scan(&ts)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.DB.QueryContext(ctx,
+		`SELECT device, mountpoint, used_bytes, total_bytes, fs_type
+		 FROM disk_snapshots WHERE agent_id = ? AND ts = ?`, agentID, ts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []proto.DiskSnapshot
+	for rows.Next() {
+		var d proto.DiskSnapshot
+		if err := rows.Scan(&d.Device, &d.Mountpoint, &d.UsedBytes, &d.TotalBytes, &d.FSType); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// LatestTemperatureSnapshots returns the most recent temperature readings for an agent.
+func (s *Store) LatestTemperatureSnapshots(ctx context.Context, agentID string) ([]TempSnapshot, error) {
+	var ts string
+	err := s.DB.QueryRowContext(ctx,
+		`SELECT ts FROM temperature_snapshots WHERE agent_id = ? ORDER BY ts DESC LIMIT 1`, agentID).Scan(&ts)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.DB.QueryContext(ctx,
+		`SELECT sensor, celsius FROM temperature_snapshots WHERE agent_id = ? AND ts = ?`, agentID, ts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TempSnapshot
+	for rows.Next() {
+		var t TempSnapshot
+		if err := rows.Scan(&t.Sensor, &t.Celsius); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}

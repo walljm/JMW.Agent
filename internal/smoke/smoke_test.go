@@ -119,12 +119,10 @@ func TestSmokeAgentLifecycle(t *testing.T) {
 	if dResp.Accepted != 1 {
 		t.Fatalf("expected accepted=1, got %d", dResp.Accepted)
 	}
-	devs, err := st.ListDevices(ctx)
-	if err != nil || len(devs) != 1 {
-		t.Fatalf("list devices: err=%v len=%d", err, len(devs))
-	}
-	if devs[0].MAC != "aa:bb:cc:dd:ee:ff" {
-		t.Fatalf("unexpected device mac: %q", devs[0].MAC)
+	// Verify entity was created via the pipeline (interfaces table).
+	hw, err := st.ListHardware(ctx)
+	if err != nil || len(hw) == 0 {
+		t.Fatalf("list hardware: err=%v len=%d", err, len(hw))
 	}
 
 	// Pending+events sanity

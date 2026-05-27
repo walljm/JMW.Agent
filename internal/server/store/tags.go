@@ -162,10 +162,3 @@ func (s *Store) UpdateAgentNotes(ctx context.Context, id, notes string) error {
 		`UPDATE agents SET notes = ? WHERE id = ?`, notes, id)
 	return err
 }
-
-// UpdateDeviceNotes sets the free-form description/notes field on a device.
-func (s *Store) UpdateDeviceNotes(ctx context.Context, id, notes string) error {
-	_, err := s.DB.ExecContext(ctx,
-		`UPDATE devices SET notes = ? WHERE id = ?`, notes, id)
-	return err
-}
