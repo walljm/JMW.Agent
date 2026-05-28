@@ -90,6 +90,12 @@ func (s *Server) agentTick(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("tick: inventory ingest failed", "agent", req.AgentID, "err", pErr)
 		}
 
+		// Link the agent to its hardware so Device.AgentID is populated on the
+		// device detail page (hydrateDevices joins systems on hardware_id).
+		if mac := pickPrimaryMAC(req.Inventory.Inventory); mac != "" {
+			_ = s.Store.EnsureAgentSystem(ctx, req.AgentID, mac)
+		}
+
 		// Temperature + battery snapshots.
 		if len(req.Inventory.Inventory.Hardware.Temperatures) > 0 {
 			temps := make([]store.TempSnapshot, len(req.Inventory.Inventory.Hardware.Temperatures))

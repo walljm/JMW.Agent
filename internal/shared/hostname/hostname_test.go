@@ -67,6 +67,10 @@ func TestNormalize(t *testing.T) {
 		{"MYPC", "mypc"},
 		// Whitespace trimmed
 		{"  server  ", "server"},
+		// HTML entities decoded
+		{"hp laserjet m209dw&nbsp;&nbsp;&nbsp;192.168.1.242", "hp laserjet m209dw   192.168.1.242"},
+		{"&amp;router", "&router"},
+		{"My&nbsp;Printer", "my printer"},
 	}
 	for _, tc := range cases {
 		got := Normalize(tc.in)

@@ -325,20 +325,22 @@ func ScanARP() []Sighting {
 				out[i].Kind = "domain-controller"
 			}
 		}
-		if r.sshFP != nil && r.sshFP.SHA256 != "" {
-			out[i].setProbe("ssh_fp", map[string]string{
-				"algo":   r.sshFP.Algorithm,
-				"sha256": r.sshFP.SHA256,
-			})
+		if r.ssh != "" || (r.sshFP != nil && r.sshFP.SHA256 != "") {
+			sshProbe := map[string]string{}
+			if r.ssh != "" {
+				sshProbe["banner"] = r.ssh
+			}
+			if r.sshFP != nil && r.sshFP.SHA256 != "" {
+				sshProbe["algo"] = r.sshFP.Algorithm
+				sshProbe["sha256"] = r.sshFP.SHA256
+			}
+			out[i].setProbe("ssh_fp", sshProbe)
 		}
 		if r.tls != "" {
 			addSource(&out[i], "tls", r.tls)
 		}
 		if r.http != "" {
 			addSource(&out[i], "http", r.http)
-		}
-		if r.ssh != "" {
-			addSource(&out[i], "ssh", r.ssh)
 		}
 		if r.rdns != "" {
 			addSource(&out[i], "rdns", r.rdns)

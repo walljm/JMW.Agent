@@ -64,13 +64,14 @@ type DHCPStatus struct {
 
 // Status is the full cached state of the terrain server.
 type Status struct {
-	Kind       Kind
-	URL        string
-	Reachable  bool
-	DNS        *DNSStats
-	DHCP       *DHCPStatus
-	Error      string
-	LastPolled time.Time
+	Kind        Kind
+	URL         string
+	Reachable   bool
+	DNS         *DNSStats
+	DHCP        *DHCPStatus
+	ZoneRecords []DNSRecord // populated by Technitium backend only
+	Error       string
+	LastPolled  time.Time
 }
 
 // Config holds terrain poller configuration.
@@ -86,11 +87,19 @@ type Config struct {
 	Password string
 }
 
-// PipelineSink receives the full DHCP status after each successful poll so it
-// can be fed into the entity pipeline. Implemented by *pipeline.Ingestor via
-// a thin wrapper; defined as an interface to avoid an import cycle.
+// DNSRecord is a hostname resolved from the LAN DNS server for a known device.
+type DNSRecord struct {
+	IP       string
+	MAC      string
+	Hostname string
+}
+
+// PipelineSink receives terrain data after each successful poll so it can be
+// fed into the entity pipeline. Implemented by *pipeline.Ingestor via a thin
+// wrapper; defined as an interface to avoid an import cycle.
 type PipelineSink interface {
 	IngestDHCP(ctx context.Context, status *DHCPStatus) error
+	IngestDNS(ctx context.Context, records []DNSRecord) error
 }
 
 // Poller periodically polls the LAN DNS/DHCP server and caches the result.
@@ -190,14 +199,114 @@ func (p *Poller) setStatus(s Status) {
 	p.status = s
 	ps := p.pipelineSink
 	p.mu.Unlock()
-	// Feed DHCP data into entity pipeline.
-	if ps != nil && s.Reachable && s.DHCP != nil && len(s.DHCP.Leases) > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := ps.IngestDHCP(ctx, s.DHCP); err != nil {
-			slog.Warn("terrain: pipeline ingest failed", "err", err)
+
+	if ps == nil || !s.Reachable || s.DHCP == nil || len(s.DHCP.Leases) == 0 {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	if err := ps.IngestDHCP(ctx, s.DHCP); err != nil {
+		slog.Warn("terrain: DHCP pipeline ingest failed", "err", err)
+	}
+
+	// Merge zone records (Technitium API) with PTR lookup results.
+	// Zone records are more authoritative; PTR fills in anything they miss.
+	// Dedup by IP so a device covered by both sources doesn't produce two entries.
+	merged := mergeDNSRecords(s.ZoneRecords, lookupPTRNames(ctx, extractHost(s.URL), s.DHCP.Leases))
+	if len(merged) > 0 {
+		if err := ps.IngestDNS(ctx, merged); err != nil {
+			slog.Warn("terrain: DNS pipeline ingest failed", "err", err)
 		}
 	}
+}
+
+// mergeDNSRecords combines zone records (primary) and PTR records (fallback),
+// deduplicating by IP. Zone records win when both cover the same IP.
+func mergeDNSRecords(zone, ptr []DNSRecord) []DNSRecord {
+	seen := make(map[string]struct{}, len(zone))
+	out := make([]DNSRecord, 0, len(zone)+len(ptr))
+	for _, r := range zone {
+		if r.IP == "" || r.Hostname == "" {
+			continue
+		}
+		seen[r.IP] = struct{}{}
+		out = append(out, r)
+	}
+	for _, r := range ptr {
+		if r.IP == "" || r.Hostname == "" {
+			continue
+		}
+		if _, exists := seen[r.IP]; exists {
+			continue
+		}
+		seen[r.IP] = struct{}{}
+		out = append(out, r)
+	}
+	return out
+}
+
+// extractHost returns the hostname portion of a URL (no port, no scheme).
+func extractHost(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
+}
+
+// lookupPTRNames queries the given DNS server (port 53) for a PTR record for
+// each lease IP. Results are returned as DNSRecord values; leases with no PTR
+// answer are silently skipped. Lookups run in parallel, bounded to 20
+// concurrent goroutines, and share the caller's context deadline.
+func lookupPTRNames(ctx context.Context, dnsIP string, leases []DHCPLease) []DNSRecord {
+	r := &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "udp", dnsIP+":53")
+		},
+	}
+
+	type result struct {
+		rec DNSRecord
+		ok  bool
+	}
+
+	sem := make(chan struct{}, 20)
+	out := make([]result, len(leases))
+	var wg sync.WaitGroup
+
+	for i, lease := range leases {
+		if lease.IP == "" || lease.MAC == "" {
+			continue
+		}
+		wg.Add(1)
+		go func(i int, lease DHCPLease) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			names, err := r.LookupAddr(ctx, lease.IP)
+			if err != nil || len(names) == 0 {
+				return
+			}
+			name := strings.TrimSuffix(names[0], ".")
+			if name == "" {
+				return
+			}
+			out[i] = result{rec: DNSRecord{IP: lease.IP, MAC: lease.MAC, Hostname: name}, ok: true}
+		}(i, lease)
+	}
+	wg.Wait()
+
+	var records []DNSRecord
+	for _, r := range out {
+		if r.ok {
+			records = append(records, r.rec)
+		}
+	}
+	return records
 }
 
 // detect probes candidate LAN addresses to find an AdGuard, Technitium, or Pi-hole instance.
@@ -485,6 +594,28 @@ type technitiumLease struct {
 // technitiumLeaseTimeFmt matches the format Technitium emits, e.g. "08/25/2020 17:52:51".
 const technitiumLeaseTimeFmt = "01/02/2006 15:04:05"
 
+type technitiumZonesList struct {
+	Zones []technitiumZoneSummary `json:"zones"`
+}
+
+type technitiumZoneSummary struct {
+	Name     string `json:"name"`
+	Type     string `json:"type"`     // "Primary", "Secondary", "Stub", etc.
+	Disabled bool   `json:"disabled"`
+}
+
+type technitiumZoneRecordsList struct {
+	Records []technitiumZoneRecord `json:"records"`
+}
+
+type technitiumZoneRecord struct {
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	TTL      int    `json:"ttl"`
+	Disabled bool   `json:"disabled"`
+	RData    string `json:"rdata"`
+}
+
 func (p *Poller) pollTechnitium(ctx context.Context, base string) (Status, bool) {
 	token, err := p.technitiumToken(ctx, base)
 	if err != nil {
@@ -592,7 +723,65 @@ func (p *Poller) pollTechnitium(ctx context.Context, base string) (Status, bool)
 		s.DHCP = d
 	}
 
+	s.ZoneRecords = p.fetchTechnitiumZoneRecords(ctx, base, token, s.DHCP)
+
 	return s, true
+}
+
+// fetchTechnitiumZoneRecords lists all primary forward zones, fetches their A
+// records, and correlates IPs with DHCP lease MACs to produce DNSRecords.
+// Records whose IPs have no matching lease (static-IP devices) are included
+// with an empty MAC so callers can decide whether to skip them.
+func (p *Poller) fetchTechnitiumZoneRecords(ctx context.Context, base, token string, dhcp *DHCPStatus) []DNSRecord {
+	var zl technitiumZonesList
+	if err := p.technitiumCall(ctx, base, "/api/zones/list", nil, token, &zl); err != nil {
+		return nil
+	}
+
+	// Build IP → MAC index from current leases.
+	ipToMAC := make(map[string]string)
+	if dhcp != nil {
+		for _, l := range dhcp.Leases {
+			if l.IP != "" && l.MAC != "" {
+				ipToMAC[l.IP] = l.MAC
+			}
+		}
+	}
+
+	// Dedup by IP so zone records and leases don't produce duplicate terrain-dns entries.
+	seen := make(map[string]struct{})
+	var records []DNSRecord
+
+	for _, z := range zl.Zones {
+		// Only query authoritative forward zones; skip reverse and disabled zones.
+		if z.Disabled || z.Type != "Primary" || strings.HasSuffix(z.Name, ".arpa") {
+			continue
+		}
+		var rl technitiumZoneRecordsList
+		if err := p.technitiumCall(ctx, base, "/api/zones/records/get", url.Values{
+			"domain": []string{z.Name},
+			"type":   []string{"A"},
+		}, token, &rl); err != nil {
+			continue
+		}
+		for _, rec := range rl.Records {
+			if rec.Disabled || rec.Type != "A" || rec.RData == "" || rec.Name == "" {
+				continue
+			}
+			ip := rec.RData
+			if _, dup := seen[ip]; dup {
+				continue
+			}
+			seen[ip] = struct{}{}
+			records = append(records, DNSRecord{
+				IP:       ip,
+				MAC:      ipToMAC[ip], // empty when no DHCP lease exists
+				Hostname: rec.Name,
+			})
+		}
+	}
+
+	return records
 }
 
 // technitiumToken returns a usable API token: cfg.Token if set, otherwise a

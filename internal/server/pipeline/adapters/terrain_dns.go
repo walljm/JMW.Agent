@@ -2,29 +2,50 @@ package adapters
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/walljm/jmwagent/internal/server/pipeline"
 	"github.com/walljm/jmwagent/internal/server/terrain"
 )
 
-// TerrainDNS adapts terrain.DNSStats into pipeline observations.
-// DNS stats produce per-client observations (top clients → MAC lookup).
-// Since DNS stats don't carry MAC addresses directly, this adapter
-// produces observations keyed by IP for clients that appear in the top list.
-// These will only resolve if the IP was previously seen via DHCP/discovery.
+// TerrainDNS adapts []terrain.DNSRecord (PTR lookup results from the LAN DNS
+// server) into pipeline observations with source kind "terrain-dns".
 type TerrainDNS struct{}
 
 func (a *TerrainDNS) Kind() string { return "terrain-dns" }
 
 func (a *TerrainDNS) Adapt(_ context.Context, sourceID string, payload any) ([]pipeline.ObservationInput, error) {
-	_, ok := payload.(*terrain.DNSStats)
+	records, ok := payload.([]terrain.DNSRecord)
 	if !ok {
-		return nil, fmt.Errorf("terrain-dns adapter: expected *terrain.DNSStats, got %T", payload)
+		return nil, fmt.Errorf("terrain-dns adapter: expected []terrain.DNSRecord, got %T", payload)
 	}
 
-	// DNS stats don't carry MAC addresses — they report client IPs and query counts.
-	// Until IP-based resolution is implemented, this adapter produces no observations.
-	// It exists as a placeholder so the Ingestor accepts "terrain-dns" kind.
-	return nil, nil
+	now := time.Now().UTC()
+	inputs := make([]pipeline.ObservationInput, 0, len(records))
+
+	for _, rec := range records {
+		if rec.MAC == "" || rec.Hostname == "" {
+			continue
+		}
+		raw, _ := json.Marshal(rec)
+		obs := pipeline.ObservationInput{
+			MAC:        rec.MAC,
+			SourceID:   sourceID,
+			SourceKind: "terrain-dns",
+			ObsType:    "dns-ptr",
+			ObservedAt: now,
+			RawJSON:    string(raw),
+			Hostname:   rec.Hostname,
+		}
+		if rec.IP != "" {
+			obs.Addresses = []pipeline.AddressInput{
+				{Address: rec.IP, Family: "ipv4"},
+			}
+		}
+		inputs = append(inputs, obs)
+	}
+
+	return inputs, nil
 }

@@ -40,7 +40,8 @@ type deriveSignals struct {
 	macs          []string
 	hostnames     []string
 	mdnsServices  []string // _ipp._tcp, _googlecast._tcp, ...
-	sightingKinds []string // "container", etc. from agent discovery payloads
+	sightingKinds []string // "container", "google-cast", etc. from agent discovery payloads
+	probeKeys     []string // "ipp", "airplay", "ssh_fp", etc. — confirmed protocol probe hits
 }
 
 // DeriveDeviceKindForHardware classifies a single hardware record based on
@@ -180,6 +181,13 @@ func gatherSignals(ctx context.Context, st *store.Store, hardwareID string) (*de
 				}
 			}
 		}
+		if probes, ok := m["probes"].(map[string]any); ok {
+			for k := range probes {
+				if k != "" {
+					sig.probeKeys = append(sig.probeKeys, strings.ToLower(k))
+				}
+			}
+		}
 	}
 	obRows.Close()
 
@@ -190,10 +198,33 @@ func gatherSignals(ctx context.Context, st *store.Store, hardwareID string) (*de
 // device kind. Returns "" if no rule matched confidently (caller leaves the
 // existing value in place).
 func classify(s *deriveSignals) string {
-	// Agent-reported container sighting — strongest single signal.
+	// Sighting kinds set by the agent — all protocol-detected kinds, not just container.
 	for _, k := range s.sightingKinds {
-		if k == "container" {
+		switch k {
+		case "container":
 			return KindContainer
+		case "google-cast":
+			return KindStreamer
+		case "printer":
+			return KindPrinter
+		case "roku":
+			return KindStreamer
+		case "domain-controller":
+			return KindServer
+		}
+	}
+
+	// Probe-based — confirmed protocol responses. ssh_fp is a weak signal held
+	// back until after hostname rules so a NAS named "nas-01" with SSH isn't
+	// misclassified as a server.
+	for _, k := range s.probeKeys {
+		switch k {
+		case "ipp":
+			return KindPrinter
+		case "airplay", "eureka", "roku":
+			return KindStreamer
+		case "ldap":
+			return KindServer
 		}
 	}
 
@@ -207,13 +238,21 @@ func classify(s *deriveSignals) string {
 			return KindPrinter
 		case strings.Contains(svc, "_googlecast._tcp"),
 			strings.Contains(svc, "_airplay._tcp"),
-			strings.Contains(svc, "_raop._tcp"):
+			strings.Contains(svc, "_raop._tcp"),
+			strings.Contains(svc, "_appletv-v2._tcp"):
 			return KindStreamer
+		case strings.Contains(svc, "_appletv._tcp"):
+			return KindTV
+		case strings.Contains(svc, "_companion-link._tcp"):
+			// iOS devices advertise this; Macs do not.
+			return KindMobile
+		case strings.Contains(svc, "_ssh._tcp"),
+			strings.Contains(svc, "_sftp-ssh._tcp"):
+			return KindServer
 		case strings.Contains(svc, "_smb._tcp"),
 			strings.Contains(svc, "_afpovertcp._tcp"),
 			strings.Contains(svc, "_nfs._tcp"):
-			// File-sharing services lean NAS but can also be a workstation;
-			// hand off to vendor/hostname rules below before deciding.
+			// File-sharing can be a NAS or a workstation; defer to later rules.
 		case strings.Contains(svc, "_hap._tcp"):
 			return KindIoT
 		case strings.Contains(svc, "_rfb._tcp"),
@@ -232,10 +271,8 @@ func classify(s *deriveSignals) string {
 		case "server", "rack-mount", "blade":
 			return KindServer
 		case "vm", "virtual", "container":
-			return KindServer // a managed VM is server-class by default
+			return KindServer
 		default:
-			// Agent present, chassis unknown — assume server (an agent is
-			// typically installed on always-on infrastructure).
 			return KindServer
 		}
 	}
@@ -246,7 +283,9 @@ func classify(s *deriveSignals) string {
 		case strings.HasPrefix(h, "router"),
 			strings.HasPrefix(h, "gateway"),
 			strings.HasPrefix(h, "gw-"),
-			strings.HasPrefix(h, "edge-"):
+			strings.HasPrefix(h, "edge-"),
+			strings.HasPrefix(h, "fw-"),
+			strings.HasPrefix(h, "firewall"):
 			return KindRouter
 		case strings.HasPrefix(h, "switch"),
 			strings.HasPrefix(h, "sw-"):
@@ -264,8 +303,40 @@ func classify(s *deriveSignals) string {
 			strings.Contains(h, "-printer"):
 			return KindPrinter
 		case strings.HasPrefix(h, "cam-"),
-			strings.HasPrefix(h, "camera"):
+			strings.HasPrefix(h, "camera"),
+			strings.HasPrefix(h, "ring-"):
 			return KindCamera
+		case strings.Contains(h, "iphone"),
+			strings.Contains(h, "ipad"),
+			strings.HasPrefix(h, "pixel-"),
+			strings.HasPrefix(h, "galaxy-"):
+			return KindMobile
+		case strings.Contains(h, "macbook"),
+			strings.HasPrefix(h, "laptop-"):
+			return KindLaptop
+		case strings.Contains(h, "imac"),
+			strings.HasPrefix(h, "desktop-"),
+			strings.HasPrefix(h, "pc-"):
+			return KindWorkstation
+		case strings.Contains(h, "esxi"),
+			strings.Contains(h, "proxmox"),
+			strings.HasPrefix(h, "pve-"),
+			strings.Contains(h, "hyperv"):
+			return KindHypervisor
+		case strings.Contains(h, "chromecast"),
+			strings.Contains(h, "firetv"),
+			strings.HasPrefix(h, "roku-"):
+			return KindStreamer
+		case strings.Contains(h, "appletv"),
+			strings.Contains(h, "apple-tv"):
+			return KindTV
+		case strings.HasPrefix(h, "echo-"),
+			strings.HasPrefix(h, "shelly-"),
+			strings.HasPrefix(h, "tasmota-"),
+			strings.HasPrefix(h, "esp-"),
+			strings.HasPrefix(h, "esp32-"),
+			strings.HasPrefix(h, "hue-"):
+			return KindIoT
 		}
 	}
 
@@ -286,46 +357,74 @@ func classify(s *deriveSignals) string {
 		}
 	}
 
+	// ssh_fp as last resort: SSH confirmed but nothing else matched.
+	for _, k := range s.probeKeys {
+		if k == "ssh_fp" {
+			return KindServer
+		}
+	}
+
 	return ""
 }
 
 // classifyByVendor maps common vendor name fragments to a kind. Order matters
-// only for vendors that overlap (e.g. Apple makes both phones and laptops);
-// in those cases we return the more conservative kind and rely on hostname /
-// chassis_type to refine.
+// for overlapping vendors — more specific cases must come first.
 func classifyByVendor(vendor string) string {
 	switch {
-	// Networking
+	// Servers — check HPE before generic "hewlett packard" so HP printers don't match here.
+	case contains(vendor, "hewlett packard enterprise", "super micro", "supermicro",
+		"ibm", "fujitsu technology", "hpe"):
+		return KindServer
+
+	// Networking — routers/firewalls/switches.
 	case contains(vendor, "ubiquiti", "mikrotik", "tp-link", "tplink",
 		"netgear", "d-link", "dlink", "linksys", "asus router",
 		"juniper", "arista", "cisco systems", "cisco-linksys",
-		"fortinet", "palo alto"):
+		"fortinet", "palo alto", "eero", "zyxel", "sophos",
+		"watchguard", "sonicwall", "cradlepoint", "pepwave",
+		"brocade", "calix", "adtran"):
 		return KindRouter
-	case contains(vendor, "ruckus", "aruba", "meraki", "extreme networks"):
+	case contains(vendor, "ruckus", "aruba", "meraki", "extreme networks",
+		"cambium", "aerohive", "mist systems"):
 		return KindAP
 
-	// Printers
+	// Printers.
 	case contains(vendor, "hewlett packard", "hewlett-packard", "hp inc",
 		"brother", "epson", "canon", "lexmark", "kyocera",
-		"ricoh", "xerox", "konica minolta"):
+		"ricoh", "xerox", "konica minolta", "oki data", "oki electric",
+		"zebra technologies", "datalogic", "toshiba tec"):
 		return KindPrinter
 
-	// NAS / storage
-	case contains(vendor, "synology", "qnap", "asustor", "drobo", "buffalo"):
+	// NAS / storage.
+	case contains(vendor, "synology", "qnap", "asustor", "drobo", "buffalo",
+		"terramaster", "western digital"):
 		return KindNAS
 
-	// IoT / smart home
+	// IoT / smart home.
 	case contains(vendor, "espressif", "nest labs", "ring llc", "amazon technologies",
-		"google llc", "philips lighting", "tuya smart"):
+		"google llc", "philips lighting", "tuya smart", "raspberry pi",
+		"shenzhen lumi", "particle industries", "nordic semiconductor"):
 		return KindIoT
 
-	// Cameras
-	case contains(vendor, "hikvision", "dahua", "axis communications", "uniview"):
+	// Cameras.
+	case contains(vendor, "hikvision", "dahua", "axis communications", "uniview",
+		"hanwha", "bosch security systems", "pelco", "vivotek", "amcrest"):
 		return KindCamera
 
-	// Mobile / consumer
-	case contains(vendor, "samsung electronics"):
+	// TVs.
+	case contains(vendor, "lg electronics", "vizio", "tcl technology", "hisense",
+		"sony", "roku"):
+		return KindTV
+
+	// Mobile — Samsung makes phones and TVs; phones dominate in ARP tables.
+	case contains(vendor, "samsung electronics", "motorola mobility",
+		"oneplus technology", "xiaomi", "huawei", "oppo"):
 		return KindMobile
+
+	// Workstations.
+	case contains(vendor, "dell inc", "lenovo", "acer incorporated", "micro-star",
+		"asustek computer", "gigabyte", "intel corporate"):
+		return KindWorkstation
 	}
 	return ""
 }

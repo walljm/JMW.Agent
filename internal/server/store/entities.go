@@ -338,6 +338,45 @@ func (s *Store) GetSystemByAgent(ctx context.Context, agentID string) (*System, 
 	return s.GetSystem(ctx, id)
 }
 
+// EnsureAgentSystem links an agent to its hardware by upserting a systems row.
+// It looks up the interface by MAC to get the hardware_id, then creates or
+// updates the systems row so that hydrateDevices can populate Device.AgentID.
+// Call this after inventory ingest once the pipeline has created the interface.
+func (s *Store) EnsureAgentSystem(ctx context.Context, agentID, mac string) error {
+	iface, err := s.GetInterfaceByMAC(ctx, mac)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil // interface not yet resolved; skip — will be linked on next tick
+		}
+		return err
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	// Update existing system row if one already exists for this agent.
+	existing, err := s.GetSystemByAgent(ctx, agentID)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if existing != nil {
+		_, err = s.DB.ExecContext(ctx,
+			`UPDATE systems SET hardware_id = ?, last_seen_at = ?, updated_at = ? WHERE id = ?`,
+			iface.HardwareID, now, now, existing.ID)
+		return err
+	}
+
+	// No existing row — insert a minimal one.
+	id := uuid.New().String()
+	_, err = s.DB.ExecContext(ctx,
+		`INSERT INTO systems (id, hardware_id, agent_id, hostname, first_seen_at, last_seen_at, created_at, updated_at)
+		 VALUES (?, ?, ?, '', ?, ?, ?, ?)
+		 ON CONFLICT(id) DO UPDATE SET
+		    hardware_id = excluded.hardware_id, agent_id = excluded.agent_id,
+		    last_seen_at = excluded.last_seen_at, updated_at = excluded.updated_at`,
+		id, iface.HardwareID, agentID, now, now, now, now)
+	return err
+}
+
 // --- Interface CRUD ---
 
 // UpsertInterface inserts or updates an interface by MAC. Returns the ID.

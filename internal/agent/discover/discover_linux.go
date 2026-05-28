@@ -5,6 +5,7 @@ package discover
 import (
 	"bufio"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/walljm/jmwagent/internal/agent/hostfs"
@@ -38,9 +39,13 @@ func scanARP() []Sighting {
 			continue
 		}
 		ip := fields[0]
+		flags, _ := strconv.ParseUint(strings.TrimPrefix(fields[2], "0x"), 16, 32)
 		mac := fields[3]
 		iface := fields[5]
-		if mac == "00:00:00:00:00:00" {
+		// ATF_COM (0x2) is only set for NUD_VALID states (REACHABLE, STALE,
+		// DELAY, PROBE, PERMANENT). FAILED and INCOMPLETE entries may retain
+		// the old MAC in the kernel ha buffer but have flags=0x0 — skip them.
+		if flags&0x2 == 0 || mac == "00:00:00:00:00:00" {
 			continue
 		}
 		s := Sighting{IP: ip, MAC: strings.ToLower(mac)}

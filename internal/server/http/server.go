@@ -97,12 +97,20 @@ type terrainPipelineSink struct {
 }
 
 func (t *terrainPipelineSink) IngestDHCP(ctx context.Context, status *terrain.DHCPStatus) error {
-	// Look up (or create) the terrain source.
 	srcID, err := t.store.EnsureTerrainSource(ctx)
 	if err != nil {
 		return err
 	}
 	_, err = t.ingestor.Ingest(ctx, "terrain-dhcp", srcID, status)
+	return err
+}
+
+func (t *terrainPipelineSink) IngestDNS(ctx context.Context, records []terrain.DNSRecord) error {
+	srcID, err := t.store.EnsureTerrainSource(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = t.ingestor.Ingest(ctx, "terrain-dns", srcID, records)
 	return err
 }
 

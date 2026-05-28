@@ -17,6 +17,18 @@ import (
 	"github.com/walljm/jmwagent/internal/shared/proto"
 )
 
+// pickPrimaryMAC returns the first non-loopback, non-empty MAC from the
+// inventory — the canonical interface the agent reports itself as.
+func pickPrimaryMAC(inv proto.Inventory) string {
+	for _, ifc := range inv.Network.Interfaces {
+		if ifc.IsLoopback || ifc.MAC == "" {
+			continue
+		}
+		return ifc.MAC
+	}
+	return ""
+}
+
 // pickPrimaryIP picks the most reasonable IPv4 to display for an agent:
 // the first non-loopback, non-link-local, non-private-fallback IPv4 from an
 // up interface. Falls back to the first non-loopback IPv4 found.
@@ -277,6 +289,12 @@ func (s *Server) agentInventory(w http.ResponseWriter, r *http.Request) {
 				slog.Warn("pipeline ingest failed", "kind", "agent-inventory", "agent", req.AgentID, "err", pErr)
 			}
 		}
+	}
+
+	// Link the agent to its hardware so Device.AgentID is populated on the
+	// device detail page (hydrateDevices joins systems on hardware_id).
+	if mac := pickPrimaryMAC(req.Inventory); mac != "" {
+		_ = s.Store.EnsureAgentSystem(r.Context(), req.AgentID, mac)
 	}
 
 	// Write expanded metric snapshots from inventory data (temperature, battery).

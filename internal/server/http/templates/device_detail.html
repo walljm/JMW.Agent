@@ -552,7 +552,7 @@
     {{if .Sightings}}
     <div class="table-wrap">
     <table class="data sortable">
-      <thead><tr><th>By</th><th>IP</th><th>MAC</th><th>Method</th><th>First seen</th><th>Last seen</th><th>Count</th></tr></thead>
+      <thead><tr><th>By</th><th>IP</th><th>MAC</th><th>Method</th><th>First seen</th><th>Last seen</th></tr></thead>
       <tbody>
       {{range .Sightings}}
         <tr>
@@ -567,7 +567,6 @@
           <td>{{.Method}}</td>
           <td>{{shortTime .FirstSeenAt}}</td>
           <td>{{shortTime .LastSeenAt}}</td>
-          <td class="num">{{.Count}}</td>
         </tr>
       {{end}}
       </tbody>
@@ -583,7 +582,7 @@
     {{if .Aliases}}
     <div class="table-wrap">
     <table class="data sortable">
-      <thead><tr><th>Name</th><th>Source</th><th>First seen</th><th>Last seen</th><th>Count</th></tr></thead>
+      <thead><tr><th>Name</th><th>Source</th><th>First seen</th><th>Last seen</th></tr></thead>
       <tbody>
       {{range .Aliases}}
         <tr>
@@ -591,7 +590,6 @@
           <td>{{.Source}}</td>
           <td>{{shortTime .FirstSeenAt}}</td>
           <td>{{shortTime .LastSeenAt}}</td>
-          <td class="num">{{.Count}}</td>
         </tr>
       {{end}}
       </tbody>
@@ -668,7 +666,7 @@
         </details>
       {{end}}
       {{with .MDNS.SSHFP}}
-        <details class="mdns-sub"><summary>SSH host key</summary>
+        <details class="mdns-sub"><summary>SSH</summary>
           <table class="kv">{{range $k, $v := .}}<tr><th>{{$k}}</th><td class="mono small">{{$v}}</td></tr>{{end}}</table>
         </details>
       {{end}}

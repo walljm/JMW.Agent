@@ -8,6 +8,7 @@
 package hostname
 
 import (
+	"html"
 	"net"
 	"strings"
 )
@@ -38,7 +39,7 @@ func Priority(sourceKind string) int {
 	case "agent":
 		return 25 // OS self-reported via os.Hostname() — needs filtering
 	case "ssh":
-		return 28 // SSH banner hostname
+		return 28 // kept for historical rows; new observations store banners as a probe
 	case "llmnr":
 		return 35 // Link-Local Multicast Name Resolution
 	case "mdns":
@@ -83,6 +84,8 @@ func Priority(sourceKind string) int {
 //  5. Reject names that parse as an IP address.
 //  6. Reject names shorter than 2 characters.
 func Normalize(h string) string {
+	h = html.UnescapeString(h)
+	h = strings.ReplaceAll(h, " ", " ") // &nbsp; → regular space
 	h = strings.TrimSpace(h)
 	h = strings.TrimSuffix(h, ".") // trailing dot from fully-qualified DNS names
 	h = strings.ToLower(h)
