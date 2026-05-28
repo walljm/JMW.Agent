@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -421,16 +422,24 @@ func (s *Store) GetInterfaceByMAC(ctx context.Context, mac string) (*Interface, 
 // --- Interface Address CRUD ---
 
 // UpsertInterfaceAddress inserts or updates an address on an interface.
+// The address is normalized to a bare IP (CIDR prefix stripped) before
+// storage so that "192.168.1.60" and "192.168.1.60/24" converge to the
+// same row regardless of which source submitted it.
 func (s *Store) UpsertInterfaceAddress(ctx context.Context, addr *InterfaceAddress) error {
 	now := time.Now().UTC()
 	nowStr := now.Format(time.RFC3339)
+
+	ip := addr.Address
+	if idx := strings.IndexByte(ip, '/'); idx > 0 {
+		ip = ip[:idx]
+	}
 
 	_, err := s.DB.ExecContext(ctx,
 		`INSERT INTO interface_addresses (interface_id, address, family, scope, first_seen_at, last_seen_at)
 		 VALUES (?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(interface_id, address) DO UPDATE SET
 		    last_seen_at=excluded.last_seen_at, scope=COALESCE(excluded.scope, interface_addresses.scope)`,
-		addr.InterfaceID, addr.Address, addr.Family, nullStr(addr.Scope), nowStr, nowStr)
+		addr.InterfaceID, ip, addr.Family, nullStr(addr.Scope), nowStr, nowStr)
 	return err
 }
 

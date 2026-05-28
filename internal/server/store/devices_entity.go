@@ -255,14 +255,20 @@ func (s *Store) ListSightingsForDevices(ctx context.Context, deviceIDs []string,
 		args = append(args, id)
 	}
 	args = append(args, limit)
-	q := `SELECT COALESCE(src.agent_id,''), COALESCE(ia.address,''), i.mac,
+	// Group by interface ID (not ia.address) to avoid fan-out when the same
+	// interface has multiple address rows (e.g. "192.168.1.60" from discovery
+	// and "192.168.1.60/24" from inventory — different strings, same device).
+	q := `SELECT COALESCE(src.agent_id,''),
+	             COALESCE((SELECT address FROM interface_addresses
+	                       WHERE interface_id = i.id AND family = 'ipv4'
+	                       ORDER BY last_seen_at DESC LIMIT 1), ''),
+	             i.mac,
 	             o.obs_type, MIN(o.observed_at), MAX(o.observed_at), COUNT(*)
 	      FROM observations o
 	      JOIN interfaces i ON i.id = o.interface_id
 	      JOIN sources src ON src.id = o.source_id
-	      LEFT JOIN interface_addresses ia ON ia.interface_id = i.id AND ia.family = 'ipv4'
 	      WHERE o.interface_id IN (` + strings.Join(placeholders, ",") + `)
-	      GROUP BY src.agent_id, ia.address, i.mac, o.obs_type
+	      GROUP BY src.agent_id, i.id, i.mac, o.obs_type
 	      ORDER BY MAX(o.observed_at) DESC
 	      LIMIT ?`
 	rows, err := s.DB.QueryContext(ctx, q, args...)
