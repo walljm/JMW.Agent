@@ -17,13 +17,14 @@ import (
 )
 
 func (s *Server) alertsList(w http.ResponseWriter, r *http.Request) {
-	rules, _ := s.Store.ListAlertRules(r.Context())
-	firings, _ := s.Store.ListFirings(r.Context(), 50)
-	channels, _ := s.Store.ListChannels(r.Context())
-	agents, _ := s.Store.ListAgents(r.Context(), store.AgentStatusApproved)
+	ctx := r.Context()
+	rules, _ := s.Store.ListAlertRules(ctx)
+	firings, _ := s.Store.ListFirings(ctx, 50)
+	channels, _ := s.Store.ListChannels(ctx)
+	agents, _ := s.Store.ListAgents(ctx, store.AgentStatusApproved)
+	agentDeviceIDs, _ := s.Store.AgentPrimaryDeviceIDs(ctx)
 	csrf := s.ensureCSRF(w, r)
 
-	// Build agent lookup for firing summaries.
 	agentMap := map[string]string{}
 	for _, a := range agents {
 		agentMap[a.ID] = a.Hostname
@@ -38,16 +39,17 @@ func (s *Server) alertsList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, r, "alerts.html", map[string]any{
-		"CSRFToken":  csrf,
-		"Title":      "Alerts",
-		"Active":     "alerts",
-		"Rules":      rules,
-		"Firings":    firings,
-		"Channels":   channels,
-		"Agents":     agents,
-		"AgentMap":   agentMap,
-		"RuleMap":    ruleMap,
-		"ChannelMap": channelMap,
+		"CSRFToken":      csrf,
+		"Title":          "Alerts",
+		"Active":         "alerts",
+		"Rules":          rules,
+		"Firings":        firings,
+		"Channels":       channels,
+		"Agents":         agents,
+		"AgentMap":       agentMap,
+		"AgentDeviceIDs": agentDeviceIDs,
+		"RuleMap":        ruleMap,
+		"ChannelMap":     channelMap,
 	})
 }
 
@@ -457,18 +459,16 @@ func (s *Server) deviceDetail(w http.ResponseWriter, r *http.Request) {
 	// detail page renders all known data — discovery + reported — in one
 	// place, regardless of the source.
 	var (
-		agent       *store.Agent
-		latest      *proto.MetricSnapshot
-		inventory   *proto.Inventory
-		inventoryAt time.Time
-		agentTags   []string
+		agent     *store.Agent
+		latest    *proto.MetricSnapshot
+		inventory *proto.Inventory
+		agentTags []string
 	)
 	if d.AgentID != "" {
 		if a, err := s.Store.GetAgent(r.Context(), d.AgentID); err == nil && a != nil {
 			agent = a
 			latest, _ = s.Store.LatestSnapshot(r.Context(), d.AgentID)
-			invJSON, invAt, _ := s.Store.GetAgentInventory(r.Context(), d.AgentID)
-			inventoryAt = invAt
+			invJSON, _, _ := s.Store.GetAgentInventory(r.Context(), d.AgentID)
 			if invJSON != "" {
 				var parsed proto.Inventory
 				if err := json.Unmarshal([]byte(invJSON), &parsed); err == nil {
@@ -510,11 +510,10 @@ func (s *Server) deviceDetail(w http.ResponseWriter, r *http.Request) {
 		"EditNotes":       editNotes,
 		"DNSActivity":     dnsActivity,
 		"Networks":        deviceNetworks,
-		"Agent":           agent,
-		"Latest":          latest,
-		"Inventory":       inventory,
-		"InventoryAt":     inventoryAt,
-		"HasInventory":    inventory != nil,
+		"Agent":        agent,
+		"Latest":       latest,
+		"Inventory":    inventory,
+		"HasInventory": inventory != nil,
 	})
 }
 

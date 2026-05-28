@@ -186,11 +186,20 @@ func (s *Server) pendingList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) eventsList(w http.ResponseWriter, r *http.Request) {
-	events, _ := s.Store.ListEvents(r.Context(), 250)
+	ctx := r.Context()
+	events, _ := s.Store.ListEvents(ctx, 250)
+	agents, _ := s.Store.ListAgents(ctx, store.AgentStatusApproved)
+	agentDeviceIDs, _ := s.Store.AgentPrimaryDeviceIDs(ctx)
+	agentNames := make(map[string]string, len(agents))
+	for _, a := range agents {
+		agentNames[a.ID] = a.Hostname
+	}
 	s.render(w, r, "events.html", map[string]any{
-		"Title":  "Event Log",
-		"Active": "events",
-		"Events": events,
+		"Title":          "Event Log",
+		"Active":         "events",
+		"Events":         events,
+		"AgentNames":     agentNames,
+		"AgentDeviceIDs": agentDeviceIDs,
 	})
 }
 

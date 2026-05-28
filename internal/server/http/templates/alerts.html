@@ -11,11 +11,12 @@
       <thead><tr><th>Started</th><th>Resolved</th><th>Rule</th><th>Agent</th><th>Value</th><th>Summary</th></tr></thead>
       <tbody>
       {{range .Firings}}
+        {{- $devID := index $.AgentDeviceIDs .AgentID -}}
         <tr>
           <td>{{shortTime .StartedAt}}</td>
           <td>{{if .ResolvedAt}}{{shortTime .ResolvedAt}}{{else}}<span class="badge state-dead">open</span>{{end}}</td>
           <td>{{index $.RuleMap .RuleID}}</td>
-          <td>{{index $.AgentMap .AgentID}}</td>
+          <td>{{if $devID}}<a href="/devices/{{$devID}}">{{index $.AgentMap .AgentID}}</a>{{else}}{{index $.AgentMap .AgentID}}{{end}}</td>
           <td class="num">{{printf "%.2f" .LastValue}}</td>
           <td>{{.Summary}}</td>
         </tr>
@@ -39,7 +40,7 @@
           <td>{{.Metric}}</td>
           <td>{{.Op}}</td>
           <td class="num">{{printf "%.2f" .Threshold}}</td>
-          <td>{{if eq .TargetKind "agent"}}{{index $.AgentMap .TargetID}}{{else}}<span class="muted">{{.TargetKind}}</span>{{end}}</td>
+          <td>{{if eq .TargetKind "agent"}}{{- $devID := index $.AgentDeviceIDs .TargetID -}}{{if $devID}}<a href="/devices/{{$devID}}">{{index $.AgentMap .TargetID}}</a>{{else}}{{index $.AgentMap .TargetID}}{{end}}{{else}}<span class="muted">{{.TargetKind}}</span>{{end}}</td>
           <td>{{.Severity}}</td>
           <td>{{if .ChannelID}}{{index $.ChannelMap .ChannelID}}{{else}}<span class="muted">—</span>{{end}}</td>
           <td class="row-actions">

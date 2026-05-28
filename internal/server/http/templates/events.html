@@ -3,15 +3,31 @@
 <main class="container">
   <h1>Event log</h1>
   {{if .Events}}
-  <ul class="event-list">
-  {{range .Events}}
-    <li class="evt evt-{{.Severity}}">
-      <span class="evt-time">{{shortTime .Timestamp}}</span>
-      <span class="evt-type">{{.Type}}</span>
-      <span class="evt-summary">{{.Summary}}</span>
-    </li>
-  {{end}}
-  </ul>
+  <div class="table-wrap">
+  <table class="data sortable">
+    <thead><tr><th>Time</th><th>Type</th><th>Source</th><th>Summary</th></tr></thead>
+    <tbody>
+    {{range .Events}}
+      <tr class="evt evt-{{.Severity}}">
+        <td>{{shortTime .Timestamp}}</td>
+        <td><span class="evt-type">{{.Type}}</span></td>
+        <td>
+          {{- if eq .SourceKind "agent" -}}
+            {{- $devID := index $.AgentDeviceIDs .SourceID -}}
+            {{- $name := index $.AgentNames .SourceID -}}
+            {{if $devID}}<a href="/devices/{{$devID}}">{{if $name}}{{$name}}{{else}}{{.SourceID}}{{end}}</a>{{else}}{{if $name}}{{$name}}{{else}}<span class="muted">{{.SourceID}}</span>{{end}}{{end}}
+          {{- else if .SourceID -}}
+            <span class="muted">{{.SourceKind}}: {{.SourceID}}</span>
+          {{- else -}}
+            <span class="muted">—</span>
+          {{- end -}}
+        </td>
+        <td>{{.Summary}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
   {{else}}<p class="muted">No events recorded.</p>{{end}}
 </main>
 {{template "foot" .}}
