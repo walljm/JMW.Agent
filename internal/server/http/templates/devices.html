@@ -58,7 +58,8 @@
           {{- $aid := $p.AgentID -}}
           {{- if not $aid}}{{$aid = $p.SeenByAgent}}{{end -}}
           {{- if $aid -}}
-            <a href="/agents/{{$aid}}">{{with index $.AgentNames $aid}}{{.}}{{else}}{{$aid}}{{end}}</a>
+            {{- $devID := index $.AgentDeviceIDs $aid -}}
+            {{if $devID}}<a href="/devices/{{$devID}}">{{with index $.AgentNames $aid}}{{.}}{{else}}{{$aid}}{{end}}</a>{{else}}<a href="/agents/{{$aid}}">{{with index $.AgentNames $aid}}{{.}}{{else}}{{$aid}}{{end}}</a>{{end}}
           {{- end -}}
         </td>
       </tr>

@@ -74,6 +74,8 @@ func (s *Server) dashboardGet(w http.ResponseWriter, r *http.Request) {
 	// Server self-health.
 	uptime := time.Since(s.StartedAt).Round(time.Second)
 
+	agentDeviceIDs, _ := s.Store.AgentPrimaryDeviceIDs(ctx)
+
 	s.render(w, r, "dashboard.html", map[string]any{
 		"CSRFToken":          csrf,
 		"Title":              "Dashboard",
@@ -95,22 +97,26 @@ func (s *Server) dashboardGet(w http.ResponseWriter, r *http.Request) {
 		"DBSize":             dbSize,
 		"IngestCount":        s.IngestCount(),
 		"DiscoveredNetworks": discoveredNetworks,
+		"AgentDeviceIDs":     agentDeviceIDs,
 	})
 }
 
 func (s *Server) agentsList(w http.ResponseWriter, r *http.Request) {
-	agents, _ := s.Store.ListAgents(r.Context(), store.AgentStatusApproved)
-	pending, _ := s.Store.ListAgents(r.Context(), store.AgentStatusPending)
-	tags, _ := s.Store.ListTagsForTargets(r.Context(), store.TagTargetAgent)
+	ctx := r.Context()
+	agents, _ := s.Store.ListAgents(ctx, store.AgentStatusApproved)
+	pending, _ := s.Store.ListAgents(ctx, store.AgentStatusPending)
+	tags, _ := s.Store.ListTagsForTargets(ctx, store.TagTargetAgent)
+	agentDeviceIDs, _ := s.Store.AgentPrimaryDeviceIDs(ctx)
 	csrf := s.ensureCSRF(w, r)
 	s.render(w, r, "agents.html", map[string]any{
-		"CSRFToken":    csrf,
-		"Title":        "Agents",
-		"Active":       "agents",
-		"Agents":       agents,
-		"Pending":      pending,
-		"PendingCount": len(pending),
-		"Tags":         tags,
+		"CSRFToken":      csrf,
+		"Title":          "Agents",
+		"Active":         "agents",
+		"Agents":         agents,
+		"Pending":        pending,
+		"PendingCount":   len(pending),
+		"Tags":           tags,
+		"AgentDeviceIDs": agentDeviceIDs,
 	})
 }
 
@@ -158,6 +164,11 @@ func (s *Server) agentEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.Store.SetTagsForTarget(r.Context(), store.TagTargetAgent, id, tags); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	devID, _ := s.Store.PrimaryDeviceIDForAgent(r.Context(), id)
+	if devID != "" {
+		http.Redirect(w, r, "/devices/"+devID, http.StatusSeeOther)
 		return
 	}
 	http.Redirect(w, r, "/agents/"+id, http.StatusSeeOther)

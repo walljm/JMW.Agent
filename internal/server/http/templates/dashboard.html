@@ -68,7 +68,8 @@
         <div class="attn-title">Recently went stale</div>
         <ul class="attn-list">
           {{range .RecentlyStale}}
-            <li><a href="/agents/{{.ID}}">{{.Hostname}}</a> <span class="muted small">{{sinceShort .LastHeartbeatAt}}</span></li>
+            {{- $devID := index $.AgentDeviceIDs .ID -}}
+            <li>{{if $devID}}<a href="/devices/{{$devID}}">{{.Hostname}}</a>{{else}}<a href="/agents/{{.ID}}">{{.Hostname}}</a>{{end}} <span class="muted small">{{sinceShort .LastHeartbeatAt}}</span></li>
           {{end}}
         </ul>
       </div>
@@ -98,7 +99,8 @@
       <tbody>
       {{range .Approved}}
         <tr>
-          <td><a href="/agents/{{.ID}}">{{.Hostname}}</a></td>
+          {{- $devID := index $.AgentDeviceIDs .ID -}}
+          <td>{{if $devID}}<a href="/devices/{{$devID}}">{{.Hostname}}</a>{{else}}<a href="/agents/{{.ID}}">{{.Hostname}}</a>{{end}}</td>
           <td>{{if .PrimaryIP}}{{.PrimaryIP}}{{else}}<span class="muted">—</span>{{end}}</td>
           <td>{{.OS}}/{{.Arch}}</td>
           <td>{{.Version}}</td>
@@ -126,7 +128,8 @@
           <tr>
             <td>
               {{if eq .SourceKind "agent"}}
-                <a href="/agents/{{.SourceID}}">{{if .Hostname}}{{.Hostname}}{{else}}{{.SourceID}}{{end}}</a>
+                {{- $devID := index $.AgentDeviceIDs .SourceID -}}
+              {{if $devID}}<a href="/devices/{{$devID}}">{{if .Hostname}}{{.Hostname}}{{else}}{{.SourceID}}{{end}}</a>{{else}}<a href="/agents/{{.SourceID}}">{{if .Hostname}}{{.Hostname}}{{else}}{{.SourceID}}{{end}}</a>{{end}}
               {{else}}
                 <span class="mono small">{{.SourceKind}}:{{.SourceID}}</span>
               {{end}}

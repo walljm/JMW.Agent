@@ -34,7 +34,8 @@
         {{- $st := agentStatus .LastHeartbeatAt -}}
         <tr>
           <td><span class="badge badge-status {{$st}}" title="{{$st}}">{{$st}}</span></td>
-          <td><a href="/agents/{{.ID}}">{{.Hostname}}</a></td>
+          {{- $devID := index $.AgentDeviceIDs .ID -}}
+          <td>{{if $devID}}<a href="/devices/{{$devID}}">{{.Hostname}}</a>{{else}}<a href="/agents/{{.ID}}">{{.Hostname}}</a>{{end}}</td>
           <td>{{if .PrimaryIP}}{{.PrimaryIP}}{{else}}<span class="muted">—</span>{{end}}</td>
           <td>{{.OS}}/{{.Arch}}</td>
           <td>{{.Version}}</td>

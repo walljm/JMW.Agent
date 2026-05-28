@@ -19,7 +19,8 @@
         <dt>Image</dt><dd class="mono">{{.Container.Image}}</dd>
         <dt>Image ID</dt><dd class="mono small">{{.Container.ImageID}}</dd>
         {{if .Record}}{{if .Record.Platform}}<dt>Platform</dt><dd>{{.Record.Platform}}</dd>{{end}}{{end}}
-        <dt>Host</dt><dd><a href="/agents/{{.Container.AgentID}}">{{if .Agent}}{{.Agent.Hostname}}{{else}}{{.Container.AgentID}}{{end}}</a></dd>
+        {{- $devID := index .AgentDeviceIDs .Container.AgentID -}}
+        <dt>Host</dt><dd>{{if $devID}}<a href="/devices/{{$devID}}">{{if .Agent}}{{.Agent.Hostname}}{{else}}{{.Container.AgentID}}{{end}}</a>{{else}}<a href="/agents/{{.Container.AgentID}}">{{if .Agent}}{{.Agent.Hostname}}{{else}}{{.Container.AgentID}}{{end}}</a>{{end}}</dd>
       </dl>
     </div>
 

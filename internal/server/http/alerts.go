@@ -213,6 +213,7 @@ func (s *Server) devicesList(w http.ResponseWriter, r *http.Request) {
 	for _, a := range agents {
 		names[a.ID] = a.Hostname
 	}
+	agentDeviceIDs, _ := s.Store.AgentPrimaryDeviceIDs(ctx)
 	groups := groupDevices(devices)
 	tagsByID, _ := s.Store.ListTagsForTargets(ctx, store.TagTargetDevice)
 	// Aggregate tags + descriptions across each group's member device rows so
@@ -242,14 +243,15 @@ func (s *Server) devicesList(w http.ResponseWriter, r *http.Request) {
 	networks, _ := s.Store.ListNetworks(ctx, "")
 
 	s.render(w, r, "devices.html", map[string]any{
-		"Title":         "Devices",
-		"Active":        "devices",
-		"Groups":        groups,
-		"AgentNames":    names,
-		"GroupTags":     groupTags,
-		"GroupDesc":     groupDesc,
-		"Networks":      networks,
-		"NetworkFilter": networkID,
+		"Title":          "Devices",
+		"Active":         "devices",
+		"Groups":         groups,
+		"AgentNames":     names,
+		"AgentDeviceIDs": agentDeviceIDs,
+		"GroupTags":      groupTags,
+		"GroupDesc":      groupDesc,
+		"Networks":       networks,
+		"NetworkFilter":  networkID,
 	})
 }
 
@@ -426,6 +428,7 @@ func (s *Server) deviceDetail(w http.ResponseWriter, r *http.Request) {
 	for _, a := range agents {
 		names[a.ID] = a.Hostname
 	}
+	agentDeviceIDs, _ := s.Store.AgentPrimaryDeviceIDs(r.Context())
 	var profile *MDNSProfile
 	if d.ServicesJSON != "" {
 		var p MDNSProfile
@@ -499,6 +502,7 @@ func (s *Server) deviceDetail(w http.ResponseWriter, r *http.Request) {
 		"Sightings":       sightings,
 		"Aliases":         aliases,
 		"AgentNames":      names,
+		"AgentDeviceIDs":  agentDeviceIDs,
 		"MDNS":            profile,
 		"ManagedHostname": managedHostname,
 		"Tags":            mergedTags,

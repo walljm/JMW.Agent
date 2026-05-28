@@ -91,7 +91,8 @@
         {{- $aid := .Device.AgentID -}}
         {{- if not $aid}}{{$aid = .Device.SeenByAgent}}{{end -}}
         {{- if $aid -}}
-          <a href="/agents/{{$aid}}">{{with index $.AgentNames $aid}}{{.}}{{else}}{{$aid}}{{end}}</a>
+          {{- $devID := index $.AgentDeviceIDs $aid -}}
+          {{if $devID}}<a href="/devices/{{$devID}}">{{with index $.AgentNames $aid}}{{.}}{{else}}{{$aid}}{{end}}</a>{{else}}<a href="/agents/{{$aid}}">{{with index $.AgentNames $aid}}{{.}}{{else}}{{$aid}}{{end}}</a>{{end}}
         {{- else -}}<span class="muted">none</span>{{- end -}}
       </td></tr>
     </table>
@@ -557,7 +558,8 @@
         <tr>
           <td>
             {{- if .SeenByAgent -}}
-              <a href="/agents/{{.SeenByAgent}}">{{with index $.AgentNames .SeenByAgent}}{{.}}{{else}}{{.SeenByAgent}}{{end}}</a>
+              {{- $devID := index $.AgentDeviceIDs .SeenByAgent -}}
+              {{if $devID}}<a href="/devices/{{$devID}}">{{with index $.AgentNames .SeenByAgent}}{{.}}{{else}}{{.SeenByAgent}}{{end}}</a>{{else}}<a href="/agents/{{.SeenByAgent}}">{{with index $.AgentNames .SeenByAgent}}{{.}}{{else}}{{.SeenByAgent}}{{end}}</a>{{end}}
             {{- else -}}<span class="muted">—</span>{{- end -}}
           </td>
           <td>{{.IP}}</td>

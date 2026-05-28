@@ -44,7 +44,8 @@
         <td>{{if .Health}}<span class="badge health-{{.Health}}">{{.Health}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
         <td class="mono">{{.Image}}</td>
         <td>{{if .ComposeProject}}{{.ComposeProject}}{{if .ComposeService}} / {{.ComposeService}}{{end}}{{else}}<span class="muted">—</span>{{end}}</td>
-        <td><a href="/agents/{{.AgentID}}">{{if .HostHostname}}{{.HostHostname}}{{else}}{{.AgentID}}{{end}}</a></td>
+        {{- $devID := index $.AgentDeviceIDs .AgentID -}}
+        <td>{{if $devID}}<a href="/devices/{{$devID}}">{{if .HostHostname}}{{.HostHostname}}{{else}}{{.AgentID}}{{end}}</a>{{else}}<a href="/agents/{{.AgentID}}">{{if .HostHostname}}{{.HostHostname}}{{else}}{{.AgentID}}{{end}}</a>{{end}}</td>
         <td>{{if .StartedAt.IsZero}}<span class="muted">—</span>{{else}}{{shortTime .StartedAt}}{{end}}</td>
       </tr>
     {{end}}

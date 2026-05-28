@@ -232,6 +232,35 @@ func (s *Store) PrimaryDeviceIDForAgent(ctx context.Context, agentID string) (st
 	return devID, nil
 }
 
+// AgentPrimaryDeviceIDs returns a map of agentID → primary interface ID for
+// every agent that has at least one system and interface row. Agents with no
+// associated system or interface are omitted.
+func (s *Store) AgentPrimaryDeviceIDs(ctx context.Context) (map[string]string, error) {
+	rows, err := s.DB.QueryContext(ctx, `
+		SELECT s.agent_id, i.id
+		FROM systems s
+		JOIN interfaces i ON i.hardware_id = s.hardware_id
+		WHERE s.last_seen_at = (
+			SELECT MAX(s2.last_seen_at) FROM systems s2 WHERE s2.agent_id = s.agent_id
+		)
+		AND i.last_seen_at = (
+			SELECT MAX(i2.last_seen_at) FROM interfaces i2 WHERE i2.hardware_id = i.hardware_id
+		)`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	m := make(map[string]string)
+	for rows.Next() {
+		var agentID, deviceID string
+		if err := rows.Scan(&agentID, &deviceID); err != nil {
+			return nil, err
+		}
+		m[agentID] = deviceID
+	}
+	return m, rows.Err()
+}
+
 // ListGroupMembers returns all interface rows that share the same hardware_id.
 func (s *Store) ListGroupMembers(ctx context.Context, groupID, fallbackID string) ([]*Device, error) {
 	if groupID == "" {

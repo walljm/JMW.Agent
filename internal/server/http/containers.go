@@ -29,6 +29,7 @@ func (s *Server) containersList(w http.ResponseWriter, r *http.Request) {
 	for _, a := range agents {
 		names[a.ID] = a.Hostname
 	}
+	agentDeviceIDs, _ := s.Store.AgentPrimaryDeviceIDs(r.Context())
 
 	// Distinct compose projects across the current result set, for the filter
 	// dropdown. Collected from the (already-loaded) rows so we don't issue
@@ -47,14 +48,15 @@ func (s *Server) containersList(w http.ResponseWriter, r *http.Request) {
 	stats, _ := s.Store.ContainersSummary(r.Context())
 
 	s.render(w, r, "containers.html", map[string]any{
-		"Title":      "Containers",
-		"Active":     "containers",
-		"Containers": cs,
-		"AgentNames": names,
-		"Projects":   projects,
-		"Filter":     filter,
-		"Stats":      stats,
-		"States":     []string{"running", "exited", "paused", "restarting", "created", "dead"},
+		"Title":          "Containers",
+		"Active":         "containers",
+		"Containers":     cs,
+		"AgentNames":     names,
+		"AgentDeviceIDs": agentDeviceIDs,
+		"Projects":       projects,
+		"Filter":         filter,
+		"Stats":          stats,
+		"States":         []string{"running", "exited", "paused", "restarting", "created", "dead"},
 	})
 }
 
@@ -83,13 +85,16 @@ func (s *Server) containerDetail(w http.ResponseWriter, r *http.Request) {
 			engRec = &parsed
 		}
 	}
+	agentDeviceID, _ := s.Store.PrimaryDeviceIDForAgent(r.Context(), agentID)
+	agentDeviceIDs := map[string]string{agentID: agentDeviceID}
 	s.render(w, r, "container_detail.html", map[string]any{
-		"Title":     c.Name,
-		"Active":    "containers",
-		"Container": c,
-		"Record":    rec,
-		"Agent":     a,
-		"Engine":    eng,
-		"EngineRec": engRec,
+		"Title":          c.Name,
+		"Active":         "containers",
+		"Container":      c,
+		"Record":         rec,
+		"Agent":          a,
+		"Engine":         eng,
+		"EngineRec":      engRec,
+		"AgentDeviceIDs": agentDeviceIDs,
 	})
 }
