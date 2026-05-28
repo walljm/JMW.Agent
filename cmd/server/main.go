@@ -26,10 +26,10 @@ import (
 
 func main() {
 	var (
-		cfgPath    = flag.String("config", "server.toml", "path to server config")
-		showVer    = flag.Bool("version", false, "print version and exit")
-		insecure   = flag.Bool("insecure", false, "serve plain HTTP instead of HTTPS (dev only)")
-		rotateKey  = flag.Bool("rotate-key", false, "rotate the data encryption key and re-encrypt all secrets")
+		cfgPath   = flag.String("config", "server.toml", "path to server config")
+		showVer   = flag.Bool("version", false, "print version and exit")
+		insecure  = flag.Bool("insecure", false, "serve plain HTTP instead of HTTPS (dev only)")
+		rotateKey = flag.Bool("rotate-key", false, "rotate the data encryption key and re-encrypt all secrets")
 	)
 	flag.Parse()
 

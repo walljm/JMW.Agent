@@ -14,15 +14,15 @@ import (
 
 // Config is the server configuration.
 type Config struct {
-	Listen               string        `toml:"listen"`
-	DataDir              string        `toml:"data_dir"`
-	ReleasesDir          string        `toml:"releases_dir"`
-	TLSCertFile          string        `toml:"tls_cert_file"`
-	TLSKeyFile           string        `toml:"tls_key_file"`
-	LogLevel             string        `toml:"log_level"`
-	AgentPSK             string        `toml:"agent_psk"`
-	SessionLifetimeHours int           `toml:"session_lifetime_hours"`
-	Retention            Retention     `toml:"retention"`
+	Listen               string    `toml:"listen"`
+	DataDir              string    `toml:"data_dir"`
+	ReleasesDir          string    `toml:"releases_dir"`
+	TLSCertFile          string    `toml:"tls_cert_file"`
+	TLSKeyFile           string    `toml:"tls_key_file"`
+	LogLevel             string    `toml:"log_level"`
+	AgentPSK             string    `toml:"agent_psk"`
+	SessionLifetimeHours int       `toml:"session_lifetime_hours"`
+	Retention            Retention `toml:"retention"`
 
 	// Deprecated: Legacy terrain config. If present at boot and no terrain
 	// Source row exists in the database, the server performs a one-time import

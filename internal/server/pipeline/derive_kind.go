@@ -35,8 +35,8 @@ const (
 // hardware record. All fields are lowercased on assignment.
 type deriveSignals struct {
 	hasAgent      bool
-	chassisType   string   // from inventory: server | desktop | laptop | vm | ...
-	systemVendor  string   // hardware.system_vendor (DMI)
+	chassisType   string // from inventory: server | desktop | laptop | vm | ...
+	systemVendor  string // hardware.system_vendor (DMI)
 	macs          []string
 	hostnames     []string
 	mdnsServices  []string // _ipp._tcp, _googlecast._tcp, ...

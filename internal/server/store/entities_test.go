@@ -27,13 +27,13 @@ func TestEntityChain_Hardware_System_Interface_Address(t *testing.T) {
 	cores := 4
 	mem := int64(8_000_000_000)
 	hw := &Hardware{
-		SystemVendor: "Dell",
-		SystemModel:  "OptiPlex 7080",
-		CPUModel:     "Intel i7-10700",
-		CPUCores:     &cores,
-		TotalMemBytes: &mem,
+		SystemVendor:   "Dell",
+		SystemModel:    "OptiPlex 7080",
+		CPUModel:       "Intel i7-10700",
+		CPUCores:       &cores,
+		TotalMemBytes:  &mem,
 		Virtualization: "none",
-		ChassisType:   "desktop",
+		ChassisType:    "desktop",
 	}
 	hwID, err := st.UpsertHardware(ctx, hw)
 	if err != nil {

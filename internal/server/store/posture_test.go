@@ -107,12 +107,12 @@ func TestReplaceSecurityPosture(t *testing.T) {
 	fwEnabled := true
 	tpmPresent := false
 	posture := &SystemSecurityPosture{
-		SystemID:             sysID,
-		FirewallProvider:     "ufw",
-		FirewallEnabled:      &fwEnabled,
+		SystemID:              sysID,
+		FirewallProvider:      "ufw",
+		FirewallEnabled:       &fwEnabled,
 		FirewallDefaultPolicy: "deny",
-		TPMPresent:           &tpmPresent,
-		SELinuxMode:          "enforcing",
+		TPMPresent:            &tpmPresent,
+		SELinuxMode:           "enforcing",
 	}
 	if err := st.ReplaceSecurityPosture(ctx, posture); err != nil {
 		t.Fatal(err)

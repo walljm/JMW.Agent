@@ -29,7 +29,7 @@ type Device struct {
 	AgentID        string    // if this device is one of our agents, the agent.id
 	ServicesJSON   string    // JSON from latest mDNS observation
 	GroupID        string    // hardware_id — groups NICs of same machine
-	DHCPSeenAt time.Time // most recent DHCP observation; zero if never
+	DHCPSeenAt     time.Time // most recent DHCP observation; zero if never
 }
 
 // HostnameSourcePriority ranks a hostname source. Higher = more authoritative.

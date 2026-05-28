@@ -355,4 +355,3 @@ func (s *Store) DeleteMaintenanceWindow(ctx context.Context, id int64) error {
 	_, err := s.DB.ExecContext(ctx, `DELETE FROM maintenance_windows WHERE id = ?`, id)
 	return err
 }
-

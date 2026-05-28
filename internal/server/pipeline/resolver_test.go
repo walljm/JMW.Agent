@@ -164,7 +164,7 @@ func TestNormalizeMAC(t *testing.T) {
 		{"AA-BB-CC-DD-EE-FF", "aa:bb:cc:dd:ee:ff"},
 		{"aabb.ccdd.eeff", "aa:bb:cc:dd:ee:ff"},
 		{"AABBCCDDEEFF", "aa:bb:cc:dd:ee:ff"},
-		{"short", "short"},  // invalid length, returned as-is lowercased
+		{"short", "short"}, // invalid length, returned as-is lowercased
 	}
 	for _, tc := range cases {
 		got := NormalizeMAC(tc.input)

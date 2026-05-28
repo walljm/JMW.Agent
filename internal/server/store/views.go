@@ -9,15 +9,15 @@ import (
 
 // HardwareListItem is a row in the entity-based hardware list view.
 type HardwareListItem struct {
-	ID           string
-	SystemVendor string
-	SystemModel  string
-	CPUModel     string
-	CPUCores     int
-	TotalMemMB   int64
+	ID             string
+	SystemVendor   string
+	SystemModel    string
+	CPUModel       string
+	CPUCores       int
+	TotalMemMB     int64
 	InterfaceCount int
-	FirstSeenAt  time.Time
-	LastSeenAt   time.Time
+	FirstSeenAt    time.Time
+	LastSeenAt     time.Time
 }
 
 // ListHardware returns all hardware entities with basic stats.

@@ -29,15 +29,15 @@ type SystemPendingUpdate struct {
 
 // SystemSecurityPosture is the latest security posture for a system.
 type SystemSecurityPosture struct {
-	SystemID             string
-	FirewallProvider     string
-	FirewallEnabled      *bool
+	SystemID              string
+	FirewallProvider      string
+	FirewallEnabled       *bool
 	FirewallDefaultPolicy string
-	TPMPresent           *bool
-	TPMVersion           string
-	SecureBoot           *bool
-	SELinuxMode          string
-	AppArmorMode         string
+	TPMPresent            *bool
+	TPMVersion            string
+	SecureBoot            *bool
+	SELinuxMode           string
+	AppArmorMode          string
 }
 
 // SystemAVProduct is one antivirus/EDR registration.

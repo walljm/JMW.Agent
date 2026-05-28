@@ -34,12 +34,12 @@ func (s *Server) sourcesAPIGet(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) sourcesAPICreate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name              string `json:"name"`
-		Kind              string `json:"kind"`
-		Enabled           bool   `json:"enabled"`
-		AgentID           string `json:"agent_id,omitempty"`
-		ConfigJSON        string `json:"config_json"`
-		PollIntervalSecs  *int   `json:"poll_interval_seconds,omitempty"`
+		Name             string `json:"name"`
+		Kind             string `json:"kind"`
+		Enabled          bool   `json:"enabled"`
+		AgentID          string `json:"agent_id,omitempty"`
+		ConfigJSON       string `json:"config_json"`
+		PollIntervalSecs *int   `json:"poll_interval_seconds,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "bad_request", "invalid JSON")
