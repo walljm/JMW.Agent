@@ -128,7 +128,7 @@ func TestIngestor_AgentDiscovery_NormalizesHostnames(t *testing.T) {
 				SeenAt: time.Now().UTC(),
 				HostnameSources: map[string]string{
 					"agent": "host.docker.internal", // rejected — docker-internal
-					"mdns":  "mypc.local",            // normalized to "mypc"
+					"mdns":  "mypc.local",           // normalized to "mypc"
 				},
 			},
 		},
