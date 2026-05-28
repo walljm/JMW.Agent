@@ -1,27 +1,16 @@
 package pipeline
 
-import "time"
+import (
+	"time"
+
+	"github.com/walljm/jmwagent/internal/shared/hostname"
+)
 
 // HostnamePriority returns the priority for a given source kind.
-// Lower number = higher priority. Agent-reported hostnames win over
-// network-derived names.
+// Lower number = higher priority. Delegates to the shared hostname package so
+// all layers (pipeline, store, agent) use the same ordering.
 func HostnamePriority(sourceKind string) int {
-	switch sourceKind {
-	case "agent":
-		return 10
-	case "user-input":
-		return 20
-	case "terrain-dns":
-		return 30
-	case "terrain-dhcp":
-		return 40
-	case "snmp-poller":
-		return 50
-	case "nmap-scanner":
-		return 60
-	default:
-		return 100
-	}
+	return hostname.Priority(sourceKind)
 }
 
 // StaleThreshold is how long after last_seen_at an entity is considered stale.

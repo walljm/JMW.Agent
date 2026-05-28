@@ -78,16 +78,16 @@ func TestHydrateDevice_HostnamePriority(t *testing.T) {
 	iface := &Interface{HardwareID: hwID, MAC: "ff:ee:dd:cc:bb:aa", IsUp: true}
 	ifaceID, _ := st.UpsertInterface(ctx, iface)
 
-	// Insert hostnames with varying priorities.
-	// Lower priority number = more authoritative; agent (10) should win over dhcp (50).
+	// Insert hostnames with varying priorities reflecting the new ordering:
+	// terrain-dns (5) beats agent (25) beats mdns (40) beats rdns (80).
 	aliases := []struct {
 		name     string
 		source   string
 		priority int
 	}{
-		{"dhcp-name", "dhcp", 50},
-		{"rdns-name", "rdns", 70},
-		{"agent-name", "agent", 10},
+		{"agent-name", "agent", 25},
+		{"rdns-name", "rdns", 80},
+		{"dns-name", "terrain-dns", 5},
 		{"mdns-name", "mdns", 40},
 	}
 	for _, a := range aliases {
@@ -106,41 +106,11 @@ func TestHydrateDevice_HostnamePriority(t *testing.T) {
 	if d == nil {
 		t.Fatal("device not found")
 	}
-	if d.Hostname != "agent-name" {
-		t.Fatalf("Hostname = %q, want agent-name (priority 10 should win)", d.Hostname)
+	if d.Hostname != "dns-name" {
+		t.Fatalf("Hostname = %q, want dns-name (terrain-dns priority 5 should win)", d.Hostname)
 	}
-	if d.HostnameSource != "agent" {
-		t.Fatalf("HostnameSource = %q, want agent", d.HostnameSource)
-	}
-}
-
-func TestHostnameSourcePriority_Ordering(t *testing.T) {
-	// Verify that the priority function keeps the expected ordering:
-	// agent > docker > dhcp > mdns > nbns > ssdp > tls > rdns > http
-	// Higher number = more authoritative.
-	cases := []struct {
-		higher, lower string
-	}{
-		{"agent", "docker"},
-		{"docker", "dhcp"},
-		{"dhcp", "mdns"},
-		{"mdns", "nbns"},
-		{"nbns", "ssdp"},
-		{"ssdp", "tls"},
-		{"tls", "rdns"},
-		{"rdns", "http"},
-	}
-	for _, tc := range cases {
-		h := HostnameSourcePriority(tc.higher)
-		l := HostnameSourcePriority(tc.lower)
-		if h <= l {
-			t.Errorf("HostnameSourcePriority(%q)=%d should be > HostnameSourcePriority(%q)=%d",
-				tc.higher, h, tc.lower, l)
-		}
-	}
-	// Unknown source should return 0.
-	if p := HostnameSourcePriority("unknown"); p != 0 {
-		t.Errorf("unknown source priority = %d, want 0", p)
+	if d.HostnameSource != "terrain-dns" {
+		t.Fatalf("HostnameSource = %q, want terrain-dns", d.HostnameSource)
 	}
 }
 

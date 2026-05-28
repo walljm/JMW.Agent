@@ -546,37 +546,38 @@ func (p *Poller) pollTechnitium(ctx context.Context, base string) (Status, bool)
 	dns.TopClients = technitiumTop(stats.TopClients, 10)
 	s.DNS = dns
 
-	// DHCP: pick first enabled scope (else first scope), then enrich + filter leases.
+	// DHCP: collect leases from ALL enabled scopes so the pipeline sees every
+	// device on every subnet. Display metadata (gateway, subnet) comes from
+	// the first enabled scope only — used for the terrain UI, not for identity.
 	var scopes technitiumScopesList
 	if err := p.technitiumCall(ctx, base, "/api/dhcp/scopes/list", nil, token, &scopes); err == nil && len(scopes.Scopes) > 0 {
-		chosen := scopes.Scopes[0]
+		// Pick display scope: first enabled, fallback to first.
+		display := scopes.Scopes[0]
 		for _, sc := range scopes.Scopes {
 			if sc.Enabled {
-				chosen = sc
+				display = sc
 				break
 			}
 		}
 		d := &DHCPStatus{
-			Enabled:    chosen.Enabled,
-			Interface:  chosen.Name,
-			SubnetMask: chosen.SubnetMask,
-			RangeStart: chosen.StartingAddress,
-			RangeEnd:   chosen.EndingAddress,
+			Enabled:    display.Enabled,
+			Interface:  display.Name,
+			SubnetMask: display.SubnetMask,
+			RangeStart: display.StartingAddress,
+			RangeEnd:   display.EndingAddress,
 		}
-		// Enrich with routerAddress from scope detail.
+		// Enrich display scope with router address.
 		var detail technitiumScopeDetail
 		if err := p.technitiumCall(ctx, base, "/api/dhcp/scopes/get", url.Values{
-			"name": []string{chosen.Name},
+			"name": []string{display.Name},
 		}, token, &detail); err == nil {
 			d.Gateway = detail.RouterAddress
 		}
 
+		// Collect leases from every scope — no scope filter.
 		var leases technitiumLeasesList
 		if err := p.technitiumCall(ctx, base, "/api/dhcp/leases/list", nil, token, &leases); err == nil {
 			for _, l := range leases.Leases {
-				if l.Scope != "" && l.Scope != chosen.Name {
-					continue
-				}
 				exp, _ := time.ParseInLocation(technitiumLeaseTimeFmt, l.LeaseExpires, time.Local)
 				static := strings.EqualFold(l.Type, "Reserved") || strings.EqualFold(l.Type, "Static")
 				d.Leases = append(d.Leases, DHCPLease{

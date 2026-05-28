@@ -119,7 +119,7 @@ func TestPipeline_MultipleSameMAC(t *testing.T) {
 		t.Fatalf("expected 2 observations stored, got %d", result.ObservationsStored)
 	}
 
-	// Agent-reported hostname should win (lower priority number).
+	// terrain-dhcp (priority 8) beats agent (priority 25).
 	iface, err := st.GetInterfaceByMAC(ctx, "aa:bb:cc:dd:ee:20")
 	if err != nil {
 		t.Fatal(err)
@@ -128,8 +128,8 @@ func TestPipeline_MultipleSameMAC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hostname != "host-from-agent" {
-		t.Fatalf("expected agent hostname to win, got %s", hostname)
+	if hostname != "host-from-dhcp" {
+		t.Fatalf("expected terrain-dhcp hostname to win, got %s", hostname)
 	}
 }
 

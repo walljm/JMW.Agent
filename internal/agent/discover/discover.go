@@ -4,7 +4,6 @@ package discover
 import (
 	"context"
 	"net"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -24,8 +23,9 @@ type Sighting struct {
 	Services []string          `json:"services,omitempty"`
 	TXT      map[string]string `json:"txt,omitempty"`
 	// HostnameSources captures every name observed for this device this scan,
-	// keyed by source name (see sourcePriority). The server uses this to
-	// track aliases and pick the best name by source priority.
+	// keyed by source kind (e.g. "mdns", "smb", "dhcp"). The server pipeline
+	// stores each entry as a separate alias and picks the best name by its
+	// own canonical priority rules.
 	HostnameSources map[string]string `json:"hostname_sources,omitempty"`
 	// Probes carries optional per-protocol identity blobs (eureka, ipp,
 	// roku, airplay, ldap, dhcp, ssh_fp, title). Sent as-is to the server
@@ -33,48 +33,10 @@ type Sighting struct {
 	Probes map[string]map[string]string `json:"probes,omitempty"`
 }
 
-// sourcePriority ranks hostname sources from most to least authoritative.
-// Higher = better. Keep in sync with store.HostnameSourcePriority on the
-// server. New sources added here MUST also be added there.
-var sourcePriority = map[string]int{
-	"agent":   100,
-	"docker":  95,
-	"dhcp":    93, // self-announced by client to its DHCP server
-	"mdns":    90,
-	"llmnr":   85,
-	"smb":     80,
-	"nbns":    70,
-	"ldap":    68, // dnsHostName from rootDSE — solid for DCs
-	"snmp":    65,
-	"eureka":  62, // Google Cast/Nest device-name
-	"ipp":     60, // printer-name from IPP
-	"roku":    58,
-	"airplay": 55,
-	"wsd":     52,
-	"ssdp":    50,
-	"garp":    45, // ARP entries scraped from gateway via SNMP
-	"tls":     40,
-	"rdns":    30,
-	"http":    20,
-	"ssh":     15,
-}
-
-// sourcesByPriority returns source names ordered most-to-least authoritative.
-func sourcesByPriority() []string {
-	out := make([]string, 0, len(sourcePriority))
-	for k := range sourcePriority {
-		out = append(out, k)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		return sourcePriority[out[i]] > sourcePriority[out[j]]
-	})
-	return out
-}
-
 // ScanARP returns the current ARP table sightings, enriched with hostnames
 // and vendor data from many sources. Each name observed (per source) is
-// recorded in HostnameSources so the server can track aliases.
-// Sighting.Hostname is set to the best-priority name for convenience.
+// recorded in HostnameSources so the server can track aliases and pick the
+// best name using its own priority rules.
 //
 // The scan runs in roughly three phases:
 //  1. Multicast/broadcast sweeps that discover everyone at once: mDNS,
@@ -396,9 +358,6 @@ func ScanARP() []Sighting {
 		if out[i].Vendor == "" {
 			out[i].Vendor = ouiLookup(out[i].MAC)
 		}
-		if h := bestHostname(out[i].HostnameSources); h != "" {
-			out[i].Hostname = h
-		}
 	}
 	return out
 }
@@ -433,16 +392,6 @@ func (s *Sighting) setProbe(key string, kv map[string]string) {
 		s.Probes = map[string]map[string]string{}
 	}
 	s.Probes[key] = clean
-}
-
-// bestHostname picks the highest-priority name from a sources map.
-func bestHostname(srcs map[string]string) string {
-	for _, src := range sourcesByPriority() {
-		if v, ok := srcs[src]; ok && v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // reverseLookup attempts a best-effort PTR lookup with a short timeout.

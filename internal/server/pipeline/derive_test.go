@@ -10,12 +10,19 @@ func TestHostnamePriority(t *testing.T) {
 		kind     string
 		expected int
 	}{
-		{"agent", 10},
-		{"user-input", 20},
-		{"terrain-dns", 30},
-		{"terrain-dhcp", 40},
-		{"snmp-poller", 50},
-		{"nmap-scanner", 60},
+		{"user-input", 1},
+		{"ldap", 3},
+		{"terrain-dns", 5},
+		{"terrain-dhcp", 8},
+		{"snmp", 12},
+		{"snmp-poller", 12},
+		{"smb", 15},
+		{"dhcp", 20},
+		{"agent", 25},
+		{"mdns", 40},
+		{"docker", 50},
+		{"rdns", 80},
+		{"nmap-scanner", 90},
 		{"unknown-source", 100},
 	}
 	for _, tc := range cases {
@@ -26,10 +33,17 @@ func TestHostnamePriority(t *testing.T) {
 	}
 }
 
-func TestHostnamePriority_AgentWins(t *testing.T) {
-	// Agent (10) should be lower (higher priority) than DHCP (40).
-	if HostnamePriority("agent") >= HostnamePriority("terrain-dhcp") {
-		t.Fatal("agent priority should be numerically lower than terrain-dhcp")
+func TestHostnamePriority_InfrastructureBeatsAgent(t *testing.T) {
+	// terrain-dns (5) and terrain-dhcp (8) should beat agent (25).
+	if HostnamePriority("terrain-dns") >= HostnamePriority("agent") {
+		t.Fatal("terrain-dns priority should be numerically lower than agent")
+	}
+	if HostnamePriority("terrain-dhcp") >= HostnamePriority("agent") {
+		t.Fatal("terrain-dhcp priority should be numerically lower than agent")
+	}
+	// mdns (40) and docker (50) should lose to agent (25).
+	if HostnamePriority("mdns") <= HostnamePriority("agent") {
+		t.Fatal("mdns priority should be numerically higher than agent")
 	}
 }
 

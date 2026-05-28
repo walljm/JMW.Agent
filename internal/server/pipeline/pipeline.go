@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/walljm/jmwagent/internal/server/store"
+	"github.com/walljm/jmwagent/internal/shared/hostname"
 )
 
 // ObservationInput is the normalized input to the pipeline from an adapter.
@@ -19,9 +20,17 @@ type ObservationInput struct {
 	RawJSON    string
 
 	// Optional enrichment data.
-	Hostname  string
-	Addresses []AddressInput
-	Hints     *InterfaceHints
+	//
+	// Hostname + SourceKind: single-source adapters (e.g. terrain-dns) set
+	// these directly. Normalization is applied before storage.
+	//
+	// HostnameSources: multi-source adapters (e.g. agent-discovery) populate
+	// this map instead. Each entry is stored as a separate alias with the
+	// priority of its own source kind, enabling accurate per-source ranking.
+	Hostname        string
+	HostnameSources map[string]string // source kind → raw hostname
+	Addresses       []AddressInput
+	Hints           *InterfaceHints
 }
 
 // AddressInput describes an IP address to associate with the interface.
@@ -134,16 +143,32 @@ func (p *Pipeline) processOne(ctx context.Context, resolver *Resolver, obs *Obse
 		result.AddressesUpdated++
 	}
 
-	if obs.Hostname != "" {
-		priority := HostnamePriority(obs.SourceKind)
-		err = p.store.UpsertHostnameAlias(ctx, &store.EntityHostnameAlias{
+	// Single-source hostname path (terrain-dns, agent-inventory, etc.)
+	if n := hostname.Normalize(obs.Hostname); n != "" {
+		if err = p.store.UpsertHostnameAlias(ctx, &store.EntityHostnameAlias{
 			InterfaceID: iface.ID,
-			Hostname:    obs.Hostname,
+			Hostname:    n,
 			SourceKind:  obs.SourceKind,
-			Priority:    priority,
-		})
-		if err != nil {
+			Priority:    HostnamePriority(obs.SourceKind),
+		}); err != nil {
 			return "", fmt.Errorf("stage enrich hostname: %w", err)
+		}
+		result.HostnamesUpdated++
+	}
+
+	// Multi-source hostname path (agent-discovery with HostnameSources map).
+	for srcKind, raw := range obs.HostnameSources {
+		n := hostname.Normalize(raw)
+		if n == "" {
+			continue
+		}
+		if err = p.store.UpsertHostnameAlias(ctx, &store.EntityHostnameAlias{
+			InterfaceID: iface.ID,
+			Hostname:    n,
+			SourceKind:  srcKind,
+			Priority:    HostnamePriority(srcKind),
+		}); err != nil {
+			return "", fmt.Errorf("stage enrich hostname source %s: %w", srcKind, err)
 		}
 		result.HostnamesUpdated++
 	}

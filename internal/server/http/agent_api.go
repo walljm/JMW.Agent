@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
@@ -159,29 +158,23 @@ func (s *Server) agentMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Feed through the metrics adapter as the sole write path.
-	if s.Ingestor != nil {
-		srcID, srcErr := s.Store.EnsureAgentSource(r.Context(), req.AgentID, a.Hostname)
-		if srcErr == nil {
-			payload := &adapters.AgentMetricsPayload{
-				AgentID:   req.AgentID,
-				Snapshots: req.Snapshots,
-			}
-			if _, pErr := s.Ingestor.Ingest(r.Context(), "agent-metrics", srcID, payload); pErr != nil {
-				slog.Warn("pipeline ingest failed", "kind", "agent-metrics", "agent", req.AgentID, "err", pErr)
-				writeJSONError(w, http.StatusInternalServerError, "db_error", pErr.Error())
-				return
-			}
-		} else {
-			writeJSONError(w, http.StatusInternalServerError, "db_error", srcErr.Error())
-			return
-		}
-	} else {
-		// Fallback: direct write if Ingestor not wired (shouldn't happen in prod).
-		if err := s.Store.InsertSnapshots(r.Context(), req.AgentID, req.Snapshots); err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
-			return
-		}
+	if s.Ingestor == nil {
+		writeJSONError(w, http.StatusInternalServerError, "server_error", "ingestor not initialised")
+		return
+	}
+	srcID, srcErr := s.Store.EnsureAgentSource(r.Context(), req.AgentID, a.Hostname)
+	if srcErr != nil {
+		writeJSONError(w, http.StatusInternalServerError, "db_error", srcErr.Error())
+		return
+	}
+	payload := &adapters.AgentMetricsPayload{
+		AgentID:   req.AgentID,
+		Snapshots: req.Snapshots,
+	}
+	if _, pErr := s.Ingestor.Ingest(r.Context(), "agent-metrics", srcID, payload); pErr != nil {
+		slog.Warn("pipeline ingest failed", "kind", "agent-metrics", "agent", req.AgentID, "err", pErr)
+		writeJSONError(w, http.StatusInternalServerError, "db_error", pErr.Error())
+		return
 	}
 
 	writeJSON(w, http.StatusOK, proto.MetricsResponse{Accepted: len(req.Snapshots)})
@@ -300,47 +293,6 @@ func (s *Server) agentInventory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, proto.InventoryResponse{Accepted: true})
-}
-
-// pickBestHostname returns the highest-priority (name, source) from a
-// per-source map, mirroring store.HostnameSourcePriority.
-func pickBestHostname(srcs map[string]string) (string, string) {
-	for _, src := range hostnameSourcesByPriority() {
-		if v, ok := srcs[src]; ok && v != "" {
-			return v, src
-		}
-	}
-	return "", ""
-}
-
-// hostnameSourcesByPriority returns known hostname source names ordered
-// most-to-least authoritative according to store.HostnameSourcePriority.
-// Mirrors discover.sourcesByPriority on the agent side.
-func hostnameSourcesByPriority() []string {
-	srcs := []string{"agent", "docker", "dhcp", "mdns", "llmnr", "smb", "nbns", "ldap", "snmp", "eureka", "ipp", "roku", "airplay", "wsd", "ssdp", "garp", "tls", "rdns", "http", "ssh"}
-	sort.Slice(srcs, func(i, j int) bool {
-		return store.HostnameSourcePriority(srcs[i]) > store.HostnameSourcePriority(srcs[j])
-	})
-	return srcs
-}
-
-// hostnameGroupID normalizes a (source, hostname) pair into a device group
-// ID. Returns "" if the name is empty after normalization. Strips a trailing
-// ".local" (with or without final dot) and lowercases — so "Macbook.local."
-// and "macbook.local" collapse onto the same group within a source.
-func hostnameGroupID(source, name string) string {
-	n := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(name)), ".")
-	n = strings.TrimSuffix(n, ".local")
-	if n == "" || source == "" {
-		return ""
-	}
-	return source + ":" + n
-}
-
-// mdnsGroupID is a thin convenience wrapper retained for callers that only
-// deal with mDNS names.
-func mdnsGroupID(name string) string {
-	return hostnameGroupID("mdns", name)
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

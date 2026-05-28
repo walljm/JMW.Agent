@@ -25,9 +25,13 @@ func TestAgentDiscovery_Adapt(t *testing.T) {
 			{
 				MAC:      "AA:BB:CC:DD:EE:FF",
 				IP:       "192.168.1.50",
-				Hostname: "my-device",
+				Hostname: "ignored-preselected",
 				Method:   "arp",
 				SeenAt:   time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC),
+				HostnameSources: map[string]string{
+					"mdns": "mydevice",
+					"smb":  "MYDEVICE",
+				},
 			},
 			{
 				MAC:    "", // No MAC — should be skipped.
@@ -51,13 +55,13 @@ func TestAgentDiscovery_Adapt(t *testing.T) {
 		t.Fatalf("expected 2 observations (skipping empty MAC), got %d", len(inputs))
 	}
 
-	// First observation.
+	// First observation carries HostnameSources, not a pre-selected Hostname.
 	obs := inputs[0]
 	if obs.MAC != "AA:BB:CC:DD:EE:FF" {
 		t.Fatalf("expected MAC AA:BB:CC:DD:EE:FF, got %s", obs.MAC)
 	}
-	if obs.Hostname != "my-device" {
-		t.Fatalf("expected hostname my-device, got %s", obs.Hostname)
+	if obs.Hostname != "" {
+		t.Fatalf("expected Hostname to be empty (server decides), got %q", obs.Hostname)
 	}
 	if obs.SourceKind != "agent" {
 		t.Fatalf("expected source kind agent, got %s", obs.SourceKind)
@@ -67,6 +71,12 @@ func TestAgentDiscovery_Adapt(t *testing.T) {
 	}
 	if len(obs.Addresses) != 1 || obs.Addresses[0].Family != "ipv4" {
 		t.Fatalf("expected 1 ipv4 address, got %v", obs.Addresses)
+	}
+	if obs.HostnameSources["mdns"] != "mydevice" {
+		t.Fatalf("expected HostnameSources[mdns]=mydevice, got %q", obs.HostnameSources["mdns"])
+	}
+	if obs.HostnameSources["smb"] != "MYDEVICE" {
+		t.Fatalf("expected HostnameSources[smb]=MYDEVICE, got %q", obs.HostnameSources["smb"])
 	}
 
 	// IPv6 observation.

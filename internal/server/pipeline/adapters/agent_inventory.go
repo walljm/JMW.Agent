@@ -31,6 +31,17 @@ func (a *AgentInventory) Adapt(_ context.Context, sourceID string, payload any) 
 	raw, _ := json.Marshal(inv)
 	rawStr := string(raw)
 
+	// If this is a Home Assistant add-on, surface the Supervisor's hostname
+	// as a separate "hassio" source (priority 10) alongside the OS hostname
+	// (source "agent", priority 25). On HA agents the agent-side collector
+	// already overwrites inv.OS.Hostname with the Hassio hostname, so both
+	// entries will have the same value — but labelling the source correctly
+	// means the server can rank it above a generic agent self-report.
+	var hassioHostname string
+	if inv.Hassio != nil {
+		hassioHostname = inv.Hassio.Hostname
+	}
+
 	inputs := make([]pipeline.ObservationInput, 0, len(inv.Network.Interfaces))
 
 	for i := range inv.Network.Interfaces {
@@ -53,6 +64,9 @@ func (a *AgentInventory) Adapt(_ context.Context, sourceID string, payload any) 
 				SystemSerial:  inv.Hardware.SystemSerial,
 				InterfaceName: iface.Name,
 			},
+		}
+		if hassioHostname != "" {
+			obs.HostnameSources = map[string]string{"hassio": hassioHostname}
 		}
 
 		// Collect addresses from this interface.

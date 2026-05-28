@@ -42,7 +42,12 @@ func (a *AgentDiscovery) Adapt(_ context.Context, sourceID string, payload any) 
 			ObsType:    "discovery",
 			ObservedAt: observedAt,
 			RawJSON:    string(raw),
-			Hostname:   s.Hostname,
+			// HostnameSources carries per-protocol names (mdns, smb, dhcp,
+			// etc.) collected by the agent. Each entry is stored as a separate
+			// alias with the correct source priority. s.Hostname (the agent's
+			// pre-selected pick) is intentionally ignored here — the server
+			// pipeline picks the best name at query time.
+			HostnameSources: s.HostnameSources,
 		}
 
 		// Add IP as an address if present.

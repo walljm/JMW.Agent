@@ -32,55 +32,6 @@ type Device struct {
 	DHCPSeenAt     time.Time // most recent DHCP observation; zero if never
 }
 
-// HostnameSourcePriority ranks a hostname source. Higher = more authoritative.
-// Keep in sync with the agent's discover.sourcePriority — both sides must
-// agree on ordering for priority-aware updates to behave consistently.
-func HostnameSourcePriority(src string) int {
-	switch src {
-	case "agent":
-		return 100
-	case "docker":
-		return 95
-	case "dhcp":
-		return 93
-	case "mdns":
-		return 90
-	case "llmnr":
-		return 85
-	case "smb":
-		return 80
-	case "nbns":
-		return 70
-	case "ldap":
-		return 68
-	case "snmp":
-		return 65
-	case "eureka":
-		return 62
-	case "ipp":
-		return 60
-	case "roku":
-		return 58
-	case "airplay":
-		return 55
-	case "wsd":
-		return 52
-	case "ssdp":
-		return 50
-	case "garp":
-		return 45
-	case "tls":
-		return 40
-	case "rdns":
-		return 30
-	case "http":
-		return 20
-	case "ssh":
-		return 15
-	}
-	return 0
-}
-
 // Sighting is one bucketed observation: a unique tuple of
 // (agent, ip, mac, method) for a device, with first/last timestamps and a
 // repeat count.

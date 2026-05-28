@@ -55,18 +55,25 @@ func TestIngestor_AgentDiscovery_EndToEnd(t *testing.T) {
 		AgentID: "agent-1",
 		Sightings: []proto.Sighting{
 			{
-				MAC:      "AA:BB:CC:11:22:33",
-				IP:       "192.168.1.100",
-				Hostname: "desktop-one",
-				Method:   "arp",
-				SeenAt:   time.Now().UTC(),
+				MAC:    "AA:BB:CC:11:22:33",
+				IP:     "192.168.1.100",
+				Method: "arp",
+				SeenAt: time.Now().UTC(),
+				// smb (priority 15) beats agent (priority 25) — smb-name should win.
+				HostnameSources: map[string]string{
+					"agent": "agent-name",
+					"smb":   "smb-name",
+					"mdns":  "mdns-name.local", // will be normalized to mdns-name
+				},
 			},
 			{
-				MAC:      "AA:BB:CC:11:22:44",
-				IP:       "192.168.1.101",
-				Hostname: "laptop-two",
-				Method:   "mdns",
-				SeenAt:   time.Now().UTC(),
+				MAC:    "AA:BB:CC:11:22:44",
+				IP:     "192.168.1.101",
+				Method: "mdns",
+				SeenAt: time.Now().UTC(),
+				HostnameSources: map[string]string{
+					"mdns": "laptop-two",
+				},
 			},
 		},
 	}
@@ -79,13 +86,15 @@ func TestIngestor_AgentDiscovery_EndToEnd(t *testing.T) {
 		t.Fatalf("expected 2 resolved, got %d", result.InterfacesResolved)
 	}
 	if result.ObservationsStored != 2 {
-		t.Fatalf("expected 2 observations, got %d", result.ObservationsStored)
+		t.Fatalf("expected 2 observations (one per sighting), got %d", result.ObservationsStored)
 	}
-	if result.HostnamesUpdated != 2 {
-		t.Fatalf("expected 2 hostnames, got %d", result.HostnamesUpdated)
+	// First sighting has 3 hostnames (agent + smb + mdns after normalization).
+	// Second sighting has 1 hostname.
+	if result.HostnamesUpdated != 4 {
+		t.Fatalf("expected 4 hostnames, got %d", result.HostnamesUpdated)
 	}
 
-	// Verify interface was created with normalized MAC.
+	// Verify smb-name wins for the first sighting (smb priority 15 < agent 25 < mdns 40).
 	iface, err := st.GetInterfaceByMAC(ctx, "aa:bb:cc:11:22:33")
 	if err != nil {
 		t.Fatal(err)
@@ -93,14 +102,57 @@ func TestIngestor_AgentDiscovery_EndToEnd(t *testing.T) {
 	if iface.ID == "" {
 		t.Fatal("expected interface to exist")
 	}
-
-	// Verify hostname was set.
-	hostname, err := st.GetCanonicalHostname(ctx, iface.ID)
+	best, err := st.GetCanonicalHostname(ctx, iface.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hostname != "desktop-one" {
-		t.Fatalf("expected hostname desktop-one, got %s", hostname)
+	if best != "smb-name" {
+		t.Fatalf("expected smb-name (priority 15), got %s", best)
+	}
+}
+
+func TestIngestor_AgentDiscovery_NormalizesHostnames(t *testing.T) {
+	st := testStore(t)
+	ctx := context.Background()
+	sourceID := createTestSource(t, st)
+
+	ing := pipeline.NewIngestor(st, &AgentDiscovery{})
+
+	req := &proto.DiscoveryRequest{
+		AgentID: "agent-1",
+		Sightings: []proto.Sighting{
+			{
+				MAC:    "BB:CC:DD:11:22:33",
+				IP:     "192.168.1.200",
+				Method: "arp",
+				SeenAt: time.Now().UTC(),
+				HostnameSources: map[string]string{
+					"agent": "host.docker.internal", // rejected — docker-internal
+					"mdns":  "mypc.local",            // normalized to "mypc"
+				},
+			},
+		},
+	}
+
+	result, err := ing.Ingest(ctx, "agent-discovery", sourceID, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only mdns survives (normalized to "mypc"); docker-internal is rejected.
+	if result.HostnamesUpdated != 1 {
+		t.Fatalf("expected 1 hostname after normalization, got %d", result.HostnamesUpdated)
+	}
+
+	iface, err := st.GetInterfaceByMAC(ctx, "bb:cc:dd:11:22:33")
+	if err != nil {
+		t.Fatal(err)
+	}
+	best, err := st.GetCanonicalHostname(ctx, iface.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if best != "mypc" {
+		t.Fatalf("expected normalized hostname mypc, got %s", best)
 	}
 }
 
