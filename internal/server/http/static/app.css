@@ -238,6 +238,10 @@ th.no-sort::after { content: "" !important; }
 .alerts-section > h2 { margin-top: 0; margin-bottom: 12px; }
 .row-actions { width: 1%; white-space: nowrap; text-align: right; }
 
+/* Compact horizontal form for inline per-row editing inside table cells. */
+.row-edit-form { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 8px; margin: 0; }
+.row-edit-form input, .row-edit-form select { margin: 0; }
+
 /* Collapsible form block under a section. */
 .form-details { margin-top: 16px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius); padding: 0; overflow: hidden; }
 .form-details > summary { padding: 10px 14px; cursor: pointer; font-weight: 600; color: var(--fg); background: var(--bg-elev-2); list-style: none; }

@@ -24,9 +24,9 @@
         <td class="num"><a href="/devices?network={{.ID}}">{{.DeviceCount}}</a></td>
         <td>{{shortTime .LastSeenAt}}</td>
         <td class="row-actions">
-          <form method="POST" action="/networks/{{.ID}}/edit" class="inline-form">
+          <form method="POST" action="/networks/{{.ID}}/edit" class="row-edit-form">
             <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}" />
-            <input type="text" name="name" value="{{.Name}}" placeholder="Name" size="12" />
+            <input type="text" name="name" value="{{.Name}}" placeholder="Name" size="14" />
             <select name="status">
               <option value="discovered" {{if eq .Status "discovered"}}selected{{end}}>discovered</option>
               <option value="monitored" {{if eq .Status "monitored"}}selected{{end}}>monitored</option>
