@@ -10,7 +10,6 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/walljm/jmwagent/internal/server/store"
-	"github.com/walljm/jmwagent/internal/shared/proto"
 )
 
 func (s *Server) dashboardGet(w http.ResponseWriter, r *http.Request) {
@@ -115,6 +114,9 @@ func (s *Server) agentsList(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// agentDetail redirects /agents/{id} to the canonical entity URL at
+// /devices/{interfaceID}. The merged device detail page renders all known
+// data about the entity (discovery + agent inventory + metrics).
 func (s *Server) agentDetail(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	a, err := s.Store.GetAgent(r.Context(), id)
@@ -122,29 +124,14 @@ func (s *Server) agentDetail(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	latest, _ := s.Store.LatestSnapshot(r.Context(), id)
-	invJSON, invAt, _ := s.Store.GetAgentInventory(r.Context(), id)
-	var inv *proto.Inventory
-	if invJSON != "" {
-		var parsed proto.Inventory
-		if err := json.Unmarshal([]byte(invJSON), &parsed); err == nil {
-			inv = &parsed
-		}
+	devID, _ := s.Store.PrimaryDeviceIDForAgent(r.Context(), id)
+	if devID == "" {
+		// Agent has registered but no interfaces have been recorded yet
+		// (no heartbeat / discovery processed). Send them somewhere useful.
+		http.Redirect(w, r, "/agents", http.StatusSeeOther)
+		return
 	}
-	tags, _ := s.Store.ListTagsForTarget(r.Context(), store.TagTargetAgent, id)
-	csrf := s.ensureCSRF(w, r)
-	s.render(w, r, "agent_detail.html", map[string]any{
-		"CSRFToken":    csrf,
-		"Title":        a.Hostname,
-		"Active":       "agents",
-		"Agent":        a,
-		"Latest":       latest,
-		"Inventory":    inv,
-		"InventoryAt":  invAt,
-		"HasInventory": inv != nil,
-		"Tags":         tags,
-		"TagsCSV":      strings.Join(tags, ", "),
-	})
+	http.Redirect(w, r, "/devices/"+devID, http.StatusSeeOther)
 }
 
 // agentEdit handles POST /agents/{id}/edit — updates description (notes)

@@ -13,6 +13,7 @@ import (
 
 	"github.com/walljm/jmwagent/internal/server/store"
 	"github.com/walljm/jmwagent/internal/server/terrain"
+	"github.com/walljm/jmwagent/internal/shared/proto"
 )
 
 func (s *Server) alertsList(w http.ResponseWriter, r *http.Request) {
@@ -448,6 +449,45 @@ func (s *Server) deviceDetail(w http.ResponseWriter, r *http.Request) {
 	// Networks this device has been seen on.
 	deviceNetworks, _ := s.Store.NetworksForDevice(r.Context(), memberIDs)
 
+	// If this device is one of our managed agents, additionally load
+	// agent metadata, latest metrics, and parsed inventory. The merged
+	// detail page renders all known data — discovery + reported — in one
+	// place, regardless of the source.
+	var (
+		agent       *store.Agent
+		latest      *proto.MetricSnapshot
+		inventory   *proto.Inventory
+		inventoryAt time.Time
+		agentTags   []string
+	)
+	if d.AgentID != "" {
+		if a, err := s.Store.GetAgent(r.Context(), d.AgentID); err == nil && a != nil {
+			agent = a
+			latest, _ = s.Store.LatestSnapshot(r.Context(), d.AgentID)
+			invJSON, invAt, _ := s.Store.GetAgentInventory(r.Context(), d.AgentID)
+			inventoryAt = invAt
+			if invJSON != "" {
+				var parsed proto.Inventory
+				if err := json.Unmarshal([]byte(invJSON), &parsed); err == nil {
+					inventory = &parsed
+				}
+			}
+			agentTags, _ = s.Store.ListTagsForTarget(r.Context(), store.TagTargetAgent, d.AgentID)
+		}
+	}
+
+	// Merge tags from both surfaces (device + agent) for display. The edit
+	// form writes to whichever surface owns the entity (agent if agent,
+	// device otherwise).
+	mergedTags := mergeTags(tags, agentTags)
+	editTagsCSV := strings.Join(tags, ", ")
+	editNotes := d.Notes
+	if agent != nil {
+		// Authoritative edit surface is the agent record.
+		editTagsCSV = strings.Join(agentTags, ", ")
+		editNotes = agent.Notes
+	}
+
 	s.render(w, r, "device_detail.html", map[string]any{
 		"CSRFToken":       csrf,
 		"Title":           "Device " + d.Hostname,
@@ -461,11 +501,42 @@ func (s *Server) deviceDetail(w http.ResponseWriter, r *http.Request) {
 		"AgentNames":      names,
 		"MDNS":            profile,
 		"ManagedHostname": managedHostname,
-		"Tags":            tags,
-		"TagsCSV":         strings.Join(tags, ", "),
+		"Tags":            mergedTags,
+		"TagsCSV":         editTagsCSV,
+		"EditNotes":       editNotes,
 		"DNSActivity":     dnsActivity,
 		"Networks":        deviceNetworks,
+		"Agent":           agent,
+		"Latest":          latest,
+		"Inventory":       inventory,
+		"InventoryAt":     inventoryAt,
+		"HasInventory":    inventory != nil,
 	})
+}
+
+// mergeTags returns the union of two tag slices, preserving the order of the
+// first slice for already-present tags and appending new ones from the second.
+func mergeTags(a, b []string) []string {
+	if len(b) == 0 {
+		return a
+	}
+	seen := make(map[string]bool, len(a)+len(b))
+	out := make([]string, 0, len(a)+len(b))
+	for _, t := range a {
+		if t == "" || seen[t] {
+			continue
+		}
+		seen[t] = true
+		out = append(out, t)
+	}
+	for _, t := range b {
+		if t == "" || seen[t] {
+			continue
+		}
+		seen[t] = true
+		out = append(out, t)
+	}
+	return out
 }
 
 // DNSActivity summarises DNS query volume observed for a device, derived

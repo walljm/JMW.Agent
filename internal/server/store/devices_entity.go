@@ -204,6 +204,34 @@ func (s *Store) GetDevice(ctx context.Context, id string) (*Device, error) {
 	return &d, nil
 }
 
+// PrimaryDeviceIDForAgent returns the interface ID (MAC) that best represents
+// the agent on the merged entity detail page. It picks the most-recently-seen
+// interface row belonging to the agent's hardware. Returns ("", nil) if the
+// agent has no associated system or interfaces yet.
+func (s *Store) PrimaryDeviceIDForAgent(ctx context.Context, agentID string) (string, error) {
+	var hardwareID string
+	err := s.DB.QueryRowContext(ctx,
+		`SELECT hardware_id FROM systems WHERE agent_id = ? ORDER BY last_seen_at DESC LIMIT 1`,
+		agentID).Scan(&hardwareID)
+	if err == sql.ErrNoRows || hardwareID == "" {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	var devID string
+	err = s.DB.QueryRowContext(ctx,
+		`SELECT id FROM interfaces WHERE hardware_id = ? ORDER BY last_seen_at DESC LIMIT 1`,
+		hardwareID).Scan(&devID)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return devID, nil
+}
+
 // ListGroupMembers returns all interface rows that share the same hardware_id.
 func (s *Store) ListGroupMembers(ctx context.Context, groupID, fallbackID string) ([]*Device, error) {
 	if groupID == "" {
