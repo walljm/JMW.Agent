@@ -224,6 +224,16 @@ func (s *Server) agentDiscoveries(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Upsert the reporting network (gateway MAC + CIDR + SSID). Device-to-network
+	// association is computed by CIDR matching in ListNetworks, so we only need
+	// the networks row to exist.
+	if req.Network != nil && req.Network.GatewayMAC != "" {
+		if _, err := s.Store.UpsertNetwork(r.Context(),
+			req.Network.GatewayMAC, req.Network.CIDR, req.Network.SSID, time.Now().UTC()); err != nil {
+			slog.Warn("upsert network failed", "agent", req.AgentID, "gw_mac", req.Network.GatewayMAC, "err", err)
+		}
+	}
+
 	writeJSON(w, http.StatusOK, proto.DiscoveryResponse{Accepted: accepted})
 }
 

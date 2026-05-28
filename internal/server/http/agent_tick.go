@@ -55,10 +55,24 @@ func (s *Server) agentTick(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Process discoveries section.
-	if req.Discoveries != nil && len(req.Discoveries.Sightings) > 0 {
-		req.Discoveries.AgentID = req.AgentID
-		if _, pErr := s.Ingestor.Ingest(ctx, "agent-discovery", srcID, req.Discoveries); pErr != nil {
-			slog.Warn("tick: discovery ingest failed", "agent", req.AgentID, "err", pErr)
+	if req.Discoveries != nil {
+		if len(req.Discoveries.Sightings) > 0 {
+			req.Discoveries.AgentID = req.AgentID
+			if _, pErr := s.Ingestor.Ingest(ctx, "agent-discovery", srcID, req.Discoveries); pErr != nil {
+				slog.Warn("tick: discovery ingest failed", "agent", req.AgentID, "err", pErr)
+			}
+		}
+		// Upsert the reporting network from gateway MAC + CIDR + SSID. Device-to-
+		// network membership is computed by CIDR match in ListNetworks, so only
+		// the networks row itself needs to exist.
+		if req.Discoveries.Network != nil && req.Discoveries.Network.GatewayMAC != "" {
+			if _, err := s.Store.UpsertNetwork(ctx,
+				req.Discoveries.Network.GatewayMAC,
+				req.Discoveries.Network.CIDR,
+				req.Discoveries.Network.SSID,
+				time.Now().UTC()); err != nil {
+				slog.Warn("tick: upsert network failed", "agent", req.AgentID, "gw_mac", req.Discoveries.Network.GatewayMAC, "err", err)
+			}
 		}
 	}
 
