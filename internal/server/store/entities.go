@@ -382,6 +382,16 @@ func (s *Store) UpsertInterface(ctx context.Context, iface *Interface) (string, 
 	return existingID, nil
 }
 
+// TouchInterface updates last_seen_at to now for the given interface ID.
+// Called on every observation for an existing interface so the device's
+// "Last Seen" reflects real activity rather than the creation timestamp.
+func (s *Store) TouchInterface(ctx context.Context, id string) error {
+	_, err := s.DB.ExecContext(ctx,
+		`UPDATE interfaces SET last_seen_at = ? WHERE id = ?`,
+		time.Now().UTC().Format(time.RFC3339), id)
+	return err
+}
+
 // GetInterfaceByMAC retrieves an interface by MAC address.
 func (s *Store) GetInterfaceByMAC(ctx context.Context, mac string) (*Interface, error) {
 	iface := &Interface{}
@@ -467,10 +477,12 @@ func (s *Store) UpsertHostnameAlias(ctx context.Context, alias *EntityHostnameAl
 	nowStr := now.Format(time.RFC3339)
 
 	_, err := s.DB.ExecContext(ctx,
-		`INSERT INTO hostname_aliases (interface_id, hostname, source_kind, priority, first_seen_at, last_seen_at)
-		 VALUES (?, ?, ?, ?, ?, ?)
+		`INSERT INTO hostname_aliases (interface_id, hostname, source_kind, priority, first_seen_at, last_seen_at, seen_count)
+		 VALUES (?, ?, ?, ?, ?, ?, 1)
 		 ON CONFLICT(interface_id, hostname, source_kind) DO UPDATE SET
-		    priority=excluded.priority, last_seen_at=excluded.last_seen_at`,
+		    priority=excluded.priority,
+		    last_seen_at=excluded.last_seen_at,
+		    seen_count=hostname_aliases.seen_count + 1`,
 		alias.InterfaceID, alias.Hostname, alias.SourceKind, alias.Priority, nowStr, nowStr)
 	return err
 }

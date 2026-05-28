@@ -43,9 +43,11 @@ func (r *Resolver) ResolveInterface(ctx context.Context, mac string, hints *Inte
 		return cached, nil
 	}
 
-	// Try to find existing interface.
+	// Try to find existing interface. Touch last_seen_at so the device card
+	// reflects real activity rather than the creation timestamp.
 	iface, err := r.store.GetInterfaceByMAC(ctx, mac)
 	if err == nil {
+		_ = r.store.TouchInterface(ctx, iface.ID)
 		r.macCache[mac] = iface
 		return iface, nil
 	}

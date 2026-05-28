@@ -305,7 +305,7 @@ func (s *Store) ListHostnamesForDevices(ctx context.Context, deviceIDs []string)
 		placeholders[i] = "?"
 		args = append(args, id)
 	}
-	q := `SELECT hostname, source_kind, first_seen_at, last_seen_at, 1
+	q := `SELECT hostname, source_kind, first_seen_at, last_seen_at, seen_count
 	      FROM hostname_aliases
 	      WHERE interface_id IN (` + strings.Join(placeholders, ",") + `)
 	      ORDER BY last_seen_at DESC`
