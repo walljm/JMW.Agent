@@ -24,7 +24,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          # Self-hosted runner already has a persistent GOMODCACHE; the cache
+          # action otherwise fails noisily trying to overwrite read-only files.
+          cache: false
 
       - id: version
         run: echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"

@@ -23,7 +23,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          # Self-hosted runner already has a persistent GOMODCACHE; the cache
+          # action otherwise fails noisily trying to overwrite read-only files.
+          cache: false
 
       - name: go vet
         run: go vet ./...
