@@ -42,6 +42,25 @@ func (a *AgentInventory) Adapt(_ context.Context, sourceID string, payload any) 
 		hassioHostname = inv.Hassio.Hostname
 	}
 
+	// Build hardware-level fingerprints that apply to every interface on this machine.
+	hwFingerprints := make([]pipeline.Fingerprint, 0, 4)
+	if inv.Hardware.SystemSerial != "" && inv.Hardware.SystemVendor != "" {
+		hwFingerprints = append(hwFingerprints, pipeline.Fingerprint{
+			Kind:   "serial:system",
+			Value:  inv.Hardware.SystemVendor + "\x00" + inv.Hardware.SystemSerial,
+			Source: "agent",
+		})
+	}
+	// BoardSerial is not yet collected by the agent proto. When it is, add a
+	// "serial:board" fingerprint here: BoardVendor + "\x00" + BoardSerial.
+	if inv.Docker != nil && inv.Docker.Engine != nil && inv.Docker.Engine.ID != "" {
+		hwFingerprints = append(hwFingerprints, pipeline.Fingerprint{
+			Kind:   "docker_engine_id",
+			Value:  inv.Docker.Engine.ID,
+			Source: "agent",
+		})
+	}
+
 	inputs := make([]pipeline.ObservationInput, 0, len(inv.Network.Interfaces))
 
 	for i := range inv.Network.Interfaces {
@@ -69,6 +88,7 @@ func (a *AgentInventory) Adapt(_ context.Context, sourceID string, payload any) 
 				SystemSerial:  inv.Hardware.SystemSerial,
 				InterfaceName: iface.Name,
 			},
+			Fingerprints: hwFingerprints,
 		}
 		if hassioHostname != "" {
 			obs.HostnameSources = map[string]string{"hassio": hassioHostname}
