@@ -442,7 +442,7 @@ func (s *Store) GetInterfaceByMAC(ctx context.Context, mac string) (*Interface, 
 	err := s.DB.QueryRowContext(ctx,
 		`SELECT id, system_id, hardware_id, mac, name, iface_type, mtu,
 		        link_speed_mbps, is_up, first_seen_at, last_seen_at, created_at, updated_at
-		 FROM interfaces WHERE mac = ?`, mac).Scan(
+		 FROM interfaces WHERE mac = ?`, strings.ToLower(mac)).Scan(
 		&iface.ID, &sysID, &iface.HardwareID, &iface.MAC, &name, &ifType,
 		&mtu, &speed, &isUp, &firstSeen, &lastSeen, &createdAt, &updatedAt)
 	if err != nil {

@@ -241,7 +241,7 @@ th.no-sort::after { content: "" !important; }
 /* Compact horizontal form for inline per-row editing inside table cells.
    Must beat table.data form (0,1,2) so we scope to that context. */
 table.data .row-edit-form { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 8px; margin: 0; }
-table.data .row-edit-form input, table.data .row-edit-form select { margin: 0; }
+table.data .row-edit-form input, table.data .row-edit-form select { margin: 0; width: auto; }
 
 /* Collapsible form block under a section. */
 .form-details { margin-top: 16px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius); padding: 0; overflow: hidden; }

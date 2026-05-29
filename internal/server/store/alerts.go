@@ -3,9 +3,14 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"time"
+
+	"github.com/walljm/jmwagent/internal/server/dek"
 )
 
 // AlertRule represents a configured alert.
@@ -213,16 +218,117 @@ type NotificationChannel struct {
 	CreatedAt time.Time
 }
 
-// CreateChannel persists a new channel.
+// ChannelSecretFields maps channel kinds to the config keys that contain secrets.
+var ChannelSecretFields = map[string][]string{
+	"webhook": {"url"},
+	"email":   {"password"},
+}
+
+// encryptChannelConfig encrypts secret fields in a channel config map.
+// Returns the JSON string with secrets encrypted.
+func encryptChannelConfig(cfg map[string]any, kind string, key *dek.Key) (string, error) {
+	if key == nil {
+		b, err := json.Marshal(cfg)
+		return string(b), err
+	}
+	fields := ChannelSecretFields[kind]
+	if len(fields) == 0 {
+		b, err := json.Marshal(cfg)
+		return string(b), err
+	}
+	// Work on a copy to avoid mutating the caller's map.
+	out := make(map[string]any, len(cfg))
+	for k, v := range cfg {
+		out[k] = v
+	}
+	for _, f := range fields {
+		val, ok := out[f]
+		if !ok {
+			continue
+		}
+		str, isStr := val.(string)
+		if !isStr || str == "" || str == secretSentinel {
+			continue
+		}
+		enc, err := key.Encrypt(str)
+		if err != nil {
+			return "", err
+		}
+		out[f] = enc
+	}
+	b, err := json.Marshal(out)
+	return string(b), err
+}
+
+// decryptChannelConfig decrypts secret fields in a channel config JSON string.
+// Returns the parsed config map with secrets decrypted.
+func decryptChannelConfig(cfgJSON, kind string, key *dek.Key) map[string]any {
+	var m map[string]any
+	if err := json.Unmarshal([]byte(cfgJSON), &m); err != nil {
+		return nil
+	}
+	if key == nil {
+		return m
+	}
+	fields := ChannelSecretFields[kind]
+	for _, f := range fields {
+		val, ok := m[f]
+		if !ok {
+			continue
+		}
+		str, isStr := val.(string)
+		if !isStr || str == "" {
+			continue
+		}
+		// Legacy plaintext detection: if not valid base64, leave as-is.
+		if _, b64Err := base64.StdEncoding.DecodeString(str); b64Err != nil {
+			continue
+		}
+		dec, err := key.Decrypt(str)
+		if err != nil {
+			slog.Warn("decrypt channel config field failed",
+				"field", f, "kind", kind)
+			continue
+		}
+		m[f] = dec
+	}
+	return m
+}
+
+// maskChannelConfig replaces secret fields with the sentinel value for UI display.
+func maskChannelConfig(cfg map[string]any, kind string) map[string]any {
+	fields := ChannelSecretFields[kind]
+	if len(fields) == 0 {
+		return cfg
+	}
+	out := make(map[string]any, len(cfg))
+	for k, v := range cfg {
+		out[k] = v
+	}
+	for _, f := range fields {
+		if val, ok := out[f]; ok {
+			str, isStr := val.(string)
+			if isStr && str != "" {
+				out[f] = secretSentinel
+			}
+		}
+	}
+	return out
+}
+
+// CreateChannel persists a new channel. Secret fields are encrypted with the DEK.
 func (s *Store) CreateChannel(ctx context.Context, ch *NotificationChannel) error {
 	if ch.CreatedAt.IsZero() {
 		ch.CreatedAt = time.Now().UTC()
 	}
-	cfg, _ := json.Marshal(ch.Config)
+	cfg, err := encryptChannelConfig(ch.Config, ch.Kind, s.DataKey)
+	if err != nil {
+		return err
+	}
 	res, err := s.DB.ExecContext(ctx,
 		`INSERT INTO notification_channels(name, kind, config_json, enabled, created_at)
 		 VALUES(?,?,?,?,?)`,
-		ch.Name, ch.Kind, string(cfg), boolToInt(ch.Enabled),
+		ch.Name, ch.Kind, cfg, boolToInt(ch.Enabled),
 		ch.CreatedAt.Format(time.RFC3339))
 	if err != nil {
 		return err
@@ -231,7 +337,7 @@ func (s *Store) CreateChannel(ctx context.Context, ch *NotificationChannel) erro
 	return nil
 }
 
-// ListChannels returns all channels.
+// ListChannels returns all channels with secret fields masked for UI display.
 func (s *Store) ListChannels(ctx context.Context) ([]*NotificationChannel, error) {
 	rows, err := s.DB.QueryContext(ctx,
 		`SELECT id, name, kind, config_json, enabled, created_at FROM notification_channels ORDER BY id ASC`)
@@ -248,14 +354,17 @@ func (s *Store) ListChannels(ctx context.Context) ([]*NotificationChannel, error
 			return nil, err
 		}
 		ch.Enabled = enabled != 0
-		_ = json.Unmarshal([]byte(cfg), &ch.Config)
+		// Decrypt then mask: decrypt so we can tell if a value is set,
+		// then mask for UI display.
+		decrypted := decryptChannelConfig(cfg, ch.Kind, s.DataKey)
+		ch.Config = maskChannelConfig(decrypted, ch.Kind)
 		ch.CreatedAt, _ = time.Parse(time.RFC3339, created)
 		out = append(out, &ch)
 	}
 	return out, rows.Err()
 }
 
-// GetChannel returns a single channel.
+// GetChannel returns a single channel with secrets decrypted (for notification dispatch).
 func (s *Store) GetChannel(ctx context.Context, id int64) (*NotificationChannel, error) {
 	row := s.DB.QueryRowContext(ctx,
 		`SELECT id, name, kind, config_json, enabled, created_at FROM notification_channels WHERE id = ?`, id)
@@ -269,7 +378,7 @@ func (s *Store) GetChannel(ctx context.Context, id int64) (*NotificationChannel,
 		return nil, err
 	}
 	ch.Enabled = enabled != 0
-	_ = json.Unmarshal([]byte(cfg), &ch.Config)
+	ch.Config = decryptChannelConfig(cfg, ch.Kind, s.DataKey)
 	ch.CreatedAt, _ = time.Parse(time.RFC3339, created)
 	return &ch, nil
 }
@@ -278,6 +387,58 @@ func (s *Store) GetChannel(ctx context.Context, id int64) (*NotificationChannel,
 func (s *Store) DeleteChannel(ctx context.Context, id int64) error {
 	_, err := s.DB.ExecContext(ctx, `DELETE FROM notification_channels WHERE id = ?`, id)
 	return err
+}
+
+// RotateChannelSecrets decrypts all channel secrets with decryptKey and
+// re-encrypts them with encryptKey. Returns the number of channels processed.
+func (s *Store) RotateChannelSecrets(ctx context.Context, decryptKey, encryptKey *dek.Key) (int, error) {
+	rows, err := s.DB.QueryContext(ctx,
+		`SELECT id, kind, config_json FROM notification_channels`)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	type chanRow struct {
+		id         int64
+		kind, cfg  string
+	}
+	var channels []chanRow
+	for rows.Next() {
+		var cr chanRow
+		if err := rows.Scan(&cr.id, &cr.kind, &cr.cfg); err != nil {
+			return 0, err
+		}
+		channels = append(channels, cr)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	count := 0
+	for _, cr := range channels {
+		fields := ChannelSecretFields[cr.kind]
+		if len(fields) == 0 {
+			continue
+		}
+		// Decrypt with old key.
+		decrypted := decryptChannelConfig(cr.cfg, cr.kind, decryptKey)
+		if decrypted == nil {
+			continue
+		}
+		// Re-encrypt with new key.
+		encrypted, err := encryptChannelConfig(decrypted, cr.kind, encryptKey)
+		if err != nil {
+			return count, fmt.Errorf("channel %d: encrypt: %w", cr.id, err)
+		}
+		if _, err := s.DB.ExecContext(ctx,
+			`UPDATE notification_channels SET config_json = ? WHERE id = ?`,
+			encrypted, cr.id); err != nil {
+			return count, fmt.Errorf("channel %d: update: %w", cr.id, err)
+		}
+		count++
+	}
+	return count, nil
 }
 
 func boolToInt(b bool) int {

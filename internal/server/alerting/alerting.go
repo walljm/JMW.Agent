@@ -5,22 +5,56 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/walljm/jmwagent/internal/server/notify"
 	"github.com/walljm/jmwagent/internal/server/store"
 )
 
+// transitionEntry records a single firing↔resolved state transition.
+type transitionEntry struct {
+	ts time.Time
+}
+
+// flapTracker tracks state transitions per rule+agent pair and detects flapping.
+type flapTracker struct {
+	mu          sync.Mutex
+	transitions map[string][]transitionEntry // key: "ruleID:agentID"
+}
+
+// record appends a new transition for the given key, prunes entries older than
+// FlapWindow, and returns the resulting count of recent transitions.
+func (ft *flapTracker) record(key string, now time.Time) int {
+	ft.mu.Lock()
+	defer ft.mu.Unlock()
+	cutoff := now.Add(-FlapWindow)
+	entries := ft.transitions[key]
+	filtered := entries[:0]
+	for _, e := range entries {
+		if e.ts.After(cutoff) {
+			filtered = append(filtered, e)
+		}
+	}
+	filtered = append(filtered, transitionEntry{ts: now})
+	ft.transitions[key] = filtered
+	return len(filtered)
+}
+
 // Evaluator runs the alert evaluation loop.
 type Evaluator struct {
 	Store    *store.Store
 	Interval time.Duration
+	flap     *flapTracker
 }
 
 // Run blocks until ctx is done, evaluating rules at every tick.
 func (e *Evaluator) Run(ctx context.Context) {
 	if e.Interval <= 0 {
 		e.Interval = 30 * time.Second
+	}
+	e.flap = &flapTracker{
+		transitions: make(map[string][]transitionEntry),
 	}
 	t := time.NewTicker(e.Interval)
 	defer t.Stop()
@@ -103,6 +137,7 @@ func (e *Evaluator) evaluateOnce(ctx context.Context) error {
 			}
 
 			open, _ := e.Store.OpenFiring(ctx, r.ID, a.ID)
+			flapKey := fmt.Sprintf("%d:%s", r.ID, a.ID)
 			if breach {
 				if open == nil {
 					f := &store.AlertFiring{
@@ -121,7 +156,11 @@ func (e *Evaluator) evaluateOnce(ctx context.Context) error {
 						Summary: f.Summary,
 						Detail:  map[string]any{"rule_id": r.ID, "value": val},
 					})
-					if r.ChannelID != nil {
+					transitions := e.flap.record(flapKey, now)
+					if IsFlapping(transitions) {
+						slog.Warn("alert flapping, suppressing notification",
+							"rule", r.Name, "agent", a.Hostname, "transitions", transitions)
+					} else if r.ChannelID != nil {
 						ch, err := e.Store.GetChannel(ctx, *r.ChannelID)
 						if err == nil && ch != nil && ch.Enabled {
 							if err := notify.Send(ctx, ch, r.Severity, f.Summary); err != nil {
@@ -143,6 +182,11 @@ func (e *Evaluator) evaluateOnce(ctx context.Context) error {
 					Summary: fmt.Sprintf("Resolved: %s on %s", r.Name, a.Hostname),
 					Detail:  map[string]any{"rule_id": r.ID, "value": val},
 				})
+				transitions := e.flap.record(flapKey, now)
+				if IsFlapping(transitions) {
+					slog.Warn("alert flapping on resolve, suppressing notification",
+						"rule", r.Name, "agent", a.Hostname, "transitions", transitions)
+				}
 			}
 		}
 	}

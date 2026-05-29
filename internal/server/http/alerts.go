@@ -2,6 +2,7 @@ package httpsrv
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net"
 	"net/http"
 	"sort"
@@ -103,7 +104,8 @@ func (s *Server) alertCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Store.CreateAlertRule(r.Context(), rule); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("create alert rule failed", "handler", "alertCreate", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	http.Redirect(w, r, "/alerts", http.StatusSeeOther)
@@ -127,7 +129,8 @@ func legacyMetricToV2(metric string) (kind, path string) {
 func (s *Server) alertDelete(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err := s.Store.DeleteAlertRule(r.Context(), id); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		slog.Error("delete alert rule failed", "handler", "alertDelete", "id", id, "err", err)
+		http.Error(w, "internal error", http.StatusBadRequest)
 		return
 	}
 	http.Redirect(w, r, "/alerts", http.StatusSeeOther)
@@ -166,7 +169,8 @@ func (s *Server) channelCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Store.CreateChannel(r.Context(), ch); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("create channel failed", "handler", "channelCreate", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	http.Redirect(w, r, "/alerts", http.StatusSeeOther)
@@ -175,7 +179,8 @@ func (s *Server) channelCreate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) channelDelete(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err := s.Store.DeleteChannel(r.Context(), id); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		slog.Error("delete channel failed", "handler", "channelDelete", "id", id, "err", err)
+		http.Error(w, "internal error", http.StatusBadRequest)
 		return
 	}
 	http.Redirect(w, r, "/alerts", http.StatusSeeOther)
@@ -602,11 +607,13 @@ func (s *Server) deviceEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	tags := store.ParseTagInput(r.FormValue("tags"))
 	if err := s.Store.UpdateDeviceNotes(r.Context(), d.ID, notes); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("update device notes failed", "handler", "deviceEdit", "id", d.ID, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if err := s.Store.SetTagsForTarget(r.Context(), store.TagTargetDevice, d.ID, tags); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("set device tags failed", "handler", "deviceEdit", "id", d.ID, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	http.Redirect(w, r, "/devices/"+d.ID, http.StatusSeeOther)

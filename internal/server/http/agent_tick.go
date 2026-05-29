@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/walljm/jmwagent/internal/server/pipeline"
 	"github.com/walljm/jmwagent/internal/server/pipeline/adapters"
 	"github.com/walljm/jmwagent/internal/server/store"
 	"github.com/walljm/jmwagent/internal/shared/proto"
@@ -23,9 +24,18 @@ func (s *Server) agentTick(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "bad_request", "agent_id required")
 		return
 	}
+	if req.Metrics != nil && len(req.Metrics.Snapshots) > 1000 {
+		writeJSONError(w, http.StatusRequestEntityTooLarge, "payload_too_large", "too many snapshots")
+		return
+	}
+	if req.Discoveries != nil && len(req.Discoveries.Sightings) > 10000 {
+		writeJSONError(w, http.StatusRequestEntityTooLarge, "payload_too_large", "too many sightings")
+		return
+	}
 	a, err := s.Store.GetAgent(r.Context(), req.AgentID)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		slog.Error("get agent failed", "handler", "agentTick", "agent_id", req.AgentID, "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "db_error", "internal error")
 		return
 	}
 	if a == nil || a.Status != store.AgentStatusApproved {
@@ -39,7 +49,8 @@ func (s *Server) agentTick(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	srcID, srcErr := s.Store.EnsureAgentSource(ctx, req.AgentID, a.Hostname)
 	if srcErr != nil {
-		writeJSONError(w, http.StatusInternalServerError, "db_error", srcErr.Error())
+		slog.Error("ensure agent source failed", "handler", "agentTick", "agent_id", req.AgentID, "err", srcErr)
+		writeJSONError(w, http.StatusInternalServerError, "db_error", "internal error")
 		return
 	}
 
@@ -93,7 +104,7 @@ func (s *Server) agentTick(w http.ResponseWriter, r *http.Request) {
 		// Link the agent to its hardware so Device.AgentID is populated on the
 		// device detail page (hydrateDevices joins systems on hardware_id).
 		if mac := pickPrimaryMAC(req.Inventory.Inventory); mac != "" {
-			_ = s.Store.EnsureAgentSystem(ctx, req.AgentID, mac)
+			_ = s.Store.EnsureAgentSystem(ctx, req.AgentID, pipeline.NormalizeMAC(mac))
 		}
 
 		// Temperature + battery snapshots.

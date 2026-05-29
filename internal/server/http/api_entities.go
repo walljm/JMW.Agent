@@ -1,6 +1,7 @@
 package httpsrv
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -9,7 +10,8 @@ import (
 func (s *Server) hardwareListAPI(w http.ResponseWriter, r *http.Request) {
 	items, err := s.Store.ListHardware(r.Context())
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		slog.Error("list hardware failed", "handler", "hardwareListAPI", "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "db_error", "internal error")
 		return
 	}
 	writeJSON(w, http.StatusOK, items)
@@ -19,7 +21,8 @@ func (s *Server) hardwareDetailAPI(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	detail, err := s.Store.GetHardwareDetail(r.Context(), id)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		slog.Error("get hardware detail failed", "handler", "hardwareDetailAPI", "id", id, "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "db_error", "internal error")
 		return
 	}
 	if detail == nil {

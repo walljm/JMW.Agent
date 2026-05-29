@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/walljm/jmwagent/internal/server/pipeline"
 	"github.com/walljm/jmwagent/internal/server/pipeline/adapters"
 	"github.com/walljm/jmwagent/internal/server/releases"
 	"github.com/walljm/jmwagent/internal/server/store"
@@ -70,7 +71,8 @@ func (s *Server) agentRegister(w http.ResponseWriter, r *http.Request) {
 
 	existing, err := s.Store.GetAgent(r.Context(), req.AgentID)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		slog.Error("get agent failed", "handler", "agentRegister", "agent_id", req.AgentID, "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "db_error", "internal error")
 		return
 	}
 	if existing == nil {
@@ -84,7 +86,8 @@ func (s *Server) agentRegister(w http.ResponseWriter, r *http.Request) {
 			EnabledSubsystems: req.EnabledSubsystems,
 		})
 		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+			slog.Error("create agent failed", "handler", "agentRegister", "agent_id", req.AgentID, "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "db_error", "internal error")
 			return
 		}
 		_ = s.Store.LogEvent(r.Context(), &store.Event{
@@ -128,7 +131,8 @@ func (s *Server) agentHeartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := s.Store.GetAgent(r.Context(), req.AgentID)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		slog.Error("get agent failed", "handler", "agentHeartbeat", "agent_id", req.AgentID, "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "db_error", "internal error")
 		return
 	}
 	if a == nil {
@@ -136,7 +140,8 @@ func (s *Server) agentHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Store.TouchAgentHeartbeat(r.Context(), req.AgentID, req.Version, req.EnabledSubsystems); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		slog.Error("touch heartbeat failed", "handler", "agentHeartbeat", "agent_id", req.AgentID, "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "db_error", "internal error")
 		return
 	}
 	heartbeat, discovery, inventory, err := s.Store.GetAgentIntervals(r.Context())
@@ -176,9 +181,14 @@ func (s *Server) agentMetrics(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "bad_request", "agent_id required")
 		return
 	}
+	if len(req.Snapshots) > 1000 {
+		writeJSONError(w, http.StatusRequestEntityTooLarge, "payload_too_large", "too many snapshots")
+		return
+	}
 	a, err := s.Store.GetAgent(r.Context(), req.AgentID)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		slog.Error("get agent failed", "handler", "agentMetrics", "agent_id", req.AgentID, "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "db_error", "internal error")
 		return
 	}
 	if a == nil || a.Status != store.AgentStatusApproved {
@@ -192,7 +202,8 @@ func (s *Server) agentMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 	srcID, srcErr := s.Store.EnsureAgentSource(r.Context(), req.AgentID, a.Hostname)
 	if srcErr != nil {
-		writeJSONError(w, http.StatusInternalServerError, "db_error", srcErr.Error())
+		slog.Error("ensure agent source failed", "handler", "agentMetrics", "agent_id", req.AgentID, "err", srcErr)
+		writeJSONError(w, http.StatusInternalServerError, "db_error", "internal error")
 		return
 	}
 	payload := &adapters.AgentMetricsPayload{
@@ -200,8 +211,8 @@ func (s *Server) agentMetrics(w http.ResponseWriter, r *http.Request) {
 		Snapshots: req.Snapshots,
 	}
 	if _, pErr := s.Ingestor.Ingest(r.Context(), "agent-metrics", srcID, payload); pErr != nil {
-		slog.Warn("pipeline ingest failed", "kind", "agent-metrics", "agent", req.AgentID, "err", pErr)
-		writeJSONError(w, http.StatusInternalServerError, "db_error", pErr.Error())
+		slog.Error("pipeline ingest failed", "handler", "agentMetrics", "kind", "agent-metrics", "agent_id", req.AgentID, "err", pErr)
+		writeJSONError(w, http.StatusInternalServerError, "db_error", "internal error")
 		return
 	}
 
@@ -218,9 +229,14 @@ func (s *Server) agentDiscoveries(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "bad_request", "agent_id required")
 		return
 	}
+	if len(req.Sightings) > 10000 {
+		writeJSONError(w, http.StatusRequestEntityTooLarge, "payload_too_large", "too many sightings")
+		return
+	}
 	a, err := s.Store.GetAgent(r.Context(), req.AgentID)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		slog.Error("get agent failed", "handler", "agentDiscoveries", "agent_id", req.AgentID, "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "db_error", "internal error")
 		return
 	}
 	if a == nil || a.Status != store.AgentStatusApproved {
@@ -270,7 +286,8 @@ func (s *Server) agentInventory(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := s.Store.GetAgent(r.Context(), req.AgentID)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		slog.Error("get agent failed", "handler", "agentInventory", "agent_id", req.AgentID, "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "db_error", "internal error")
 		return
 	}
 	if a == nil || a.Status != store.AgentStatusApproved {
@@ -279,7 +296,8 @@ func (s *Server) agentInventory(w http.ResponseWriter, r *http.Request) {
 	}
 	blob, err := json.Marshal(req.Inventory)
 	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "bad_request", "marshal inventory: "+err.Error())
+		slog.Error("marshal inventory failed", "handler", "agentInventory", "agent_id", req.AgentID, "err", err)
+		writeJSONError(w, http.StatusBadRequest, "bad_request", "invalid inventory data")
 		return
 	}
 	collected := req.Inventory.CollectedAt
@@ -288,7 +306,8 @@ func (s *Server) agentInventory(w http.ResponseWriter, r *http.Request) {
 	}
 	primaryIP := pickPrimaryIP(req.Inventory)
 	if err := s.Store.SetAgentInventory(r.Context(), req.AgentID, string(blob), primaryIP, collected); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		slog.Error("set agent inventory failed", "handler", "agentInventory", "agent_id", req.AgentID, "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "db_error", "internal error")
 		return
 	}
 	_ = s.Store.LogEvent(r.Context(), &store.Event{
@@ -310,7 +329,7 @@ func (s *Server) agentInventory(w http.ResponseWriter, r *http.Request) {
 	// Link the agent to its hardware so Device.AgentID is populated on the
 	// device detail page (hydrateDevices joins systems on hardware_id).
 	if mac := pickPrimaryMAC(req.Inventory); mac != "" {
-		_ = s.Store.EnsureAgentSystem(r.Context(), req.AgentID, mac)
+		_ = s.Store.EnsureAgentSystem(r.Context(), req.AgentID, pipeline.NormalizeMAC(mac))
 	}
 
 	// Write expanded metric snapshots from inventory data (temperature, battery).
@@ -360,7 +379,8 @@ func (s *Server) agentReleaseDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	f, err := s.Releases.Open(entry)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "open_failed", err.Error())
+		slog.Error("open release file failed", "handler", "agentReleaseDownload", "version", version, "filename", filename, "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "open_failed", "internal error")
 		return
 	}
 	defer f.Close()

@@ -2,6 +2,7 @@ package httpsrv
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -159,11 +160,13 @@ func (s *Server) agentEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	tags := store.ParseTagInput(r.FormValue("tags"))
 	if err := s.Store.UpdateAgentNotes(r.Context(), id, notes); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("update agent notes failed", "handler", "agentEdit", "agent_id", id, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if err := s.Store.SetTagsForTarget(r.Context(), store.TagTargetAgent, id, tags); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("set agent tags failed", "handler", "agentEdit", "agent_id", id, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	devID, _ := s.Store.PrimaryDeviceIDForAgent(r.Context(), id)
@@ -211,7 +214,8 @@ func (s *Server) agentApprove(w http.ResponseWriter, r *http.Request) {
 		approver = user.Username
 	}
 	if err := s.Store.ApproveAgent(r.Context(), id, approver); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		slog.Error("approve agent failed", "handler", "agentApprove", "agent_id", id, "err", err)
+		http.Error(w, "internal error", http.StatusBadRequest)
 		return
 	}
 	a, _ := s.Store.GetAgent(r.Context(), id)
@@ -231,7 +235,8 @@ func (s *Server) agentApprove(w http.ResponseWriter, r *http.Request) {
 func (s *Server) agentDeregister(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if err := s.Store.DeregisterAgent(r.Context(), id); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		slog.Error("deregister agent failed", "handler", "agentDeregister", "agent_id", id, "err", err)
+		http.Error(w, "internal error", http.StatusBadRequest)
 		return
 	}
 	_ = s.Store.LogEvent(r.Context(), &store.Event{
@@ -252,7 +257,8 @@ func (s *Server) uiAgentMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 	snaps, err := s.Store.SnapshotsSince(r.Context(), id, since)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		slog.Error("snapshots since failed", "handler", "uiAgentMetrics", "agent_id", id, "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "db_error", "internal error")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

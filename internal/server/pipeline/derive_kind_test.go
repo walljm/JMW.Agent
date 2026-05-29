@@ -214,6 +214,26 @@ func TestClassify(t *testing.T) {
 			want: KindServer,
 		},
 		{
+			name: "phone hostname → mobile",
+			sig:  deriveSignals{hostnames: []string{"walljmphone.home"}},
+			want: KindMobile,
+		},
+		{
+			name: "myphone hostname → mobile",
+			sig:  deriveSignals{hostnames: []string{"myphone"}},
+			want: KindMobile,
+		},
+		{
+			name: "onhub hostname → router",
+			sig:  deriveSignals{hostnames: []string{"google-onhub.home"}},
+			want: KindRouter,
+		},
+		{
+			name: "google-wifi hostname → router",
+			sig:  deriveSignals{hostnames: []string{"google-wifi.home"}},
+			want: KindRouter,
+		},
+		{
 			name: "no signals → empty",
 			sig:  deriveSignals{},
 			want: "",

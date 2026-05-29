@@ -268,6 +268,7 @@ type NetworkInfo struct {
 type NetInterface struct {
 	Name          string   `json:"name"`
 	MAC           string   `json:"mac,omitempty"`
+	PermMAC       string   `json:"perm_mac,omitempty"` // permanent hardware MAC when active MAC differs (e.g. bond master)
 	MTU           int      `json:"mtu,omitempty"`
 	IsUp          bool     `json:"is_up"`
 	IsLoopback    bool     `json:"is_loopback,omitempty"`

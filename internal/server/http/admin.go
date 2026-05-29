@@ -198,14 +198,15 @@ func (s *Server) adminTerrainPost(w http.ResponseWriter, r *http.Request) {
 
 	// Only overwrite token/password when the user actually typed a new value.
 	// Blank submission means "keep existing" — never wipe credentials silently.
+	// Use SetConfigEncrypted to encrypt secrets with the DEK.
 	if t := r.FormValue("terrain_token"); t != "" {
-		if err := s.Store.SetConfig(r.Context(), "terrain.token", t); err != nil {
+		if err := s.Store.SetConfigEncrypted(r.Context(), "terrain.token", t); err != nil {
 			http.Redirect(w, r, "/admin?err=db_error", http.StatusSeeOther)
 			return
 		}
 	}
 	if p := r.FormValue("terrain_password"); p != "" {
-		if err := s.Store.SetConfig(r.Context(), "terrain.password", p); err != nil {
+		if err := s.Store.SetConfigEncrypted(r.Context(), "terrain.password", p); err != nil {
 			http.Redirect(w, r, "/admin?err=db_error", http.StatusSeeOther)
 			return
 		}

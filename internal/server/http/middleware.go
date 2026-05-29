@@ -42,7 +42,7 @@ func (s *Server) requireSession(next http.Handler) http.Handler {
 			redirectToLogin(w, r)
 			return
 		}
-		_ = s.Store.TouchSession(r.Context(), sess.ID)
+		_ = s.Store.TouchSession(r.Context(), c.Value)
 		ctx := context.WithValue(r.Context(), ctxUser, user)
 		ctx = context.WithValue(ctx, ctxSession, sess)
 		next.ServeHTTP(w, r.WithContext(ctx))

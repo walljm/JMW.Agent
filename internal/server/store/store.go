@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/walljm/jmwagent/internal/server/dek"
 	_ "modernc.org/sqlite"
 )
 
@@ -21,7 +22,8 @@ var migrationFS embed.FS
 
 // Store is the database handle.
 type Store struct {
-	DB *sql.DB
+	DB      *sql.DB
+	DataKey *dek.Key // DEK for encrypting secrets at rest; nil = no encryption
 }
 
 // Open opens (or creates) the SQLite database at path and applies migrations.

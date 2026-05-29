@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/xml"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -86,6 +87,11 @@ func ssdpLookup(timeout time.Duration) map[string]SSDPInfo {
 		if info.Server == "" {
 			info.Server = h.server
 		}
+		if !isSafeUPnPURL(h.location) {
+			slog.Warn("ssdp: skipping unsafe LOCATION URL (SSRF prevention)", "location", h.location, "src_ip", h.ip)
+			out[h.ip] = info
+			continue
+		}
 		if friendly, mfr, model := fetchUPnPDescription(httpCli, h.location); friendly != "" || mfr != "" || model != "" {
 			if info.FriendlyName == "" {
 				info.FriendlyName = friendly
@@ -153,6 +159,49 @@ func parseSSDPHeaders(pkt []byte) map[string]string {
 			return out
 		}
 	}
+}
+
+// isSafeUPnPURL validates a LOCATION URL from an SSDP response to prevent
+// Server-Side Request Forgery (SSRF). It allows http/https to normal private
+// (RFC1918) addresses but rejects loopback, link-local metadata endpoints
+// (169.254.169.254), and IPv6 link-local ranges (fe80::/10).
+func isSafeUPnPURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	host := u.Hostname()
+	if host == "" {
+		return false
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		// Hostname — resolve to IP before checking.
+		addrs, err := net.LookupIP(host)
+		if err != nil || len(addrs) == 0 {
+			return false
+		}
+		ip = addrs[0]
+	}
+	if ip.IsLoopback() {
+		return false
+	}
+	// Block cloud metadata endpoint (AWS/GCP/Azure): 169.254.169.254
+	if ip.Equal(net.ParseIP("169.254.169.254")) {
+		return false
+	}
+	// Block IPv6 link-local: fe80::/10
+	fe80 := net.IPNet{
+		IP:   net.ParseIP("fe80::"),
+		Mask: net.CIDRMask(10, 128),
+	}
+	if fe80.Contains(ip) {
+		return false
+	}
+	return true
 }
 
 // fetchUPnPDescription fetches a UPnP device description XML and extracts

@@ -2,6 +2,7 @@ package httpsrv
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -12,7 +13,8 @@ import (
 func (s *Server) sourcesAPIList(w http.ResponseWriter, r *http.Request) {
 	sources, err := s.Store.ListSourcesForUI(r.Context())
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		slog.Error("list sources failed", "handler", "sourcesAPIList", "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "db_error", "internal error")
 		return
 	}
 	writeJSON(w, http.StatusOK, sources)
@@ -22,7 +24,8 @@ func (s *Server) sourcesAPIGet(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	src, err := s.Store.GetSource(r.Context(), id)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		slog.Error("get source failed", "handler", "sourcesAPIGet", "id", id, "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "db_error", "internal error")
 		return
 	}
 	if src == nil {
@@ -59,7 +62,8 @@ func (s *Server) sourcesAPICreate(w http.ResponseWriter, r *http.Request) {
 		PollIntervalSeconds: req.PollIntervalSecs,
 	}
 	if err := s.Store.CreateSource(r.Context(), src, nil); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		slog.Error("create source failed", "handler", "sourcesAPICreate", "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "db_error", "internal error")
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]string{"id": src.ID})
@@ -68,7 +72,8 @@ func (s *Server) sourcesAPICreate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) sourcesAPIDelete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if err := s.Store.DeleteSource(r.Context(), id); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		slog.Error("delete source failed", "handler", "sourcesAPIDelete", "id", id, "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "db_error", "internal error")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

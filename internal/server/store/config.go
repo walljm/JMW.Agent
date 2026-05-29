@@ -3,11 +3,14 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"time"
 
+	"github.com/walljm/jmwagent/internal/server/dek"
 	"github.com/walljm/jmwagent/internal/shared/duration"
 )
 
@@ -136,6 +139,50 @@ func parseDurationCompat(s string) (time.Duration, error) {
 	return duration.Parse(s)
 }
 
+// terrainSecretKeys are config keys whose values are encrypted with the DEK.
+var terrainSecretKeys = map[string]bool{
+	"terrain.token":    true,
+	"terrain.password": true,
+}
+
+// SetConfigEncrypted upserts a config value, encrypting it if the key is a
+// known secret key and a DEK is available.
+func (s *Store) SetConfigEncrypted(ctx context.Context, key, value string) error {
+	if terrainSecretKeys[key] && value != "" && s.DataKey != nil {
+		enc, err := s.DataKey.Encrypt(value)
+		if err != nil {
+			return fmt.Errorf("encrypt config %s: %w", key, err)
+		}
+		value = enc
+	}
+	return s.SetConfig(ctx, key, value)
+}
+
+// getConfigDecrypted reads a config value, decrypting it if the key is a
+// known secret key and a DEK is available. Legacy plaintext values are
+// returned as-is (graceful backwards compatibility).
+func (s *Store) getConfigDecrypted(ctx context.Context, key string) (string, error) {
+	val, err := s.GetConfig(ctx, key)
+	if err != nil || val == "" {
+		return val, err
+	}
+	if !terrainSecretKeys[key] || s.DataKey == nil {
+		return val, nil
+	}
+	// Try to decrypt. If the value isn't valid base64, it's legacy plaintext.
+	if _, b64Err := base64.StdEncoding.DecodeString(val); b64Err != nil {
+		return val, nil // legacy plaintext
+	}
+	dec, err := s.DataKey.Decrypt(val)
+	if err != nil {
+		// Valid base64 but decrypt failed — log warning, return as-is.
+		slog.Warn("decrypt config value failed (possible key mismatch)",
+			"key", key)
+		return val, nil
+	}
+	return dec, nil
+}
+
 // TerrainConfig holds the terrain poller connection settings from the DB.
 type TerrainConfig struct {
 	URL      string
@@ -145,15 +192,63 @@ type TerrainConfig struct {
 }
 
 // GetTerrainConfig reads terrain connection settings from the config table.
+// Secret fields (token, password) are decrypted using the DEK.
 func (s *Store) GetTerrainConfig(ctx context.Context) (TerrainConfig, error) {
 	cfg, err := s.GetAllConfig(ctx)
 	if err != nil {
 		return TerrainConfig{}, err
 	}
-	return TerrainConfig{
+	tc := TerrainConfig{
 		URL:      cfg["terrain.url"],
-		Token:    cfg["terrain.token"],
 		Username: cfg["terrain.username"],
-		Password: cfg["terrain.password"],
-	}, nil
+	}
+
+	// Decrypt secret fields individually.
+	tc.Token, err = s.getConfigDecrypted(ctx, "terrain.token")
+	if err != nil {
+		return TerrainConfig{}, err
+	}
+	tc.Password, err = s.getConfigDecrypted(ctx, "terrain.password")
+	if err != nil {
+		return TerrainConfig{}, err
+	}
+	return tc, nil
+}
+
+// RotateConfigSecrets decrypts all secret config values with decryptKey and
+// re-encrypts them with the store's current DataKey. Returns the number of
+// keys re-encrypted.
+func (s *Store) RotateConfigSecrets(ctx context.Context, decryptKey, encryptKey *dek.Key) (int, error) {
+	count := 0
+	for key := range terrainSecretKeys {
+		val, err := s.GetConfig(ctx, key)
+		if err != nil || val == "" {
+			continue
+		}
+		// Decrypt with old key.
+		if _, b64Err := base64.StdEncoding.DecodeString(val); b64Err != nil {
+			continue // legacy plaintext, will be encrypted on next write
+		}
+		if decryptKey == nil {
+			continue
+		}
+		dec, err := decryptKey.Decrypt(val)
+		if err != nil {
+			slog.Warn("rotate config secret: decrypt failed", "key", key)
+			continue
+		}
+		// Re-encrypt with new key.
+		if encryptKey == nil {
+			continue
+		}
+		enc, err := encryptKey.Encrypt(dec)
+		if err != nil {
+			return count, fmt.Errorf("rotate config %s: encrypt: %w", key, err)
+		}
+		if err := s.SetConfig(ctx, key, enc); err != nil {
+			return count, fmt.Errorf("rotate config %s: store: %w", key, err)
+		}
+		count++
+	}
+	return count, nil
 }

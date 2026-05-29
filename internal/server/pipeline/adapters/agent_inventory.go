@@ -50,8 +50,13 @@ func (a *AgentInventory) Adapt(_ context.Context, sourceID string, payload any) 
 			continue
 		}
 
+		mac := iface.MAC
+		if iface.PermMAC != "" {
+			mac = iface.PermMAC
+		}
+
 		obs := pipeline.ObservationInput{
-			MAC:        iface.MAC,
+			MAC:        mac,
 			SourceID:   sourceID,
 			SourceKind: "agent",
 			ObsType:    "inventory",

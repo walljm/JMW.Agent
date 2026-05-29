@@ -25,9 +25,8 @@ import (
 func main() {
 	var (
 		cfgPath  = flag.String("config", "agent.toml", "path to agent config file")
-		serverU  = flag.String("server", "", "server URL (overrides config)")
-		psk      = flag.String("psk", "", "agent PSK (overrides config)")
-		idPath   = flag.String("id-file", "", "agent identity file (overrides config)")
+		serverU = flag.String("server", "", "server URL (overrides config)")
+		idPath  = flag.String("id-file", "", "agent identity file (overrides config)")
 		interval = flag.Int("interval", 0, "metrics interval seconds (overrides config)")
 		showVer  = flag.Bool("version", false, "print version and exit")
 	)
@@ -49,8 +48,8 @@ func main() {
 	if *serverU != "" {
 		cfg.ServerURL = *serverU
 	}
-	if *psk != "" {
-		cfg.PSK = *psk
+	if v := os.Getenv("JMW_PSK"); v != "" {
+		cfg.PSK = v
 	}
 	if *idPath != "" {
 		cfg.IDFile = *idPath

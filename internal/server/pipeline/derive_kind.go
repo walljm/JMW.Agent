@@ -285,7 +285,9 @@ func classify(s *deriveSignals) string {
 			strings.HasPrefix(h, "gw-"),
 			strings.HasPrefix(h, "edge-"),
 			strings.HasPrefix(h, "fw-"),
-			strings.HasPrefix(h, "firewall"):
+			strings.HasPrefix(h, "firewall"),
+			strings.Contains(h, "onhub"),
+			strings.Contains(h, "google-wifi"):
 			return KindRouter
 		case strings.HasPrefix(h, "switch"),
 			strings.HasPrefix(h, "sw-"):
@@ -308,6 +310,7 @@ func classify(s *deriveSignals) string {
 			return KindCamera
 		case strings.Contains(h, "iphone"),
 			strings.Contains(h, "ipad"),
+			strings.Contains(h, "phone"),
 			strings.HasPrefix(h, "pixel-"),
 			strings.HasPrefix(h, "galaxy-"):
 			return KindMobile
@@ -402,7 +405,7 @@ func classifyByVendor(vendor string) string {
 
 	// IoT / smart home.
 	case contains(vendor, "espressif", "nest labs", "ring llc", "amazon technologies",
-		"google llc", "philips lighting", "tuya smart", "raspberry pi",
+		"philips lighting", "tuya smart", "raspberry pi",
 		"shenzhen lumi", "particle industries", "nordic semiconductor"):
 		return KindIoT
 

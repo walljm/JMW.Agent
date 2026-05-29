@@ -67,7 +67,13 @@
     </tbody>
   </table>
   </div>
-  {{else}}<p class="muted">No devices discovered yet. Agents will report ARP/mDNS sightings during their normal cycle.</p>{{end}}
+  {{else}}
+    {{if and .NetworkFilter (ne .NetworkFilter "monitored") (ne .NetworkFilter "all")}}
+      <p class="muted">No devices found on the selected network. The network may not have a CIDR configured, or no discovered devices match its address range.</p>
+    {{else}}
+      <p class="muted">No devices discovered yet. Agents will report ARP/mDNS sightings during their normal cycle.</p>
+    {{end}}
+  {{end}}
 </main>
 {{template "foot" .}}
 

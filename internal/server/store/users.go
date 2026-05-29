@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"errors"
@@ -11,6 +12,14 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 )
+
+// hashToken returns the hex-encoded SHA-256 hash of a raw session token.
+// Tokens are hashed before storage so that a database compromise does not
+// directly expose valid session credentials.
+func hashToken(token string) string {
+	h := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(h[:])
+}
 
 // User represents an authenticated dashboard user.
 type User struct {
@@ -95,25 +104,34 @@ type Session struct {
 }
 
 // CreateSession creates a session for the given user.
+// The returned Session.ID is the raw token (for the cookie); only the
+// SHA-256 hash is persisted to the database so that a DB compromise does
+// not expose valid session tokens.
 func (s *Store) CreateSession(ctx context.Context, userID int64, lifetime time.Duration) (*Session, error) {
-	id, err := randomToken(32)
+	rawToken, err := randomToken(32)
 	if err != nil {
 		return nil, err
 	}
+	hashed := hashToken(rawToken)
 	now := time.Now().UTC()
 	exp := now.Add(lifetime)
 	if _, err := s.DB.ExecContext(ctx,
 		`INSERT INTO sessions(id, user_id, created_at, expires_at, last_used_at) VALUES(?,?,?,?,?)`,
-		id, userID, now.Format(time.RFC3339), exp.Format(time.RFC3339), now.Format(time.RFC3339)); err != nil {
+		hashed, userID, now.Format(time.RFC3339), exp.Format(time.RFC3339), now.Format(time.RFC3339)); err != nil {
 		return nil, err
 	}
-	return &Session{ID: id, UserID: userID, CreatedAt: now, ExpiresAt: exp, LastUsedAt: now}, nil
+	// Return the raw token so callers can set it as the cookie value.
+	return &Session{ID: rawToken, UserID: userID, CreatedAt: now, ExpiresAt: exp, LastUsedAt: now}, nil
 }
 
-// GetSession returns a session by ID, only if it has not expired.
-func (s *Store) GetSession(ctx context.Context, id string) (*Session, error) {
+// GetSession returns a session by raw token, only if it has not expired.
+// The raw token is hashed before querying the database.
+// NOTE: this intentionally invalidates any pre-existing sessions that were
+// stored with unhashed tokens (a one-time forced logout for security).
+func (s *Store) GetSession(ctx context.Context, rawToken string) (*Session, error) {
+	hashed := hashToken(rawToken)
 	row := s.DB.QueryRowContext(ctx,
-		`SELECT id, user_id, created_at, expires_at, last_used_at FROM sessions WHERE id = ?`, id)
+		`SELECT id, user_id, created_at, expires_at, last_used_at FROM sessions WHERE id = ?`, hashed)
 	var sess Session
 	var c, e, l string
 	if err := row.Scan(&sess.ID, &sess.UserID, &c, &e, &l); err != nil {
@@ -126,23 +144,27 @@ func (s *Store) GetSession(ctx context.Context, id string) (*Session, error) {
 	sess.ExpiresAt, _ = time.Parse(time.RFC3339, e)
 	sess.LastUsedAt, _ = time.Parse(time.RFC3339, l)
 	if time.Now().UTC().After(sess.ExpiresAt) {
-		_ = s.DeleteSession(ctx, id)
+		_ = s.DeleteSession(ctx, rawToken)
 		return nil, nil
 	}
 	return &sess, nil
 }
 
-// TouchSession bumps last_used_at.
-func (s *Store) TouchSession(ctx context.Context, id string) error {
+// TouchSession bumps last_used_at. Accepts the raw token and hashes it
+// before querying.
+func (s *Store) TouchSession(ctx context.Context, rawToken string) error {
+	hashed := hashToken(rawToken)
 	_, err := s.DB.ExecContext(ctx,
 		`UPDATE sessions SET last_used_at = ? WHERE id = ?`,
-		time.Now().UTC().Format(time.RFC3339), id)
+		time.Now().UTC().Format(time.RFC3339), hashed)
 	return err
 }
 
-// DeleteSession removes a session.
-func (s *Store) DeleteSession(ctx context.Context, id string) error {
-	_, err := s.DB.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, id)
+// DeleteSession removes a session. Accepts the raw token and hashes it
+// before querying.
+func (s *Store) DeleteSession(ctx context.Context, rawToken string) error {
+	hashed := hashToken(rawToken)
+	_, err := s.DB.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, hashed)
 	return err
 }
 

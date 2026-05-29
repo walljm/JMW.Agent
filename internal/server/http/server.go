@@ -2,6 +2,7 @@ package httpsrv
 
 import (
 	"context"
+	"crypto/subtle"
 	"embed"
 	"errors"
 	"fmt"
@@ -72,13 +73,20 @@ func New(ctx context.Context, cfg *config.Config, st *store.Store, certSHA strin
 		terrainCfg.Username = cfg.Terrain.Username
 		terrainCfg.Password = cfg.Terrain.Password
 		// Persist to DB so the admin page shows the migrated values.
+		// Use SetConfigEncrypted for secret keys so they're encrypted at rest.
 		for k, v := range map[string]string{
 			"terrain.url":      terrainCfg.URL,
-			"terrain.token":    terrainCfg.Token,
 			"terrain.username": terrainCfg.Username,
-			"terrain.password": terrainCfg.Password,
 		} {
 			if err := st.SetConfig(ctx, k, v); err != nil {
+				slog.Warn("terrain migration: persist to db failed", "key", k, "err", err)
+			}
+		}
+		for k, v := range map[string]string{
+			"terrain.token":    terrainCfg.Token,
+			"terrain.password": terrainCfg.Password,
+		} {
+			if err := st.SetConfigEncrypted(ctx, k, v); err != nil {
 				slog.Warn("terrain migration: persist to db failed", "key", k, "err", err)
 			}
 		}
@@ -210,6 +218,7 @@ func (s *Server) Router() http.Handler {
 
 	// Agent (machine-to-machine) API: PSK-authenticated, no session/CSRF.
 	r.Route("/api/v1/agent", func(ar chi.Router) {
+		ar.Use(maxBody(16 << 20)) // 16 MB
 		ar.Use(s.requireAgentPSK)
 		ar.Use(s.countIngest)
 		ar.Post("/register", s.agentRegister)
@@ -224,6 +233,7 @@ func (s *Server) Router() http.Handler {
 	// Dashboard (browser, session-authenticated).
 	r.Group(func(pr chi.Router) {
 		pr.Use(s.requireSession)
+		pr.Use(maxBody(1 << 20)) // 1 MB for UI mutations
 		pr.With(s.requireCSRF).Post("/logout", s.logoutPost)
 
 		pr.Get("/", s.dashboardGet)
@@ -308,8 +318,20 @@ func secHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Content-Security-Policy",
 			"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'")
+		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 		next.ServeHTTP(w, r)
 	})
+}
+
+// maxBody wraps the request body with http.MaxBytesReader to enforce a
+// payload size limit. Returns 413 if the client sends more than limit bytes.
+func maxBody(limit int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // apiVersionHeader sets X-API-Version on all /api/ responses.
@@ -332,7 +354,7 @@ func (s *Server) requireAgentPSK(next http.Handler) http.Handler {
 				got = strings.TrimPrefix(authz, "Bearer ")
 			}
 		}
-		if got == "" || got != s.Config.AgentPSK {
+		if got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(s.Config.AgentPSK)) != 1 {
 			http.Error(w, "agent psk required", http.StatusUnauthorized)
 			return
 		}

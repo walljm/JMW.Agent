@@ -236,15 +236,14 @@ func (s *Store) UpdateNetworkName(ctx context.Context, id, name string) error {
 }
 
 // ListDevicesOnNetwork returns devices whose IPv4 address falls within the
-// network's CIDR range. Looks up the network's CIDR, then filters interfaces
-// that have a matching address.
+// network's CIDR range. Returns an empty list when the network is not found
+// or has no CIDR — callers should not assume a fallback to all devices.
 func (s *Store) ListDevicesOnNetwork(ctx context.Context, networkID string) ([]*Device, error) {
-	net, err := s.GetNetwork(ctx, networkID)
-	if err != nil || net == nil || net.CIDR == "" {
-		// Fallback: can't filter without CIDR.
-		return s.ListDevices(ctx)
+	nw, err := s.GetNetwork(ctx, networkID)
+	if err != nil || nw == nil || nw.CIDR == "" {
+		return nil, nil
 	}
-	return s.ListDevicesInCIDR(ctx, net.CIDR)
+	return s.ListDevicesInCIDR(ctx, nw.CIDR)
 }
 
 // ListDevicesOnMonitoredNetworks returns devices on any monitored network.

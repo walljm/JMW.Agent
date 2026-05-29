@@ -1,6 +1,7 @@
 package httpsrv
 
 import (
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -40,11 +41,13 @@ func (s *Server) networkEdit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.Store.UpdateNetworkName(r.Context(), id, name); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("update network name failed", "handler", "networkEdit", "id", id, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if err := s.Store.UpdateNetworkStatus(r.Context(), id, status); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("update network status failed", "handler", "networkEdit", "id", id, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 

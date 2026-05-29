@@ -12,11 +12,11 @@ build: build-server build-agent
 
 build-server:
 	@mkdir -p $(BINARY_DIR)
-	CGO_ENABLED=0 go build $(LDFLAGS) -o $(BINARY_DIR)/jmw-server ./cmd/server
+	CGO_ENABLED=0 go build -trimpath $(LDFLAGS) -o $(BINARY_DIR)/jmw-server ./cmd/server
 
 build-agent:
 	@mkdir -p $(BINARY_DIR)
-	CGO_ENABLED=0 go build $(LDFLAGS) -o $(BINARY_DIR)/jmw-agent ./cmd/agent
+	CGO_ENABLED=0 go build -trimpath $(LDFLAGS) -o $(BINARY_DIR)/jmw-agent ./cmd/agent
 
 build-all: build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64
 

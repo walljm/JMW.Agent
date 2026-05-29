@@ -445,29 +445,36 @@ func (s *Store) RotateSecrets(ctx context.Context, decryptKey, encryptKey *dek.K
 		return 0, err
 	}
 
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
 	count := 0
 	for _, sr := range sources {
 		fields := SecretFields[sr.kind]
 		if len(fields) == 0 {
 			continue
 		}
-		// Decrypt with old key.
 		decrypted, err := decryptSecrets(sr.configJSON, sr.kind, decryptKey)
 		if err != nil {
-			return count, fmt.Errorf("source %s: decrypt: %w", sr.id, err)
+			return 0, fmt.Errorf("source %s: decrypt: %w", sr.id, err)
 		}
-		// Re-encrypt with new key.
 		encrypted, err := encryptSecrets(decrypted, sr.kind, encryptKey)
 		if err != nil {
-			return count, fmt.Errorf("source %s: encrypt: %w", sr.id, err)
+			return 0, fmt.Errorf("source %s: encrypt: %w", sr.id, err)
 		}
 		now := time.Now().UTC().Format(time.RFC3339)
-		if _, err := s.DB.ExecContext(ctx,
+		if _, err := tx.ExecContext(ctx,
 			`UPDATE sources SET config_json = ?, updated_at = ? WHERE id = ?`,
 			encrypted, now, sr.id); err != nil {
-			return count, fmt.Errorf("source %s: update: %w", sr.id, err)
+			return 0, fmt.Errorf("source %s: update: %w", sr.id, err)
 		}
 		count++
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit: %w", err)
 	}
 	return count, nil
 }

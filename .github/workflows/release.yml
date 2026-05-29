@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write # for creating GitHub Releases
+  id-token: write # for OIDC-based keyless cosign signing
 
 concurrency:
   group: release
@@ -19,9 +20,9 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
           go-version-file: go.mod
           # Self-hosted runner already has a persistent GOMODCACHE; the cache
@@ -60,7 +61,7 @@ jobs:
           (cd dist && sha256sum * > SHA256SUMS)
           ls -la dist/
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         with:
           name: binaries
           path: dist/
@@ -70,12 +71,17 @@ jobs:
     needs: build
     runs-on: [self-hosted, core-services]
     steps:
-      - uses: actions/checkout@v6 # needed for `gh release create` to know the repo
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6 — needed for `gh release create` to know the repo
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           name: binaries
           path: dist/
+
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac  # v3
+
+      - name: Sign checksums
+        run: cosign sign-blob --yes --output-signature dist/SHA256SUMS.sig dist/SHA256SUMS
 
       - name: Create GitHub Release
         env:
@@ -91,11 +97,11 @@ jobs:
     needs: build
     runs-on: [self-hosted, core-services]
     steps:
-      - uses: actions/checkout@v6 # Dockerfile lives in the repo
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6 — Dockerfile lives in the repo
 
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4
 
-      - uses: docker/login-action@v4
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4
         with:
           username: ${{ secrets.DOCKER_HUB_USER }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
@@ -113,11 +119,21 @@ jobs:
             --push \
             .
 
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac  # v3
+
+      - name: Sign Docker image
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          cosign sign --yes "walljm/jmw-agent:${VERSION}"
+          cosign sign --yes "walljm/jmw-agent:latest"
+
   deploy-server:
     needs: build
     runs-on: [self-hosted, core-services]
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           name: binaries
           path: dist/
@@ -132,7 +148,7 @@ jobs:
     needs: build
     runs-on: [self-hosted, core-services]
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           name: binaries
           path: dist/

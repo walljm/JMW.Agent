@@ -494,6 +494,20 @@ func ifaceEnrich(name string, ni *proto.NetInterface) {
 			ni.Type = "virtual"
 		}
 	}
+
+	// Bond master: read the first slave's permanent hardware MAC so the
+	// pipeline identity uses an OUI-resolvable address instead of the
+	// bond's auto-generated locally-administered MAC.
+	slavesPath := hostfs.Path("/sys/class/net/" + name + "/bonding/slaves")
+	if raw := strings.TrimSpace(readSafe(slavesPath)); raw != "" {
+		for _, slave := range strings.Fields(raw) {
+			permPath := hostfs.Path("/sys/class/net/" + slave + "/bonding_slave/perm_hwaddr")
+			if perm := strings.TrimSpace(readSafe(permPath)); perm != "" {
+				ni.PermMAC = perm
+				break
+			}
+		}
+	}
 }
 
 func defaultGateways(ctx context.Context) (gw4, gw6 string) {

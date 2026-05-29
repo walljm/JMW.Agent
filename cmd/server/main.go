@@ -47,7 +47,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		slog.Error("data dir", "err", err)
 		os.Exit(1)
 	}
@@ -77,7 +77,6 @@ func main() {
 		os.Exit(1)
 	} else if pskGen {
 		dirty = true
-		slog.Info("generated agent PSK", "psk", cfg.AgentPSK)
 		fmt.Fprintf(os.Stderr, "\n*** AGENT PSK (record this once): %s ***\n\n", cfg.AgentPSK)
 	}
 	if dirty {
@@ -104,6 +103,7 @@ func main() {
 		slog.Error("dek init", "err", err)
 		os.Exit(1)
 	}
+	st.DataKey = dataKey
 
 	// DEK rotation subcommand.
 	if *rotateKey {
@@ -190,10 +190,28 @@ func runRotateKey(ctx context.Context, st *store.Store, oldKey *dek.Key, dekPath
 	if err != nil {
 		// Restore old key on failure.
 		_ = os.WriteFile(dekPath, oldRaw, 0o600)
-		return fmt.Errorf("re-encrypt with new key: %w", err)
+		return fmt.Errorf("re-encrypt sources with new key: %w", err)
 	}
 
-	slog.Info("DEK rotation complete", "sources_re_encrypted", count, "backup", backupPath)
+	// Rotate config secrets (terrain credentials).
+	cfgCount, err := st.RotateConfigSecrets(ctx, oldKey, newKey)
+	if err != nil {
+		_ = os.WriteFile(dekPath, oldRaw, 0o600)
+		return fmt.Errorf("re-encrypt config secrets with new key: %w", err)
+	}
+
+	// Rotate channel secrets.
+	chCount, err := st.RotateChannelSecrets(ctx, oldKey, newKey)
+	if err != nil {
+		_ = os.WriteFile(dekPath, oldRaw, 0o600)
+		return fmt.Errorf("re-encrypt channel secrets with new key: %w", err)
+	}
+
+	slog.Info("DEK rotation complete",
+		"sources_re_encrypted", count,
+		"config_secrets_re_encrypted", cfgCount,
+		"channels_re_encrypted", chCount,
+		"backup", backupPath)
 	fmt.Fprintf(os.Stderr, "DEK rotated. Old key backed up to %s\n", backupPath)
 	return nil
 }

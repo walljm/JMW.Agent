@@ -90,7 +90,7 @@ func (s *Store) ListDevicesInCIDRs(ctx context.Context, cidrs []string) ([]*Devi
 		nets = append(nets, ipNet)
 	}
 	if len(nets) == 0 {
-		return s.ListDevices(ctx)
+		return nil, nil
 	}
 
 	// Get all devices (hydrated with IPs).
