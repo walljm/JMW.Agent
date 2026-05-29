@@ -382,6 +382,31 @@ input:focus-visible, select:focus-visible, textarea:focus-visible,
 [data-theme="light"] .badge.health-unhealthy { color: #cf222e; border-color: #cf222e; }
 [data-theme="light"] .badge-warn { background: rgba(154, 103, 0, 0.12); color: #9a6700; }
 
+/* Infrastructure service type badges */
+.badge.infra-domain-controller { color: #a78bfa; border-color: #a78bfa; }
+.badge.infra-ldap               { color: #a78bfa; border-color: #a78bfa; }
+.badge.infra-kerberos           { color: #a78bfa; border-color: #a78bfa; }
+.badge.infra-dns                { color: #38bdf8; border-color: #38bdf8; }
+.badge.infra-ntp                { color: #94a3b8; border-color: #94a3b8; }
+.badge.infra-syslog             { color: #fbbf24; border-color: #fbbf24; }
+.badge.infra-radius             { color: #fb923c; border-color: #fb923c; }
+.badge.infra-openvpn            { color: #34d399; border-color: #34d399; }
+.badge.infra-wireguard          { color: #34d399; border-color: #34d399; }
+.badge.infra-ipsec              { color: #34d399; border-color: #34d399; }
+.badge.infra-proxmox            { color: #f87171; border-color: #f87171; }
+.badge.infra-esxi               { color: #f87171; border-color: #f87171; }
+[data-theme="light"] .badge.infra-domain-controller,
+[data-theme="light"] .badge.infra-ldap,
+[data-theme="light"] .badge.infra-kerberos { color: #7c3aed; border-color: #7c3aed; }
+[data-theme="light"] .badge.infra-dns      { color: #0284c7; border-color: #0284c7; }
+[data-theme="light"] .badge.infra-syslog   { color: #b45309; border-color: #b45309; }
+[data-theme="light"] .badge.infra-radius   { color: #c2410c; border-color: #c2410c; }
+[data-theme="light"] .badge.infra-openvpn,
+[data-theme="light"] .badge.infra-wireguard,
+[data-theme="light"] .badge.infra-ipsec    { color: #047857; border-color: #047857; }
+[data-theme="light"] .badge.infra-proxmox,
+[data-theme="light"] .badge.infra-esxi     { color: #b91c1c; border-color: #b91c1c; }
+
 /* mDNS sub-section accordions on device detail */
 .mdns-section details.mdns-sub { margin: 0.5rem 0; border: 1px solid var(--border, #30363d); border-radius: 6px; padding: 0.25rem 0.75rem; }
 .mdns-section details.mdns-sub > summary { cursor: pointer; padding: 0.4rem 0; font-weight: 600; }

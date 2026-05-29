@@ -40,6 +40,53 @@
   <p class="muted">{{$s.Error}}</p>
   {{end}}
 
+  <!-- Infrastructure Services section -->
+  {{if .Services}}
+  <section>
+    <h2>Infrastructure Services</h2>
+    <p class="muted small">Detected from agent inventory listening ports. <a href="#" class="muted">Refreshes every 2 minutes.</a></p>
+    <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Service</th>
+          <th>Host</th>
+          <th>Ports</th>
+          <th>Details</th>
+          <th>Last seen</th>
+        </tr>
+      </thead>
+      <tbody>
+      {{range .Services}}
+        <tr>
+          <td><span class="badge infra-{{.ServiceType}}">{{.Label}}</span></td>
+          <td>
+            {{if .DeviceID}}<a href="/devices/{{.DeviceID}}">{{else}}<span>{{end}}
+              {{if .Hostname}}{{.Hostname}}{{else}}{{.IP}}{{end}}
+            {{if .DeviceID}}</a>{{else}}</span>{{end}}
+            {{if and .Hostname .IP}}<br><span class="muted small mono">{{.IP}}</span>{{end}}
+          </td>
+          <td class="mono small">
+            {{range $i, $p := .MatchedPorts}}{{if $i}}, {{end}}{{$p}}{{end}}
+          </td>
+          <td class="small">
+            {{if .Details}}
+              {{with index .Details "domain"}}<span class="badge muted">{{.}}</span> {{end}}
+              {{with index .Details "ad_level"}}Windows {{.}} {{end}}
+              {{with index .Details "dc_hostname"}}<span class="muted">{{.}}</span>{{end}}
+              {{with index .Details "vendor"}}{{.}} {{end}}
+              {{with index .Details "version"}}<span class="muted">{{.}}</span>{{end}}
+            {{else}}<span class="muted">—</span>{{end}}
+          </td>
+          <td class="muted small">{{shortTime .LastSeen}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+  </section>
+  {{end}}
+
   {{if not $s.Reachable}}
   <p class="muted">No DNS/DHCP server reachable. Set <code>url</code> under <code>[terrain]</code> in <code>server.toml</code> to point at your AdGuard Home, Technitium DNS, or Pi-hole instance.</p>
   {{else}}

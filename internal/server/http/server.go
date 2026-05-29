@@ -18,6 +18,7 @@ import (
 
 	"github.com/walljm/jmwagent/internal/server/alerting"
 	"github.com/walljm/jmwagent/internal/server/config"
+	"github.com/walljm/jmwagent/internal/server/infra"
 	"github.com/walljm/jmwagent/internal/server/pipeline"
 	"github.com/walljm/jmwagent/internal/server/pipeline/adapters"
 	"github.com/walljm/jmwagent/internal/server/releases"
@@ -37,6 +38,7 @@ type Server struct {
 	Config        *config.Config
 	Store         *store.Store
 	Terrain       *terrain.Poller
+	Infra         *infra.Scanner
 	Releases      *releases.Manager
 	Ingestor      *pipeline.Ingestor
 	templates     *template.Template
@@ -81,6 +83,7 @@ func New(cfg *config.Config, st *store.Store, certSHA string) (*Server, error) {
 		Config:            cfg,
 		Store:             st,
 		Terrain:           poller,
+		Infra:             infra.New(st),
 		Releases:          rel,
 		Ingestor:          ing,
 		templates:         tmpl,
@@ -337,6 +340,7 @@ func (s *Server) StartBackground(ctx context.Context) {
 	}()
 	go (&alerting.Evaluator{Store: s.Store, Interval: 30 * time.Second}).Run(ctx)
 	go s.Terrain.Run(ctx)
+	go s.Infra.Run(ctx)
 	go s.RunRollups(ctx)
 	if s.Releases != nil && s.Releases.Enabled() {
 		go func() {

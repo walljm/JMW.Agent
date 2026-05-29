@@ -6,11 +6,11 @@ import (
 )
 
 func (s *Server) terrainGet(w http.ResponseWriter, r *http.Request) {
-	st := s.Terrain.Status()
 	s.render(w, r, "terrain.html", map[string]any{
-		"Title":  "Key Cyber Terrain",
-		"Active": "terrain",
-		"Status": st,
+		"Title":    "Key Cyber Terrain",
+		"Active":   "terrain",
+		"Status":   s.Terrain.Status(),
+		"Services": s.Infra.Services(),
 	})
 }
 
