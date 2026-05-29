@@ -94,7 +94,11 @@ func (s *Server) agentRegister(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	a, _ := s.Store.GetAgent(r.Context(), req.AgentID)
+	a, err := s.Store.GetAgent(r.Context(), req.AgentID)
+	if err != nil || a == nil {
+		writeJSONError(w, http.StatusInternalServerError, "db_error", "could not read agent after registration")
+		return
+	}
 	heartbeatSecs, discoverySecs, inventorySecs, err := s.Store.GetAgentIntervals(r.Context())
 	if err != nil {
 		slog.Warn("register: read agent intervals", "err", err)
