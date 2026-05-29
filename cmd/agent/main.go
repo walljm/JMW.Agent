@@ -82,9 +82,11 @@ func main() {
 func run(ctx context.Context, cfg *agentcfg.Config, cfgPath, id string) error {
 	cli := transport.New(cfg.ServerURL, cfg.PSK, cfg.PinnedSHA)
 
-	// Register loop until approved.
+	// Registration loop — retries until the server approves this agent.
+	var regResp *proto.RegisterResponse
 	for {
-		regResp, err := cli.Register(ctx, &proto.RegisterRequest{
+		var err error
+		regResp, err = cli.Register(ctx, &proto.RegisterRequest{
 			AgentID:           id,
 			Hostname:          collect.Hostname(),
 			OS:                collect.OS(),
@@ -116,12 +118,32 @@ func run(ctx context.Context, cfg *agentcfg.Config, cfgPath, id string) error {
 		}
 	}
 
-	// Heartbeat + metrics loop.
-	tick := time.NewTicker(time.Duration(cfg.IntervalSecs) * time.Second)
-	defer tick.Stop()
+	// Apply server-pushed intervals, falling back to local config when the
+	// server returns 0 (unset or old server version).
+	heartbeatSecs := cfg.IntervalSecs
+	discoverySecs := cfg.DiscoveryIntervalSecs
+	inventorySecs := cfg.InventoryIntervalSecs
+	if regResp.HeartbeatInterval > 0 {
+		heartbeatSecs = regResp.HeartbeatInterval
+	}
+	if regResp.DiscoveryIntervalSecs > 0 {
+		discoverySecs = regResp.DiscoveryIntervalSecs
+	}
+	if regResp.InventoryIntervalSecs > 0 {
+		inventorySecs = regResp.InventoryIntervalSecs
+	}
+	slog.Info("intervals",
+		"heartbeat_secs", heartbeatSecs,
+		"discovery_secs", discoverySecs,
+		"inventory_secs", inventorySecs)
 
-	invInterval := time.Duration(cfg.InventoryIntervalSecs) * time.Second
-	invTick := time.NewTicker(invInterval)
+	metricTick := time.NewTicker(time.Duration(heartbeatSecs) * time.Second)
+	defer metricTick.Stop()
+
+	discoveryTick := time.NewTicker(time.Duration(discoverySecs) * time.Second)
+	defer discoveryTick.Stop()
+
+	invTick := time.NewTicker(time.Duration(inventorySecs) * time.Second)
 	defer invTick.Stop()
 
 	// Send first sample immediately.
@@ -141,10 +163,7 @@ func run(ctx context.Context, cfg *agentcfg.Config, cfgPath, id string) error {
 		}
 		slog.Info("initial inventory: sent", "elapsed", time.Since(t0))
 	}()
-	// Send first discovery scan immediately (best-effort). On a fresh
-	// deploy the agent's behaviour may have changed (new probes, new
-	// hostname rules, etc.) and we want the server to see those results
-	// without waiting a full heartbeat interval.
+	// Send first discovery scan immediately (best-effort).
 	go func() {
 		slog.Info("initial discovery: scanning")
 		t0 := time.Now()
@@ -159,16 +178,38 @@ func run(ctx context.Context, cfg *agentcfg.Config, cfgPath, id string) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-tick.C:
-			if err := sendHeartbeat(ctx, cli, id); err != nil {
+
+		case <-metricTick.C:
+			resp, err := sendHeartbeatFull(ctx, cli, id)
+			if err != nil {
 				slog.Warn("heartbeat", "err", err)
+			} else if resp != nil {
+				// Re-arm tickers if the server changed any interval.
+				if resp.NextHeartbeatIn > 0 && resp.NextHeartbeatIn != heartbeatSecs {
+					heartbeatSecs = resp.NextHeartbeatIn
+					metricTick.Reset(time.Duration(heartbeatSecs) * time.Second)
+					slog.Info("heartbeat interval updated", "secs", heartbeatSecs)
+				}
+				if resp.DiscoveryIntervalSecs > 0 && resp.DiscoveryIntervalSecs != discoverySecs {
+					discoverySecs = resp.DiscoveryIntervalSecs
+					discoveryTick.Reset(time.Duration(discoverySecs) * time.Second)
+					slog.Info("discovery interval updated", "secs", discoverySecs)
+				}
+				if resp.InventoryIntervalSecs > 0 && resp.InventoryIntervalSecs != inventorySecs {
+					inventorySecs = resp.InventoryIntervalSecs
+					invTick.Reset(time.Duration(inventorySecs) * time.Second)
+					slog.Info("inventory interval updated", "secs", inventorySecs)
+				}
 			}
 			if err := sendSample(ctx, cli, id); err != nil {
 				slog.Warn("metrics", "err", err)
 			}
+
+		case <-discoveryTick.C:
 			if err := sendDiscoveries(ctx, cli, id); err != nil {
 				slog.Warn("discoveries", "err", err)
 			}
+
 		case <-invTick.C:
 			if err := sendInventory(ctx, cli, id, cfg.IncludePackages); err != nil {
 				slog.Warn("inventory", "err", err)
@@ -177,7 +218,9 @@ func run(ctx context.Context, cfg *agentcfg.Config, cfgPath, id string) error {
 	}
 }
 
-func sendHeartbeat(ctx context.Context, cli *transport.Client, id string) error {
+// sendHeartbeatFull sends a heartbeat and returns the full response so the
+// caller can inspect interval directives and update offers.
+func sendHeartbeatFull(ctx context.Context, cli *transport.Client, id string) (*proto.HeartbeatResponse, error) {
 	resp, err := cli.Heartbeat(ctx, &proto.HeartbeatRequest{
 		AgentID:           id,
 		Version:           version.Version,
@@ -185,16 +228,12 @@ func sendHeartbeat(ctx context.Context, cli *transport.Client, id string) error 
 		SentAt:            time.Now().UTC(),
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if resp != nil && resp.Update != nil {
-		// Inside containers (JMW_HOST_ROOT set) the binary lives on a
-		// read-only image layer; the in-process updater can't rewrite it.
-		// Image-level updates are handled out-of-band by Watchtower or a
-		// manual `docker pull`, so just acknowledge and move on.
 		if hostfs.Active() {
 			slog.Debug("update offered but skipped (containerized; handled by image updater)", "version", resp.Update.Version)
-			return nil
+			return resp, nil
 		}
 		slog.Info("server offered update", "version", resp.Update.Version)
 		if err := updater.Apply(ctx, cli, resp.Update); err != nil {
@@ -202,7 +241,12 @@ func sendHeartbeat(ctx context.Context, cli *transport.Client, id string) error 
 		}
 		// On success Apply does not return (process is replaced).
 	}
-	return nil
+	return resp, nil
+}
+
+func sendHeartbeat(ctx context.Context, cli *transport.Client, id string) error {
+	_, err := sendHeartbeatFull(ctx, cli, id)
+	return err
 }
 
 func sendSample(ctx context.Context, cli *transport.Client, id string) error {

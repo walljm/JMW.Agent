@@ -45,8 +45,6 @@ type Server struct {
 	ServerCertSHA string
 	StartedAt     time.Time
 
-	heartbeatInterval int
-
 	// ingestCount is the total number of agent API requests served since
 	// process start (heartbeats + metrics + discoveries + inventory).
 	// Read with atomic.LoadInt64; the dashboard derives a recent rate by
@@ -54,13 +52,46 @@ type Server struct {
 	ingestCount atomic.Int64
 }
 
-// New constructs a server.
-func New(cfg *config.Config, st *store.Store, certSHA string) (*Server, error) {
+// New constructs a server. ctx is used only for DB reads during construction.
+func New(ctx context.Context, cfg *config.Config, st *store.Store, certSHA string) (*Server, error) {
 	tmpl, err := loadTemplates()
 	if err != nil {
 		return nil, err
 	}
-	poller := terrain.New(terrain.Config{URL: cfg.Terrain.URL, Token: cfg.Terrain.Token, Username: cfg.Terrain.Username, Password: cfg.Terrain.Password})
+
+	// Load terrain connection config from DB. On first boot (DB keys all empty)
+	// migrate any values from the legacy server.toml [terrain] section into the
+	// DB so the admin UI reflects them immediately.
+	terrainCfg, err := st.GetTerrainConfig(ctx)
+	if err != nil {
+		slog.Warn("read terrain config from db", "err", err)
+	}
+	if terrainCfg.URL == "" && cfg.Terrain.URL != "" {
+		terrainCfg.URL = cfg.Terrain.URL
+		terrainCfg.Token = cfg.Terrain.Token
+		terrainCfg.Username = cfg.Terrain.Username
+		terrainCfg.Password = cfg.Terrain.Password
+		// Persist to DB so the admin page shows the migrated values.
+		for k, v := range map[string]string{
+			"terrain.url":      terrainCfg.URL,
+			"terrain.token":    terrainCfg.Token,
+			"terrain.username": terrainCfg.Username,
+			"terrain.password": terrainCfg.Password,
+		} {
+			if err := st.SetConfig(ctx, k, v); err != nil {
+				slog.Warn("terrain migration: persist to db failed", "key", k, "err", err)
+			}
+		}
+		slog.Info("migrated terrain config from server.toml to database")
+	}
+
+	poller := terrain.New(terrain.Config{
+		URL:      terrainCfg.URL,
+		Token:    terrainCfg.Token,
+		Username: terrainCfg.Username,
+		Password: terrainCfg.Password,
+	})
+
 	// Legacy DeviceSink removed — entity pipeline is the sole write path.
 	rel := releases.New(cfg.ReleasesDir)
 	if err := rel.Scan(); err != nil {
@@ -80,16 +111,15 @@ func New(cfg *config.Config, st *store.Store, certSHA string) (*Server, error) {
 	poller.SetPipelineSink(&terrainPipelineSink{ingestor: ing, store: st})
 
 	return &Server{
-		Config:            cfg,
-		Store:             st,
-		Terrain:           poller,
-		Infra:             infra.New(st),
-		Releases:          rel,
-		Ingestor:          ing,
-		templates:         tmpl,
-		ServerCertSHA:     certSHA,
-		StartedAt:         time.Now().UTC(),
-		heartbeatInterval: 30,
+		Config:        cfg,
+		Store:         st,
+		Terrain:       poller,
+		Infra:         infra.New(st),
+		Releases:      rel,
+		Ingestor:      ing,
+		templates:     tmpl,
+		ServerCertSHA: certSHA,
+		StartedAt:     time.Now().UTC(),
 	}, nil
 }
 
@@ -239,6 +269,13 @@ func (s *Server) Router() http.Handler {
 		// Entity-based views.
 		pr.Get("/api/v1/ui/hardware", s.hardwareListAPI)
 		pr.Get("/api/v1/ui/hardware/{id}", s.hardwareDetailAPI)
+
+		// Admin settings.
+		pr.Get("/admin", s.adminGet)
+		pr.With(s.requireCSRF).Post("/admin/intervals", s.adminIntervalsPost)
+		pr.With(s.requireCSRF).Post("/admin/retention", s.adminRetentionPost)
+		pr.With(s.requireCSRF).Post("/admin/session", s.adminSessionPost)
+		pr.With(s.requireCSRF).Post("/admin/terrain", s.adminTerrainPost)
 	})
 
 	return r
@@ -339,7 +376,10 @@ func (s *Server) StartBackground(ctx context.Context) {
 		}
 	}()
 	go (&alerting.Evaluator{Store: s.Store, Interval: 30 * time.Second}).Run(ctx)
-	go s.Terrain.Run(ctx)
+	go s.Terrain.Run(ctx, func() int {
+		v, _ := s.Store.GetTerrainPollInterval(ctx)
+		return v
+	})
 	go s.Infra.Run(ctx)
 	go s.RunRollups(ctx)
 	if s.Releases != nil && s.Releases.Enabled() {

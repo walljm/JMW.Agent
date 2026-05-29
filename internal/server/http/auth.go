@@ -40,8 +40,9 @@ func (s *Server) loginPost(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login?err=invalid", http.StatusSeeOther)
 		return
 	}
+	sessionHours, _ := s.Store.GetSessionLifetimeHours(r.Context())
 	sess, err := s.Store.CreateSession(r.Context(), user.ID,
-		time.Duration(s.Config.SessionLifetimeHours)*time.Hour)
+		time.Duration(sessionHours)*time.Hour)
 	if err != nil {
 		http.Error(w, "session error", http.StatusInternalServerError)
 		return
@@ -82,8 +83,9 @@ func (s *Server) setupPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	sessionHours, _ := s.Store.GetSessionLifetimeHours(r.Context())
 	sess, err := s.Store.CreateSession(r.Context(), user.ID,
-		time.Duration(s.Config.SessionLifetimeHours)*time.Hour)
+		time.Duration(sessionHours)*time.Hour)
 	if err != nil {
 		http.Error(w, "session error", http.StatusInternalServerError)
 		return

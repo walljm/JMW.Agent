@@ -16,6 +16,7 @@ type Config struct {
 	PinnedSHA             string `toml:"pinned_sha"`
 	IDFile                string `toml:"id_file"`
 	IntervalSecs          int    `toml:"interval_secs"`
+	DiscoveryIntervalSecs int    `toml:"discovery_interval_secs"`
 	InventoryIntervalSecs int    `toml:"inventory_interval_secs"`
 	IncludePackages       bool   `toml:"include_packages"`
 }
@@ -25,6 +26,7 @@ func Defaults() *Config {
 	return &Config{
 		IDFile:                "./agent.id",
 		IntervalSecs:          30,
+		DiscoveryIntervalSecs: 300,   // 5 min; matches server subsystems seed
 		InventoryIntervalSecs: 86400, // 24h
 		IncludePackages:       false,
 	}
@@ -45,6 +47,9 @@ func Load(path string) (*Config, error) {
 	}
 	if c.IntervalSecs <= 0 {
 		c.IntervalSecs = 30
+	}
+	if c.DiscoveryIntervalSecs <= 0 {
+		c.DiscoveryIntervalSecs = 300
 	}
 	if c.InventoryIntervalSecs <= 0 {
 		c.InventoryIntervalSecs = 86400

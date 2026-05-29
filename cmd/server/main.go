@@ -114,7 +114,7 @@ func main() {
 		return
 	}
 
-	srv, err := httpsrv.New(cfg, st, sha)
+	srv, err := httpsrv.New(ctx, cfg, st, sha)
 	if err != nil {
 		slog.Error("http server", "err", err)
 		os.Exit(1)

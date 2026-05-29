@@ -135,14 +135,32 @@ func (p *Poller) SetPipelineSink(s PipelineSink) {
 	p.mu.Unlock()
 }
 
-// Run polls until ctx is cancelled, with a 60-second interval.
-func (p *Poller) Run(ctx context.Context) {
+// SetConfig replaces the poller's connection config (URL, credentials). The
+// change takes effect on the next poll tick. Thread-safe.
+func (p *Poller) SetConfig(cfg Config) {
+	p.mu.Lock()
+	p.cfg = cfg
+	p.techToken = "" // invalidate cached session token on credential change
+	p.mu.Unlock()
+}
+
+// Run polls until ctx is cancelled. pollIntervalFn is called before each sleep
+// to determine how long to wait; this allows the interval to be changed live
+// via the admin UI without restarting. A nil pollIntervalFn defaults to 60s.
+func (p *Poller) Run(ctx context.Context, pollIntervalFn func() int) {
+	if pollIntervalFn == nil {
+		pollIntervalFn = func() int { return 60 }
+	}
 	p.poll(ctx)
-	t := time.NewTicker(60 * time.Second)
-	defer t.Stop()
 	for {
+		secs := pollIntervalFn()
+		if secs <= 0 {
+			secs = 60
+		}
+		t := time.NewTimer(time.Duration(secs) * time.Second)
 		select {
 		case <-ctx.Done():
+			t.Stop()
 			return
 		case <-t.C:
 			p.poll(ctx)
@@ -158,7 +176,13 @@ func (p *Poller) Status() Status {
 }
 
 func (p *Poller) poll(ctx context.Context) {
-	url := p.cfg.URL
+	// Snapshot config under the read lock so SetConfig() can't race with
+	// the credential reads below (which may span several seconds of I/O).
+	p.mu.RLock()
+	cfg := p.cfg
+	p.mu.RUnlock()
+
+	url := cfg.URL
 	if url == "" {
 		url = p.detect(ctx)
 	}
@@ -787,22 +811,24 @@ func (p *Poller) fetchTechnitiumZoneRecords(ctx context.Context, base, token str
 // technitiumToken returns a usable API token: cfg.Token if set, otherwise a
 // cached login token, otherwise a fresh login via username/password.
 func (p *Poller) technitiumToken(ctx context.Context, base string) (string, error) {
-	if p.cfg.Token != "" {
-		return p.cfg.Token, nil
-	}
 	p.mu.RLock()
+	cfg := p.cfg
 	cached := p.techToken
 	p.mu.RUnlock()
+
+	if cfg.Token != "" {
+		return cfg.Token, nil
+	}
 	if cached != "" {
 		return cached, nil
 	}
-	if p.cfg.Username == "" || p.cfg.Password == "" {
+	if cfg.Username == "" || cfg.Password == "" {
 		return "", errUnauthorized
 	}
 
 	q := url.Values{
-		"user":        []string{p.cfg.Username},
-		"pass":        []string{p.cfg.Password},
+		"user":        []string{cfg.Username},
+		"pass":        []string{cfg.Password},
 		"includeInfo": []string{"false"},
 	}
 	loginURL := base + "/api/user/login?" + q.Encode()
@@ -931,12 +957,16 @@ func (p *Poller) pollPiHole(ctx context.Context, base string) (Status, bool) {
 var errUnauthorized = fmt.Errorf("HTTP 401: credentials required")
 
 func (p *Poller) getJSON(ctx context.Context, url string, out any) error {
+	p.mu.RLock()
+	cfg := p.cfg
+	p.mu.RUnlock()
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
-	if p.cfg.Username != "" {
-		req.SetBasicAuth(p.cfg.Username, p.cfg.Password)
+	if cfg.Username != "" {
+		req.SetBasicAuth(cfg.Username, cfg.Password)
 	}
 	resp, err := p.client.Do(req)
 	if err != nil {

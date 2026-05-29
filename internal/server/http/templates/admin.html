@@ -1,0 +1,141 @@
+{{template "head" .}}
+{{template "navbar" .}}
+<main class="container" id="main">
+  <h1>Admin Settings</h1>
+
+  {{if .Flash}}
+  <p style="color:var(--ok,#2dd4a4)">
+    {{if eq .Flash "intervals_saved"}}Collection intervals saved.
+    {{else if eq .Flash "retention_saved"}}Retention settings saved.
+    {{else if eq .Flash "session_saved"}}Session lifetime saved.
+    {{else if eq .Flash "terrain_saved"}}Key Cyber Terrain settings saved.
+    {{else}}Settings saved.
+    {{end}}
+  </p>
+  {{end}}
+  {{if .Error}}
+  <p class="error">Error: {{.Error}}</p>
+  {{end}}
+
+  {{$cfg := .Config}}
+
+  <section class="alerts-section">
+    <h2>Agent Collection Intervals</h2>
+    <p class="muted">These values are pushed to agents on registration and every heartbeat. Agents re-arm their own timers immediately when values change. Local <code>agent.toml</code> values act as fallback if the server is unreachable.</p>
+    <form method="POST" action="/admin/intervals" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+      <label>Heartbeat &amp; Metrics (seconds)
+        <input name="heartbeat_interval_secs" type="number" min="5" max="3600"
+               value="{{index $cfg "agent.heartbeat_interval_secs"}}" required />
+      </label>
+      <label>Network Discovery (seconds)
+        <input name="discovery_interval_secs" type="number" min="30" max="86400"
+               value="{{index $cfg "agent.discovery_interval_secs"}}" required />
+      </label>
+      <label>Full Inventory (seconds)
+        <input name="inventory_interval_secs" type="number" min="300" max="604800"
+               value="{{index $cfg "agent.inventory_interval_secs"}}" required />
+      </label>
+      <div class="form-actions">
+        <button type="submit" class="primary">Save intervals</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="alerts-section">
+    <h2>Key Cyber Terrain</h2>
+    <p class="muted">Connection details for your Technitium DNS, AdGuard Home, or Pi-hole instance. Token is used for Technitium (preferred); username + password are used for Pi-hole and AdGuard. Leave URL blank to disable polling.</p>
+
+    {{with .TerrainStatus}}
+    <div class="table-wrap" style="margin-bottom:1rem">
+      <table class="data">
+        <tbody>
+          <tr><th>Detected kind</th><td>{{.Kind}}</td></tr>
+          <tr><th>URL</th><td>{{if .URL}}{{.URL}}{{else}}<span class="muted">—</span>{{end}}</td></tr>
+          <tr><th>Reachable</th><td>{{if .Reachable}}<span class="badge state-running">yes</span>{{else}}<span class="badge state-dead">no</span>{{end}}</td></tr>
+          <tr><th>Last polled</th><td>{{if .LastPolled.IsZero}}<span class="muted">never</span>{{else}}{{shortTime .LastPolled}}{{end}}</td></tr>
+          {{if .Error}}<tr><th>Last error</th><td class="error">{{.Error}}</td></tr>{{end}}
+        </tbody>
+      </table>
+    </div>
+    {{end}}
+
+    <form method="POST" action="/admin/terrain" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+      <label>Server URL
+        <input name="terrain_url" type="url" placeholder="http://192.168.1.1:5380"
+               value="{{index $cfg "terrain.url"}}" />
+      </label>
+      <label>API Token (Technitium)
+        <input name="terrain_token" type="password" placeholder="leave blank to keep current"
+               autocomplete="new-password" />
+      </label>
+      <label>Username (Pi-hole / AdGuard)
+        <input name="terrain_username" value="{{index $cfg "terrain.username"}}" />
+      </label>
+      <label>Password (Pi-hole / AdGuard)
+        <input name="terrain_password" type="password" placeholder="leave blank to keep current"
+               autocomplete="new-password" />
+      </label>
+      <label>Poll interval (seconds)
+        <input name="terrain_poll_interval_secs" type="number" min="10" max="3600"
+               value="{{index $cfg "terrain.poll_interval_secs"}}" required />
+      </label>
+      <div class="form-actions">
+        <button type="submit" class="primary">Save terrain settings</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="alerts-section">
+    <h2>Data Retention</h2>
+    <p class="muted">How long to keep each tier of metric data. Use Go duration format: <code>48h</code>, <code>168h</code> (7 days), <code>2160h</code> (90 days). Changes take effect on the next rollup tick (within 5 minutes).</p>
+    <form method="POST" action="/admin/retention" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+      <label>Raw metrics (per-sample)
+        <input name="raw_metrics" value="{{index $cfg "retention.raw_metrics"}}" required
+               pattern="[0-9]+h" title="e.g. 48h" />
+      </label>
+      <label>5-minute rollups
+        <input name="rollup_5min" value="{{index $cfg "retention.rollup_5min"}}" required
+               pattern="[0-9]+h" title="e.g. 168h" />
+      </label>
+      <label>Hourly rollups
+        <input name="rollup_hourly" value="{{index $cfg "retention.rollup_hourly"}}" required
+               pattern="[0-9]+h" title="e.g. 2160h" />
+      </label>
+      <label>Daily rollups
+        <input name="rollup_daily" value="{{index $cfg "retention.rollup_daily"}}" required
+               pattern="[0-9]+h" title="e.g. 8760h" />
+      </label>
+      <label>Removed containers
+        <input name="removed_containers" value="{{index $cfg "retention.removed_containers"}}" required
+               pattern="[0-9]+h" title="e.g. 168h" />
+      </label>
+      <label>Stale observations
+        <input name="stale_observations" value="{{index $cfg "retention.stale_observations"}}" required
+               pattern="[0-9]+h" title="e.g. 720h" />
+      </label>
+      <div class="form-actions">
+        <button type="submit" class="primary">Save retention</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="alerts-section">
+    <h2>Sessions</h2>
+    <p class="muted">How long a browser session stays active after login. Takes effect for new logins; existing sessions are not shortened.</p>
+    <form method="POST" action="/admin/session" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+      <label>Session lifetime (hours)
+        <input name="session_lifetime_hours" type="number" min="1" max="8760"
+               value="{{index $cfg "auth.session_lifetime_hours"}}" required />
+      </label>
+      <div class="form-actions">
+        <button type="submit" class="primary">Save session settings</button>
+      </div>
+    </form>
+  </section>
+
+</main>
+{{template "foot" .}}

@@ -12,22 +12,24 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// Config is the server configuration.
+// Config is the server configuration. Only bootstrap fields that must be
+// known before the database opens belong here. Operational settings
+// (retention windows, session lifetime, collection intervals, terrain
+// credentials) live in the database config table and are managed via the
+// admin UI.
 type Config struct {
-	Listen               string    `toml:"listen"`
-	DataDir              string    `toml:"data_dir"`
-	ReleasesDir          string    `toml:"releases_dir"`
-	TLSCertFile          string    `toml:"tls_cert_file"`
-	TLSKeyFile           string    `toml:"tls_key_file"`
-	LogLevel             string    `toml:"log_level"`
-	AgentPSK             string    `toml:"agent_psk"`
-	SessionLifetimeHours int       `toml:"session_lifetime_hours"`
-	Retention            Retention `toml:"retention"`
+	Listen      string `toml:"listen"`
+	DataDir     string `toml:"data_dir"`
+	ReleasesDir string `toml:"releases_dir"`
+	TLSCertFile string `toml:"tls_cert_file"`
+	TLSKeyFile  string `toml:"tls_key_file"`
+	LogLevel    string `toml:"log_level"`
+	AgentPSK    string `toml:"agent_psk"`
 
 	// Deprecated: Legacy terrain config. If present at boot and no terrain
-	// Source row exists in the database, the server performs a one-time import
-	// into the sources table and logs a migration notice. This field will be
-	// removed in a future release.
+	// source row exists in the database, the server performs a one-time
+	// import into the sources table and logs a migration notice. This field
+	// will be removed in a future release.
 	Terrain TerrainConfig `toml:"terrain"`
 
 	// Addr is the legacy name for Listen. If both are set, Listen wins.
@@ -44,32 +46,13 @@ type TerrainConfig struct {
 	Password string `toml:"password"`
 }
 
-// Retention holds default retention durations. These can be overridden per-tier
-// from the admin UI without a restart.
-type Retention struct {
-	RawMetrics        string `toml:"raw_metrics"`
-	Rollup5Min        string `toml:"rollup_5min"`
-	RollupHourly      string `toml:"rollup_hourly"`
-	RollupDaily       string `toml:"rollup_daily"`
-	RemovedContainers string `toml:"removed_containers"`
-	StaleObservations string `toml:"stale_observations"`
-}
-
 // Defaults returns sensible defaults.
 func Defaults() *Config {
 	return &Config{
-		Listen:               ":8443",
-		DataDir:              "./data",
-		ReleasesDir:          "./releases",
-		LogLevel:             "info",
-		SessionLifetimeHours: 24 * 7,
-		Retention: Retention{
-			RawMetrics:        "48h",
-			Rollup5Min:        "7d",
-			RollupHourly:      "90d",
-			RollupDaily:       "365d",
-			RemovedContainers: "7d",
-		},
+		Listen:      ":8443",
+		DataDir:     "./data",
+		ReleasesDir: "./releases",
+		LogLevel:    "info",
 	}
 }
 
@@ -97,9 +80,6 @@ func Load(path string) (*Config, error) {
 	}
 	if c.DataDir == "" {
 		c.DataDir = "./data"
-	}
-	if c.SessionLifetimeHours <= 0 {
-		c.SessionLifetimeHours = 24 * 7
 	}
 	return c, nil
 }

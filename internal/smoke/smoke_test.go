@@ -20,10 +20,9 @@ import (
 func TestSmokeAgentLifecycle(t *testing.T) {
 	tmp := t.TempDir()
 	cfg := &config.Config{
-		Addr:                 ":0",
-		DataDir:              tmp,
-		AgentPSK:             "test-psk-12345",
-		SessionLifetimeHours: 24,
+		Addr:     ":0",
+		DataDir:  tmp,
+		AgentPSK: "test-psk-12345",
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -35,7 +34,7 @@ func TestSmokeAgentLifecycle(t *testing.T) {
 	}
 	defer st.Close()
 
-	srv, err := httpsrv.New(cfg, st, "")
+	srv, err := httpsrv.New(ctx, cfg, st, "")
 	if err != nil {
 		t.Fatalf("http server: %v", err)
 	}

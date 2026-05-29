@@ -108,6 +108,46 @@ func (s *Store) PruneRawSnapshots(ctx context.Context, olderThan time.Duration) 
 	return nil
 }
 
+// PruneRollup5Min deletes 5-minute rollup rows older than the given duration.
+func (s *Store) PruneRollup5Min(ctx context.Context, olderThan time.Duration) error {
+	cutoff := time.Now().UTC().Add(-olderThan).Format(time.RFC3339)
+	_, err := s.DB.ExecContext(ctx, `DELETE FROM metric_rollup_5min WHERE bucket < ?`, cutoff)
+	return err
+}
+
+// PruneRollupHourly deletes hourly rollup rows older than the given duration.
+func (s *Store) PruneRollupHourly(ctx context.Context, olderThan time.Duration) error {
+	cutoff := time.Now().UTC().Add(-olderThan).Format(time.RFC3339)
+	_, err := s.DB.ExecContext(ctx, `DELETE FROM metric_rollup_hourly WHERE bucket < ?`, cutoff)
+	return err
+}
+
+// PruneRollupDaily deletes daily rollup rows older than the given duration.
+func (s *Store) PruneRollupDaily(ctx context.Context, olderThan time.Duration) error {
+	cutoff := time.Now().UTC().Add(-olderThan).Format(time.RFC3339)
+	_, err := s.DB.ExecContext(ctx, `DELETE FROM metric_rollup_daily WHERE bucket < ?`, cutoff)
+	return err
+}
+
+// PruneRemovedContainers deletes container rows for containers that are no
+// longer running and whose last_seen_at is older than the given duration.
+func (s *Store) PruneRemovedContainers(ctx context.Context, olderThan time.Duration) error {
+	cutoff := time.Now().UTC().Add(-olderThan).Format(time.RFC3339)
+	_, err := s.DB.ExecContext(ctx,
+		`DELETE FROM containers WHERE state != 'running' AND last_seen_at < ?`, cutoff)
+	return err
+}
+
+// PruneStaleObservations deletes entity observation rows older than the given
+// duration. Observations are timestamped sighting records from any source
+// (dhcp-lease, arp-scan, etc.); the entity model uses the observations table.
+func (s *Store) PruneStaleObservations(ctx context.Context, olderThan time.Duration) error {
+	cutoff := time.Now().UTC().Add(-olderThan).Format(time.RFC3339)
+	_, err := s.DB.ExecContext(ctx,
+		`DELETE FROM observations WHERE observed_at < ?`, cutoff)
+	return err
+}
+
 // InsertTemperatureSnapshots writes temperature readings for an agent.
 func (s *Store) InsertTemperatureSnapshots(ctx context.Context, agentID string, ts time.Time, readings []TempSnapshot) error {
 	if len(readings) == 0 {
