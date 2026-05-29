@@ -99,15 +99,15 @@ func (s *Server) agentRegister(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "db_error", "could not read agent after registration")
 		return
 	}
-	heartbeatSecs, discoverySecs, inventorySecs, err := s.Store.GetAgentIntervals(r.Context())
+	heartbeat, discovery, inventory, err := s.Store.GetAgentIntervals(r.Context())
 	if err != nil {
 		slog.Warn("register: read agent intervals", "err", err)
 	}
 	resp := proto.RegisterResponse{
 		Status:                a.Status,
-		HeartbeatInterval:     heartbeatSecs,
-		DiscoveryIntervalSecs: discoverySecs,
-		InventoryIntervalSecs: inventorySecs,
+		HeartbeatInterval:     int(heartbeat.Seconds()),
+		DiscoveryIntervalSecs: int(discovery.Seconds()),
+		InventoryIntervalSecs: int(inventory.Seconds()),
 		ServerCertSHA256:      s.ServerCertSHA,
 	}
 	if a.Status == store.AgentStatusPending {
@@ -139,15 +139,15 @@ func (s *Server) agentHeartbeat(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
 	}
-	heartbeatSecs, discoverySecs, inventorySecs, err := s.Store.GetAgentIntervals(r.Context())
+	heartbeat, discovery, inventory, err := s.Store.GetAgentIntervals(r.Context())
 	if err != nil {
 		slog.Warn("heartbeat: read agent intervals", "err", err)
 	}
 	resp := proto.HeartbeatResponse{
 		Approved:              a.Status == store.AgentStatusApproved,
-		NextHeartbeatIn:       heartbeatSecs,
-		DiscoveryIntervalSecs: discoverySecs,
-		InventoryIntervalSecs: inventorySecs,
+		NextHeartbeatIn:       int(heartbeat.Seconds()),
+		DiscoveryIntervalSecs: int(discovery.Seconds()),
+		InventoryIntervalSecs: int(inventory.Seconds()),
 	}
 	// Offer an update when a strictly-newer clean release exists on disk
 	// for the agent's platform. The agent's own version may be a dev/dirty

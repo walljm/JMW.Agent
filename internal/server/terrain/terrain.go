@@ -147,17 +147,17 @@ func (p *Poller) SetConfig(cfg Config) {
 // Run polls until ctx is cancelled. pollIntervalFn is called before each sleep
 // to determine how long to wait; this allows the interval to be changed live
 // via the admin UI without restarting. A nil pollIntervalFn defaults to 60s.
-func (p *Poller) Run(ctx context.Context, pollIntervalFn func() int) {
+func (p *Poller) Run(ctx context.Context, pollIntervalFn func() time.Duration) {
 	if pollIntervalFn == nil {
-		pollIntervalFn = func() int { return 60 }
+		pollIntervalFn = func() time.Duration { return 60 * time.Second }
 	}
 	p.poll(ctx)
 	for {
-		secs := pollIntervalFn()
-		if secs <= 0 {
-			secs = 60
+		interval := pollIntervalFn()
+		if interval <= 0 {
+			interval = 60 * time.Second
 		}
-		t := time.NewTimer(time.Duration(secs) * time.Second)
+		t := time.NewTimer(interval)
 		select {
 		case <-ctx.Done():
 			t.Stop()

@@ -6,6 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
+
+	"github.com/walljm/jmwagent/internal/shared/duration"
 )
 
 // GetConfig returns a single config value by key. Returns ("", nil) if the
@@ -49,8 +52,10 @@ func (s *Store) GetAllConfig(ctx context.Context) (map[string]string, error) {
 // GetAgentIntervals returns the three agent collection intervals from the
 // config table. Falls back to sensible defaults if any key is missing or
 // unparseable.
-func (s *Store) GetAgentIntervals(ctx context.Context) (heartbeat, discovery, inventory int, err error) {
-	heartbeat, discovery, inventory = 30, 300, 86400
+func (s *Store) GetAgentIntervals(ctx context.Context) (heartbeat, discovery, inventory time.Duration, err error) {
+	heartbeat = 30 * time.Second
+	discovery = 5 * time.Minute
+	inventory = 24 * time.Hour
 
 	cfg, err := s.GetAllConfig(ctx)
 	if err != nil {
@@ -58,55 +63,77 @@ func (s *Store) GetAgentIntervals(ctx context.Context) (heartbeat, discovery, in
 	}
 
 	if v, ok := cfg["agent.heartbeat_interval_secs"]; ok {
-		if n, e := strconv.Atoi(v); e == nil && n > 0 {
-			heartbeat = n
+		if d, e := parseDurationCompat(v); e == nil && d > 0 {
+			heartbeat = d
 		}
 	}
 	if v, ok := cfg["agent.discovery_interval_secs"]; ok {
-		if n, e := strconv.Atoi(v); e == nil && n > 0 {
-			discovery = n
+		if d, e := parseDurationCompat(v); e == nil && d > 0 {
+			discovery = d
 		}
 	}
 	if v, ok := cfg["agent.inventory_interval_secs"]; ok {
-		if n, e := strconv.Atoi(v); e == nil && n > 0 {
-			inventory = n
+		if d, e := parseDurationCompat(v); e == nil && d > 0 {
+			inventory = d
 		}
 	}
 	return heartbeat, discovery, inventory, nil
 }
 
-// GetSessionLifetimeHours returns the configured session lifetime in hours,
-// defaulting to 168 (7 days).
-func (s *Store) GetSessionLifetimeHours(ctx context.Context) (int, error) {
+// GetSessionLifetime returns the configured session lifetime,
+// defaulting to 7 days. Legacy plain-integer values are treated as hours
+// (the historical unit for this key) rather than seconds.
+func (s *Store) GetSessionLifetime(ctx context.Context) (time.Duration, error) {
 	v, err := s.GetConfig(ctx, "auth.session_lifetime_hours")
 	if err != nil {
-		return 168, err
+		return 7 * 24 * time.Hour, err
 	}
 	if v == "" {
-		return 168, nil
+		return 7 * 24 * time.Hour, nil
 	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n <= 0 {
-		return 168, nil
+	if n, err := strconv.Atoi(v); err == nil {
+		if n <= 0 {
+			return 7 * 24 * time.Hour, nil
+		}
+		return time.Duration(n) * time.Hour, nil
 	}
-	return n, nil
+	d, err := parseDurationCompat(v)
+	if err != nil || d <= 0 {
+		return 7 * 24 * time.Hour, nil
+	}
+	return d, nil
 }
 
-// GetTerrainPollInterval returns the terrain poll interval in seconds,
-// defaulting to 60.
-func (s *Store) GetTerrainPollInterval(ctx context.Context) (int, error) {
+// GetTerrainPollInterval returns the terrain poll interval,
+// defaulting to 1 minute.
+func (s *Store) GetTerrainPollInterval(ctx context.Context) (time.Duration, error) {
 	v, err := s.GetConfig(ctx, "terrain.poll_interval_secs")
 	if err != nil {
-		return 60, err
+		return time.Minute, err
 	}
 	if v == "" {
-		return 60, nil
+		return time.Minute, nil
 	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n <= 0 {
-		return 60, nil
+	d, err := parseDurationCompat(v)
+	if err != nil || d <= 0 {
+		return time.Minute, nil
 	}
-	return n, nil
+	return d, nil
+}
+
+// parseDurationCompat parses a duration string, accepting both the new
+// human-friendly format ("1d 3h 5m") and legacy plain integers (treated
+// as seconds for agent/terrain intervals, or hours for session lifetime
+// based on the calling context — callers that stored hours should have
+// been migrated by 0027).
+func parseDurationCompat(s string) (time.Duration, error) {
+	if n, err := strconv.Atoi(s); err == nil {
+		return time.Duration(n) * time.Second, nil
+	}
+	if d, err := time.ParseDuration(s); err == nil {
+		return d, nil
+	}
+	return duration.Parse(s)
 }
 
 // TerrainConfig holds the terrain poller connection settings from the DB.

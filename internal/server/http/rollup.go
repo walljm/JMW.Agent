@@ -3,7 +3,10 @@ package httpsrv
 import (
 	"context"
 	"log/slog"
+	"strconv"
 	"time"
+
+	"github.com/walljm/jmwagent/internal/shared/duration"
 )
 
 // RunRollups starts a background goroutine that periodically aggregates raw
@@ -72,15 +75,22 @@ func (s *Server) rollupOnce(ctx context.Context) {
 	}
 }
 
-// parseDuration parses a Go duration string (e.g. "48h", "168h"). Returns
-// fallback if the string is empty or invalid.
+// parseDuration parses a duration string in any supported format:
+// human-friendly ("7d", "1d 3h"), Go duration ("48h"), or legacy
+// plain integer (seconds). Returns fallback if the string is empty
+// or invalid.
 func parseDuration(s string, fallback time.Duration) time.Duration {
 	if s == "" {
 		return fallback
 	}
-	d, err := time.ParseDuration(s)
-	if err != nil || d <= 0 {
-		return fallback
+	if d, err := duration.Parse(s); err == nil && d > 0 {
+		return d
 	}
-	return d
+	if d, err := time.ParseDuration(s); err == nil && d > 0 {
+		return d
+	}
+	if n, err := strconv.Atoi(s); err == nil && n > 0 {
+		return time.Duration(n) * time.Second
+	}
+	return fallback
 }

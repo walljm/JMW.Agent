@@ -376,7 +376,7 @@ func (s *Server) StartBackground(ctx context.Context) {
 		}
 	}()
 	go (&alerting.Evaluator{Store: s.Store, Interval: 30 * time.Second}).Run(ctx)
-	go s.Terrain.Run(ctx, func() int {
+	go s.Terrain.Run(ctx, func() time.Duration {
 		v, _ := s.Store.GetTerrainPollInterval(ctx)
 		return v
 	})
