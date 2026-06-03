@@ -1,0 +1,8 @@
+.git
+.github
+agent-data
+bin
+data
+deploy/secrets
+.DS_Store
+*.log

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Initial deploy of the jmw-agent to a single host.
 #
-# Routine updates are handled by the agent's own self-updater (see
-# internal/agent/updater); this script only exists for first-time
-# installation on a new host, or for forcing a reinstall when the
-# self-updater is wedged.
+# Routine native updates are handled by the agent's own self-updater (see
+# internal/agent/updater). Docker and Home Assistant deployments are updated
+# by their container managers. This script only exists for first-time
+# installation on a new host, or for forcing a reinstall when the normal
+# update path is wedged.
 #
 # Usage:
 #   scripts/deploy-agent.sh <user@host> <os> <arch>
@@ -168,14 +169,27 @@ deploy_hassio() {
 
   local stage; stage=$(mktemp -d)
   trap "rm -rf $stage" RETURN
-  cp -R deploy/hassio-addon/jmw-agent/. "$stage/"
+  cp -R jmw-agent/. "$stage/"
   cp "$binary" "$stage/jmw-agent.${ha_arch}"
+  cp "$stage/Dockerfile.local" "$stage/Dockerfile"
+  rm -f "$stage/Dockerfile.local"
+  sed -i.bak '/^image:/d' "$stage/config.yaml"
+  rm -f "$stage/config.yaml.bak"
 
   echo "==> shipping add-on to $target:/addons/jmw-agent (HA Supervisor will rebuild)"
-  # Stream as tar so we don't depend on sftp; --exclude strips macOS
-  # resource forks the BSD tar would otherwise emit.
-  tar --exclude '._*' -C "$stage" -czf - . | \
-    ssh "$target" 'rm -f /addons/jmw-agent/* && tar -C /addons/jmw-agent -xzf -'
+  # Stream as tar so we don't depend on sftp. COPYFILE_DISABLE prevents
+  # macOS tar from emitting AppleDouble ._* metadata files.
+  COPYFILE_DISABLE=1 tar --exclude '._*' -C "$stage" -czf - . | \
+    ssh "$target" '
+      set -e
+      tmp=/tmp/jmw-agent-addon-new
+      rm -rf "$tmp"
+      mkdir -p "$tmp"
+      tar -C "$tmp" -xzf -
+      find /addons/jmw-agent -mindepth 1 -maxdepth 1 -exec rm -rf {} \;
+      cp -R "$tmp"/. /addons/jmw-agent/
+      rm -rf "$tmp"
+    '
 
   cat <<EOF
 
@@ -215,8 +229,9 @@ usage: $0 <user@host> <os> <arch>
   os:   linux | darwin | windows | hassio
   arch: amd64 | arm64
 
-This script is for *initial* deploys to a new host. Running agents
-self-update via the built-in updater; you should not need to re-run
+This script is for *initial* deploys to a new host. Native agents
+self-update via the built-in updater; Docker and Home Assistant agents
+update through their container managers. You should not need to re-run
 this for routine releases.
 EOF
 }

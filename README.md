@@ -87,6 +87,8 @@ one, and vice versa). On the next heartbeat after a new release lands, each
 eligible agent downloads the binary, verifies SHA-256, swaps it in, and
 re-execs in place. Docker deployments use Watchtower instead — see
 [deploy/docker/README.md](deploy/docker/README.md#auto-updating-the-agent).
+Home Assistant add-ons use Supervisor updates backed by the
+`walljm/jmw-agent-ha:<version>` image.
 
 ## Architecture
 
