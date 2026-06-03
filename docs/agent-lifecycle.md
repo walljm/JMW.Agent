@@ -75,6 +75,8 @@ When a new agent registers (pending status), the server fires a notification to 
 
 - **Pending:** Agent heartbeats are accepted but discovery/inventory/metrics are rejected (403).
 - **Approved:** Full operation. All subsystems active.
+- **Superseded replacement:** When an approved agent reports inventory that fingerprints to hardware already linked to another approved agent, the existing agent ID remains canonical. The replacement ID is marked deregistered, its system link is cleared, and the server returns `canonical_agent_id` so the running agent can rewrite its local identity file and send future data under the canonical ID.
+- Existing duplicates are collapsed by the same inventory/link path the next time either duplicate reports inventory; there is no separate startup sweep.
 - **Deregistered:** Agent is tombstoned. If it contacts the server, it's told to stop. Device/metric data is retained (attributed to this agent) but no new data is accepted.
 
 ---
@@ -229,44 +231,48 @@ Every architectural payload-size estimate in this document assumes gzip is enabl
 
 ## Auto-Update
 
-Agents can self-update when the server announces a newer version.
+Native agents can self-update when the server announces a newer signed version.
+Docker and Home Assistant deployments update by replacing the container image.
 
 ### Flow
 
 ```
 Agent                                     Server
   │                                          │
-  │── GET /api/v1/releases/latest ─────────▶│
+  │── POST /api/v1/agent/heartbeat ────────▶│
   │                                          │
-  │◀── {version: "1.5.0", sha256: "abc..."} │
+  │◀── {update: {version, url, sha256,       │
+  │             size, signature, algorithm}} │
   │                                          │
   │  (if version > current version)          │
   │                                          │
-  │── GET /api/v1/releases/download/{os}/{arch} ──▶│
+  │── GET /api/v1/agent/releases/{version}/{file} ─▶│
   │                                          │
   │◀── binary blob ─────────────────────────│
   │                                          │
   │  1. Verify SHA-256 matches               │
-  │  2. Write to temp file                   │
-  │  3. Replace self (atomic rename)         │
-  │  4. Re-exec (Unix) or exit for          │
+  │  2. Verify Ed25519 signature             │
+  │  3. Write to temp file                   │
+  │  4. Replace self (atomic rename)         │
+  │  5. Re-exec (Unix) or exit for           │
   │     service wrapper restart (Windows)    │
   │                                          │
 ```
 
 ### Server-Side Release Management
 
-- Server scans a `releases/` directory for binaries named `jmw-agent-{os}-{arch}-v{version}`.
+- Server scans a `releases/` directory for strict semver subdirectories such as `v2.3.4/`.
+- Agent binaries are named `jmw-agent-<os>-<arch>[.exe]` and must have a matching `.sig` sidecar.
 - Latest version is determined by semver sorting.
-- SHA-256 hash is computed on demand.
-- No automatic publishing — admin places new binaries in the release directory.
+- SHA-256 hash is computed on demand; the `.sig` file is loaded from disk.
+- The release workflow writes signatures with `cmd/updatesign`; manual publishers must do the same.
 
 ### Safety
 
-- SHA-256 verification before replacement (no signature verification currently — binary is served over pinned TLS which provides origin authentication).
-- Agent keeps the previous binary as a rollback target.
-- If the new binary fails to start (crashes within 60s of launch), the service wrapper (systemd/launchd) restarts with the old binary still in place.
-- Update checks are infrequent (every 24h) to avoid hammering the server.
+- SHA-256 and Ed25519 signature verification before replacement. The public key is local agent configuration, so a compromised server or release directory cannot forge a valid update without the signing key.
+- The binary is downloaded to a same-filesystem temp file and only moved into place after verification succeeds.
+- After a successful replacement, rollback is an operator action: publish an older signed version or reinstall the prior binary from the GitHub release.
+- Update checks ride on heartbeat responses; update downloads occur only when a newer signed release is offered.
 
 ---
 
@@ -278,6 +284,8 @@ Agent configuration via TOML file (`agent.toml`):
 # Server connection
 server_url = "https://192.168.1.100:8443"
 psk = "optional-pre-shared-key"
+pinned_sha = "server-cert-sha256-hex"
+update_public_key = "base64-ed25519-public-key"
 
 # Subsystem toggles
 [subsystems]

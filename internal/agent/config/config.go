@@ -14,6 +14,7 @@ type Config struct {
 	ServerURL             string `toml:"server_url"`
 	PSK                   string `toml:"psk"`
 	PinnedSHA             string `toml:"pinned_sha"`
+	UpdatePublicKey       string `toml:"update_public_key"`
 	IDFile                string `toml:"id_file"`
 	IntervalSecs          int    `toml:"interval_secs"`
 	DiscoveryIntervalSecs int    `toml:"discovery_interval_secs"`

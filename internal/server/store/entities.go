@@ -53,6 +53,12 @@ type System struct {
 	UpdatedAt   time.Time
 }
 
+// AgentSystemLinkResult describes the agent identity chosen for a hardware link.
+type AgentSystemLinkResult struct {
+	CanonicalAgentID   string
+	SupersededAgentIDs []string
+}
+
 // Interface represents a network interface (physical or virtual).
 type Interface struct {
 	ID            string
@@ -342,40 +348,233 @@ func (s *Store) GetSystemByAgent(ctx context.Context, agentID string) (*System, 
 // It looks up the interface by MAC to get the hardware_id, then creates or
 // updates the systems row so that hydrateDevices can populate Device.AgentID.
 // Call this after inventory ingest once the pipeline has created the interface.
-func (s *Store) EnsureAgentSystem(ctx context.Context, agentID, mac, hostname, osFamily string) error {
+func (s *Store) EnsureAgentSystem(ctx context.Context, agentID, mac, hostname, osFamily string) (*AgentSystemLinkResult, error) {
 	iface, err := s.GetInterfaceByMAC(ctx, mac)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil // interface not yet resolved; skip — will be linked on next tick
+			return &AgentSystemLinkResult{CanonicalAgentID: agentID}, nil // interface not yet resolved; skip — will be linked on next tick
 		}
-		return err
+		return nil, err
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
 
 	// Update existing system row if one already exists for this agent.
-	existing, err := s.GetSystemByAgent(ctx, agentID)
+	var existingID string
+	err = tx.QueryRowContext(ctx,
+		`SELECT id FROM systems WHERE agent_id = ? ORDER BY last_seen_at DESC LIMIT 1`, agentID).Scan(&existingID)
 	if err != nil && err != sql.ErrNoRows {
-		return err
+		return nil, err
 	}
-	if existing != nil {
-		_, err = s.DB.ExecContext(ctx,
+	if existingID != "" {
+		if _, err = tx.ExecContext(ctx,
 			`UPDATE systems SET hardware_id = ?, hostname = ?, os_family = ?, last_seen_at = ?, updated_at = ? WHERE id = ?`,
-			iface.HardwareID, hostname, osFamily, now, now, existing.ID)
-		return err
+			iface.HardwareID, hostname, osFamily, now, now, existingID); err != nil {
+			return nil, err
+		}
+	} else {
+		id := uuid.New().String()
+		if _, err = tx.ExecContext(ctx,
+			`INSERT INTO systems (id, hardware_id, agent_id, hostname, os_family, first_seen_at, last_seen_at, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT(id) DO UPDATE SET
+			    hardware_id = excluded.hardware_id, agent_id = excluded.agent_id,
+			    hostname = excluded.hostname, os_family = excluded.os_family,
+			    last_seen_at = excluded.last_seen_at, updated_at = excluded.updated_at`,
+			id, iface.HardwareID, agentID, hostname, osFamily, now, now, now, now); err != nil {
+			return nil, err
+		}
 	}
 
-	// No existing row — insert a minimal one.
-	id := uuid.New().String()
-	_, err = s.DB.ExecContext(ctx,
-		`INSERT INTO systems (id, hardware_id, agent_id, hostname, os_family, first_seen_at, last_seen_at, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		 ON CONFLICT(id) DO UPDATE SET
-		    hardware_id = excluded.hardware_id, agent_id = excluded.agent_id,
-		    hostname = excluded.hostname, os_family = excluded.os_family,
-		    last_seen_at = excluded.last_seen_at, updated_at = excluded.updated_at`,
-		id, iface.HardwareID, agentID, hostname, osFamily, now, now, now, now)
-	return err
+	result, err := s.canonicalizeAgentsForHardware(ctx, tx, agentID, iface.HardwareID, now)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (s *Store) canonicalizeAgentsForHardware(ctx context.Context, tx *sql.Tx, currentAgentID, hardwareID, now string) (*AgentSystemLinkResult, error) {
+	rows, err := tx.QueryContext(ctx,
+		`SELECT DISTINCT a.id
+		 FROM systems s
+		 JOIN agents a ON a.id = s.agent_id
+		 WHERE s.hardware_id = ? AND a.status = ?
+		 ORDER BY a.registered_at ASC,
+		          a.rowid ASC,
+		          COALESCE(a.last_heartbeat_at, a.registered_at) DESC`,
+		hardwareID, AgentStatusApproved)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var agentIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		agentIDs = append(agentIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(agentIDs) == 0 {
+		return &AgentSystemLinkResult{CanonicalAgentID: currentAgentID}, nil
+	}
+
+	canonicalAgentID := agentIDs[0]
+	superseded := make([]string, 0, len(agentIDs)-1)
+	for _, id := range agentIDs[1:] {
+		if id != canonicalAgentID {
+			superseded = append(superseded, id)
+		}
+	}
+	if len(superseded) == 0 {
+		return &AgentSystemLinkResult{CanonicalAgentID: canonicalAgentID}, nil
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE agents
+		 SET notes = CASE
+			 WHEN COALESCE(notes, '') = '' THEN COALESCE((
+				 SELECT old.notes
+				 FROM agents old
+				 JOIN systems oldsys ON oldsys.agent_id = old.id
+				 WHERE oldsys.hardware_id = ?
+				   AND old.id != ?
+				   AND old.status = ?
+				   AND COALESCE(old.notes, '') != ''
+				 ORDER BY COALESCE(old.last_heartbeat_at, old.registered_at) DESC
+				 LIMIT 1
+			 ), notes)
+			 ELSE notes
+		 END,
+		 group_id = COALESCE(group_id, (
+			 SELECT old.group_id
+			 FROM agents old
+			 JOIN systems oldsys ON oldsys.agent_id = old.id
+			 WHERE oldsys.hardware_id = ?
+			   AND old.id != ?
+			   AND old.status = ?
+			   AND old.group_id IS NOT NULL
+			 ORDER BY COALESCE(old.last_heartbeat_at, old.registered_at) DESC
+			 LIMIT 1
+		 ))
+		 WHERE id = ?`,
+		hardwareID, canonicalAgentID, AgentStatusApproved,
+		hardwareID, canonicalAgentID, AgentStatusApproved,
+		canonicalAgentID); err != nil {
+		return nil, err
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`INSERT OR IGNORE INTO tag_assignments(tag_id, target_kind, target_id)
+		 SELECT DISTINCT ta.tag_id, ta.target_kind, ?
+		 FROM tag_assignments ta
+		 JOIN systems s ON s.agent_id = ta.target_id
+		 JOIN agents a ON a.id = s.agent_id
+		 WHERE ta.target_kind = ?
+		   AND s.hardware_id = ?
+		   AND a.id != ?
+		   AND a.status = ?`,
+		canonicalAgentID, TagTargetAgent, hardwareID, canonicalAgentID, AgentStatusApproved); err != nil {
+		return nil, err
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE agents
+		 SET inventory_json = COALESCE((
+			 SELECT old.inventory_json
+			 FROM agents old
+			 JOIN systems oldsys ON oldsys.agent_id = old.id
+			 WHERE oldsys.hardware_id = ?
+			   AND old.id != ?
+			   AND old.status = ?
+			   AND COALESCE(old.inventory_json, '') != ''
+			 ORDER BY COALESCE(old.inventory_collected_at, old.registered_at) DESC
+			 LIMIT 1
+		 ), inventory_json),
+		 inventory_collected_at = COALESCE((
+			 SELECT old.inventory_collected_at
+			 FROM agents old
+			 JOIN systems oldsys ON oldsys.agent_id = old.id
+			 WHERE oldsys.hardware_id = ?
+			   AND old.id != ?
+			   AND old.status = ?
+			   AND old.inventory_collected_at IS NOT NULL
+			 ORDER BY old.inventory_collected_at DESC
+			 LIMIT 1
+		 ), inventory_collected_at),
+		 primary_ip = COALESCE(NULLIF(primary_ip, ''), (
+			 SELECT old.primary_ip
+			 FROM agents old
+			 JOIN systems oldsys ON oldsys.agent_id = old.id
+			 WHERE oldsys.hardware_id = ?
+			   AND old.id != ?
+			   AND old.status = ?
+			   AND COALESCE(old.primary_ip, '') != ''
+			 ORDER BY COALESCE(old.inventory_collected_at, old.registered_at) DESC
+			 LIMIT 1
+		 ))
+		 WHERE id = ?`,
+		hardwareID, canonicalAgentID, AgentStatusApproved,
+		hardwareID, canonicalAgentID, AgentStatusApproved,
+		hardwareID, canonicalAgentID, AgentStatusApproved,
+		canonicalAgentID); err != nil {
+		return nil, err
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE sources SET agent_id = ?, updated_at = ? WHERE agent_id IN (`+placeholdersFor(len(superseded))+`)`,
+		append([]any{canonicalAgentID, now}, stringsToAny(superseded)...)...); err != nil {
+		return nil, err
+	}
+
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(superseded)), ",")
+	clearArgs := make([]any, 0, len(superseded)+2)
+	clearArgs = append(clearArgs, now, hardwareID)
+	for _, id := range superseded {
+		clearArgs = append(clearArgs, id)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE systems SET agent_id = NULL, updated_at = ? WHERE hardware_id = ? AND agent_id IN (`+placeholders+`)`,
+		clearArgs...); err != nil {
+		return nil, err
+	}
+
+	statusArgs := make([]any, 0, len(superseded)+1)
+	statusArgs = append(statusArgs, AgentStatusDeregistered)
+	for _, id := range superseded {
+		statusArgs = append(statusArgs, id)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE agents SET status = ? WHERE id IN (`+placeholders+`)`,
+		statusArgs...); err != nil {
+		return nil, err
+	}
+
+	return &AgentSystemLinkResult{CanonicalAgentID: canonicalAgentID, SupersededAgentIDs: superseded}, nil
+}
+
+func placeholdersFor(count int) string {
+	return strings.TrimRight(strings.Repeat("?,", count), ",")
+}
+
+func stringsToAny(values []string) []any {
+	out := make([]any, len(values))
+	for i, value := range values {
+		out[i] = value
+	}
+	return out
 }
 
 // --- Interface CRUD ---

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -21,6 +22,42 @@ import (
 	"github.com/walljm/jmwagent/internal/shared/proto"
 	"github.com/walljm/jmwagent/internal/shared/version"
 )
+
+type managedIdentity struct {
+	path string
+	mu   sync.RWMutex
+	id   string
+}
+
+func newManagedIdentity(path, id string) *managedIdentity {
+	return &managedIdentity{path: path, id: id}
+}
+
+func (m *managedIdentity) Get() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.id
+}
+
+func (m *managedIdentity) Adopt(canonicalID string) error {
+	if canonicalID == "" {
+		return nil
+	}
+	m.mu.RLock()
+	current := m.id
+	m.mu.RUnlock()
+	if canonicalID == current {
+		return nil
+	}
+	if err := identity.WriteID(m.path, canonicalID); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	m.id = canonicalID
+	m.mu.Unlock()
+	slog.Info("agent identity adopted", "old_id", current, "canonical_id", canonicalID)
+	return nil
+}
 
 func main() {
 	var (
@@ -80,13 +117,14 @@ func main() {
 
 func run(ctx context.Context, cfg *agentcfg.Config, cfgPath, id string) error {
 	cli := transport.New(cfg.ServerURL, cfg.PSK, cfg.PinnedSHA)
+	agentID := newManagedIdentity(cfg.IDFile, id)
 
 	// Registration loop — retries until the server approves this agent.
 	var regResp *proto.RegisterResponse
 	for {
 		var err error
 		regResp, err = cli.Register(ctx, &proto.RegisterRequest{
-			AgentID:           id,
+			AgentID:           agentID.Get(),
 			Hostname:          collect.Hostname(),
 			OS:                collect.OS(),
 			Arch:              collect.Arch(),
@@ -106,6 +144,9 @@ func run(ctx context.Context, cfg *agentcfg.Config, cfgPath, id string) error {
 			_ = agentcfg.Save(cfgPath, cfg)
 			cli = transport.New(cfg.ServerURL, cfg.PSK, cfg.PinnedSHA)
 			slog.Info("server cert pinned", "sha256", cfg.PinnedSHA)
+		}
+		if err := agentID.Adopt(regResp.CanonicalAgentID); err != nil {
+			slog.Warn("adopt canonical agent id failed", "canonical_id", regResp.CanonicalAgentID, "err", err)
 		}
 		if regResp.Status == "approved" {
 			slog.Info("agent approved")
@@ -145,28 +186,35 @@ func run(ctx context.Context, cfg *agentcfg.Config, cfgPath, id string) error {
 	invTick := time.NewTicker(time.Duration(inventorySecs) * time.Second)
 	defer invTick.Stop()
 
-	// Send first sample immediately.
-	if err := sendSample(ctx, cli, id); err != nil {
-		slog.Warn("initial sample", "err", err)
-	}
-	if err := sendHeartbeat(ctx, cli, id); err != nil {
-		slog.Warn("initial heartbeat", "err", err)
-	}
-	// Send first inventory immediately (best-effort).
-	go func() {
-		slog.Info("initial inventory: collecting")
-		t0 := time.Now()
-		if err := sendInventory(ctx, cli, id, cfg.IncludePackages); err != nil {
-			slog.Warn("initial inventory", "err", err, "elapsed", time.Since(t0))
-			return
+	// Send first inventory before metrics so a reinstalled agent can adopt the
+	// canonical ID before it writes fresh samples under a temporary ID.
+	slog.Info("initial inventory: collecting")
+	t0 := time.Now()
+	if resp, err := sendInventory(ctx, cli, agentID.Get(), cfg.IncludePackages); err != nil {
+		slog.Warn("initial inventory", "err", err, "elapsed", time.Since(t0))
+	} else {
+		if err := agentID.Adopt(resp.CanonicalAgentID); err != nil {
+			slog.Warn("adopt canonical agent id failed", "canonical_id", resp.CanonicalAgentID, "err", err)
 		}
 		slog.Info("initial inventory: sent", "elapsed", time.Since(t0))
-	}()
+	}
+
+	// Send first sample immediately.
+	if err := sendSample(ctx, cli, agentID.Get()); err != nil {
+		slog.Warn("initial sample", "err", err)
+	}
+	if resp, err := sendHeartbeatFull(ctx, cli, agentID.Get(), cfg.UpdatePublicKey); err != nil {
+		slog.Warn("initial heartbeat", "err", err)
+	} else if resp != nil {
+		if err := agentID.Adopt(resp.CanonicalAgentID); err != nil {
+			slog.Warn("adopt canonical agent id failed", "canonical_id", resp.CanonicalAgentID, "err", err)
+		}
+	}
 	// Send first discovery scan immediately (best-effort).
 	go func() {
 		slog.Info("initial discovery: scanning")
 		t0 := time.Now()
-		if err := sendDiscoveries(ctx, cli, id); err != nil {
+		if err := sendDiscoveries(ctx, cli, agentID.Get()); err != nil {
 			slog.Warn("initial discovery", "err", err, "elapsed", time.Since(t0))
 			return
 		}
@@ -179,10 +227,13 @@ func run(ctx context.Context, cfg *agentcfg.Config, cfgPath, id string) error {
 			return ctx.Err()
 
 		case <-metricTick.C:
-			resp, err := sendHeartbeatFull(ctx, cli, id)
+			resp, err := sendHeartbeatFull(ctx, cli, agentID.Get(), cfg.UpdatePublicKey)
 			if err != nil {
 				slog.Warn("heartbeat", "err", err)
 			} else if resp != nil {
+				if err := agentID.Adopt(resp.CanonicalAgentID); err != nil {
+					slog.Warn("adopt canonical agent id failed", "canonical_id", resp.CanonicalAgentID, "err", err)
+				}
 				// Re-arm tickers if the server changed any interval.
 				if resp.NextHeartbeatIn > 0 && resp.NextHeartbeatIn != heartbeatSecs {
 					heartbeatSecs = resp.NextHeartbeatIn
@@ -200,18 +251,23 @@ func run(ctx context.Context, cfg *agentcfg.Config, cfgPath, id string) error {
 					slog.Info("inventory interval updated", "secs", inventorySecs)
 				}
 			}
-			if err := sendSample(ctx, cli, id); err != nil {
+			if err := sendSample(ctx, cli, agentID.Get()); err != nil {
 				slog.Warn("metrics", "err", err)
 			}
 
 		case <-discoveryTick.C:
-			if err := sendDiscoveries(ctx, cli, id); err != nil {
+			if err := sendDiscoveries(ctx, cli, agentID.Get()); err != nil {
 				slog.Warn("discoveries", "err", err)
 			}
 
 		case <-invTick.C:
-			if err := sendInventory(ctx, cli, id, cfg.IncludePackages); err != nil {
+			resp, err := sendInventory(ctx, cli, agentID.Get(), cfg.IncludePackages)
+			if err != nil {
 				slog.Warn("inventory", "err", err)
+			} else if resp != nil {
+				if err := agentID.Adopt(resp.CanonicalAgentID); err != nil {
+					slog.Warn("adopt canonical agent id failed", "canonical_id", resp.CanonicalAgentID, "err", err)
+				}
 			}
 		}
 	}
@@ -219,7 +275,7 @@ func run(ctx context.Context, cfg *agentcfg.Config, cfgPath, id string) error {
 
 // sendHeartbeatFull sends a heartbeat and returns the full response so the
 // caller can inspect interval directives and update offers.
-func sendHeartbeatFull(ctx context.Context, cli *transport.Client, id string) (*proto.HeartbeatResponse, error) {
+func sendHeartbeatFull(ctx context.Context, cli *transport.Client, id, updatePublicKey string) (*proto.HeartbeatResponse, error) {
 	resp, err := cli.Heartbeat(ctx, &proto.HeartbeatRequest{
 		AgentID:           id,
 		Version:           version.Version,
@@ -235,7 +291,7 @@ func sendHeartbeatFull(ctx context.Context, cli *transport.Client, id string) (*
 			return resp, nil
 		}
 		slog.Info("server offered update", "version", resp.Update.Version)
-		if err := updater.Apply(ctx, cli, resp.Update); err != nil {
+		if err := updater.Apply(ctx, cli, resp.Update, updatePublicKey); err != nil {
 			slog.Warn("update apply failed; will retry on next heartbeat", "err", err)
 		}
 		// On success Apply does not return (process is replaced).
@@ -243,8 +299,8 @@ func sendHeartbeatFull(ctx context.Context, cli *transport.Client, id string) (*
 	return resp, nil
 }
 
-func sendHeartbeat(ctx context.Context, cli *transport.Client, id string) error {
-	_, err := sendHeartbeatFull(ctx, cli, id)
+func sendHeartbeat(ctx context.Context, cli *transport.Client, id, updatePublicKey string) error {
+	_, err := sendHeartbeatFull(ctx, cli, id, updatePublicKey)
 	return err
 }
 
@@ -286,13 +342,13 @@ func sendDiscoveries(ctx context.Context, cli *transport.Client, id string) erro
 	return err
 }
 
-func sendInventory(ctx context.Context, cli *transport.Client, id string, includePackages bool) error {
+func sendInventory(ctx context.Context, cli *transport.Client, id string, includePackages bool) (*proto.InventoryResponse, error) {
 	inv := collect.Inventory(ctx, includePackages)
-	_, err := cli.Inventory(ctx, &proto.InventoryRequest{
+	resp, err := cli.Inventory(ctx, &proto.InventoryRequest{
 		AgentID:   id,
 		Inventory: inv,
 	})
-	return err
+	return resp, err
 }
 
 func sleepCtx(ctx context.Context, d time.Duration) bool {

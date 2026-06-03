@@ -1,7 +1,7 @@
 # Home Assistant add-on manifest for jmw-agent.
 # Reference: https://developers.home-assistant.io/docs/add-ons/configuration
 name: JMW Agent
-version: "2.2.5"
+version: "2.2.6"
 slug: jmw_agent
 description: Inventory + telemetry agent that reports this Home Assistant host to a JMW server.
 url: https://github.com/walljm/JMW.Agent

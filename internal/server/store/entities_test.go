@@ -182,6 +182,201 @@ func TestUpsertInterface_Conflict(t *testing.T) {
 	}
 }
 
+func TestEnsureAgentSystemAdoptsReplacementIntoExistingAgent(t *testing.T) {
+	st := testStore(t)
+	ctx := context.Background()
+
+	oldAgentID := "local-jmw-agent"
+	newAgentID := "0641dbe7-jmw-agent"
+	registeredAt := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
+	for _, agent := range []*Agent{
+		{ID: oldAgentID, Hostname: "local-jmw-agent", OS: "linux", Arch: "arm64", Version: "v1.1.2", Status: AgentStatusApproved, RegisteredAt: registeredAt},
+		{ID: newAgentID, Hostname: "0641dbe7-jmw-agent", OS: "linux", Arch: "arm64", Version: "v2.2.5", Status: AgentStatusApproved, RegisteredAt: registeredAt.Add(time.Hour)},
+	} {
+		if err := st.CreateAgent(ctx, agent); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.UpdateAgentNotes(ctx, oldAgentID, "Home Assistant (192.168.2.0/24 agent)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTagsForTarget(ctx, TagTargetAgent, oldAgentID, []string{"iot", "server"}); err != nil {
+		t.Fatal(err)
+	}
+	newSourceID, err := st.EnsureAgentSource(ctx, newAgentID, "0641dbe7-jmw-agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	collected := time.Now().UTC()
+	if err := st.SetAgentInventory(ctx, newAgentID, `{"os":{"hostname":"homeassistant"}}`, "192.168.2.206", collected); err != nil {
+		t.Fatal(err)
+	}
+
+	hwID, err := st.UpsertHardware(ctx, &Hardware{SystemVendor: "Nabu Casa", SystemModel: "Home Assistant Green"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldSystemID, err := st.UpsertSystem(ctx, &System{
+		HardwareID: hwID,
+		AgentID:    oldAgentID,
+		Hostname:   "homeassistant",
+		OSFamily:   "linux",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpsertInterface(ctx, &Interface{
+		SystemID:   oldSystemID,
+		HardwareID: hwID,
+		MAC:        "aa:bb:cc:dd:ee:ff",
+		Name:       "end0",
+		IsUp:       true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := st.EnsureAgentSystem(ctx, newAgentID, "aa:bb:cc:dd:ee:ff", "homeassistant", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CanonicalAgentID != oldAgentID {
+		t.Fatalf("canonical = %q, want %q", result.CanonicalAgentID, oldAgentID)
+	}
+	if len(result.SupersededAgentIDs) != 1 || result.SupersededAgentIDs[0] != newAgentID {
+		t.Fatalf("superseded = %#v, want [%q]", result.SupersededAgentIDs, newAgentID)
+	}
+
+	oldAgent, err := st.GetAgent(ctx, oldAgentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if oldAgent.Status != AgentStatusApproved {
+		t.Fatalf("old status = %q, want %q", oldAgent.Status, AgentStatusApproved)
+	}
+	if oldAgent.Notes != "Home Assistant (192.168.2.0/24 agent)" {
+		t.Fatalf("old notes = %q", oldAgent.Notes)
+	}
+	tags, err := st.ListTagsForTarget(ctx, TagTargetAgent, oldAgentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tags) != 2 || tags[0] != "iot" || tags[1] != "server" {
+		t.Fatalf("old tags = %#v, want [iot server]", tags)
+	}
+
+	newAgent, err := st.GetAgent(ctx, newAgentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if newAgent.Status != AgentStatusDeregistered {
+		t.Fatalf("new status = %q, want %q", newAgent.Status, AgentStatusDeregistered)
+	}
+
+	oldSystem, err := st.GetSystem(ctx, oldSystemID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if oldSystem.AgentID != oldAgentID {
+		t.Fatalf("old system agent_id = %q, want %q", oldSystem.AgentID, oldAgentID)
+	}
+	newSystem, err := st.GetSystemByAgent(ctx, newAgentID)
+	if err == nil && newSystem != nil {
+		t.Fatalf("new agent still has linked system: %#v", newSystem)
+	}
+	canonicalSystem, err := st.GetSystemByAgent(ctx, oldAgentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if canonicalSystem.HardwareID != hwID {
+		t.Fatalf("canonical system hardware_id = %q, want %q", canonicalSystem.HardwareID, hwID)
+	}
+
+	var sourceAgentID string
+	if err := st.DB.QueryRowContext(ctx, `SELECT agent_id FROM sources WHERE id = ?`, newSourceID).Scan(&sourceAgentID); err != nil {
+		t.Fatal(err)
+	}
+	if sourceAgentID != oldAgentID {
+		t.Fatalf("source agent_id = %q, want %q", sourceAgentID, oldAgentID)
+	}
+	invJSON, invAt, err := st.GetAgentInventory(ctx, oldAgentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if invJSON != `{"os":{"hostname":"homeassistant"}}` {
+		t.Fatalf("canonical inventory = %q", invJSON)
+	}
+	if invAt.IsZero() {
+		t.Fatal("canonical inventory timestamp was not copied")
+	}
+}
+
+func TestEnsureAgentSystemExistingDuplicateKeepsOldAgentWhenOldReports(t *testing.T) {
+	st := testStore(t)
+	ctx := context.Background()
+
+	oldAgentID := "local-jmw-agent"
+	newAgentID := "0641dbe7-jmw-agent"
+	registeredAt := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
+	for _, agent := range []*Agent{
+		{ID: oldAgentID, Hostname: "local-jmw-agent", OS: "linux", Arch: "arm64", Version: "v1.1.2", Status: AgentStatusApproved, RegisteredAt: registeredAt},
+		{ID: newAgentID, Hostname: "0641dbe7-jmw-agent", OS: "linux", Arch: "arm64", Version: "v2.2.5", Status: AgentStatusApproved, RegisteredAt: registeredAt.Add(time.Hour)},
+	} {
+		if err := st.CreateAgent(ctx, agent); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	hwID, err := st.UpsertHardware(ctx, &Hardware{SystemVendor: "Nabu Casa", SystemModel: "Home Assistant Green"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldSystemID, err := st.UpsertSystem(ctx, &System{
+		HardwareID: hwID,
+		AgentID:    oldAgentID,
+		Hostname:   "homeassistant",
+		OSFamily:   "linux",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpsertSystem(ctx, &System{
+		HardwareID: hwID,
+		AgentID:    newAgentID,
+		Hostname:   "homeassistant",
+		OSFamily:   "linux",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpsertInterface(ctx, &Interface{
+		SystemID:   oldSystemID,
+		HardwareID: hwID,
+		MAC:        "aa:bb:cc:dd:ee:ff",
+		Name:       "end0",
+		IsUp:       true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := st.EnsureAgentSystem(ctx, oldAgentID, "aa:bb:cc:dd:ee:ff", "homeassistant", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CanonicalAgentID != oldAgentID {
+		t.Fatalf("canonical = %q, want %q", result.CanonicalAgentID, oldAgentID)
+	}
+	if len(result.SupersededAgentIDs) != 1 || result.SupersededAgentIDs[0] != newAgentID {
+		t.Fatalf("superseded = %#v, want [%q]", result.SupersededAgentIDs, newAgentID)
+	}
+
+	newAgent, err := st.GetAgent(ctx, newAgentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if newAgent.Status != AgentStatusDeregistered {
+		t.Fatalf("new status = %q, want %q", newAgent.Status, AgentStatusDeregistered)
+	}
+}
+
 func TestHostnameAlias_Priority(t *testing.T) {
 	st := testStore(t)
 	ctx := context.Background()

@@ -26,6 +26,7 @@ type RegisterResponse struct {
 	DiscoveryIntervalSecs int    `json:"discovery_interval_secs"` // seconds; 0 = use local default
 	InventoryIntervalSecs int    `json:"inventory_interval_secs"` // seconds; 0 = use local default
 	ServerCertSHA256      string `json:"server_cert_sha256"`      // hex; agent pins this
+	CanonicalAgentID      string `json:"canonical_agent_id,omitempty"`
 }
 
 // HeartbeatRequest is sent on every interval.
@@ -43,6 +44,7 @@ type HeartbeatResponse struct {
 	NextHeartbeatIn       int         `json:"next_heartbeat_in"`       // seconds; 0 = no change
 	DiscoveryIntervalSecs int         `json:"discovery_interval_secs"` // seconds; 0 = no change
 	InventoryIntervalSecs int         `json:"inventory_interval_secs"` // seconds; 0 = no change
+	CanonicalAgentID      string      `json:"canonical_agent_id,omitempty"`
 	Update                *UpdateInfo `json:"update,omitempty"`
 }
 
@@ -50,10 +52,12 @@ type HeartbeatResponse struct {
 // platform. URL is relative to the server base URL; the agent calls it
 // over the same PSK + pinned-TLS channel as every other API request.
 type UpdateInfo struct {
-	Version string `json:"version"`
-	URL     string `json:"url"`
-	SHA256  string `json:"sha256"`
-	Size    int64  `json:"size,omitempty"`
+	Version            string `json:"version"`
+	URL                string `json:"url"`
+	SHA256             string `json:"sha256"`
+	Size               int64  `json:"size,omitempty"`
+	Signature          string `json:"signature,omitempty"`
+	SignatureAlgorithm string `json:"signature_algorithm,omitempty"`
 }
 
 // MetricSnapshot is one point-in-time system metrics reading.

@@ -1,0 +1,71 @@
+name: Security
+
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["**"]
+  schedule:
+    - cron: "37 9 * * 1"
+  workflow_dispatch:
+
+# Self-hosted runners cannot safely accept PR workflows from forks. Security
+# analysis runs on trusted pushes plus a weekly schedule.
+
+permissions:
+  contents: read
+
+jobs:
+  codeql:
+    runs-on: [self-hosted, core-services]
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+
+      - uses: github/codeql-action/init@87557b9c84dde89fdd9b10e88954ac2f4248e463  # v4
+        with:
+          languages: go
+
+      - uses: github/codeql-action/autobuild@87557b9c84dde89fdd9b10e88954ac2f4248e463  # v4
+
+      - uses: github/codeql-action/analyze@87557b9c84dde89fdd9b10e88954ac2f4248e463  # v4
+        with:
+          category: "/language:go"
+
+  govulncheck:
+    runs-on: [self-hosted, core-services]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...
+
+  trivy:
+    runs-on: [self-hosted, core-services]
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: "0"
+
+      - uses: github/codeql-action/upload-sarif@87557b9c84dde89fdd9b10e88954ac2f4248e463  # v4
+        with:
+          sarif_file: trivy-results.sarif

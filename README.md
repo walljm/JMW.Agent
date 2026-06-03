@@ -66,26 +66,35 @@ Reference unit files live in [deploy/](deploy/):
 
 The server can push binary updates to agents over the same PSK + pinned-TLS
 channel. Drop release binaries into the directory named by `releases_dir` in
-`server.toml` (default `./releases`) using this layout:
+`server.toml` (default `./releases`) with one Ed25519 signature sidecar per
+binary:
 
 ```
 releases/
   v1.4.0/
     jmw-agent-linux-amd64
+    jmw-agent-linux-amd64.sig
     jmw-agent-linux-arm64
+    jmw-agent-linux-arm64.sig
     jmw-agent-darwin-amd64
+    jmw-agent-darwin-amd64.sig
     jmw-agent-darwin-arm64
+    jmw-agent-darwin-arm64.sig
     jmw-agent-windows-amd64.exe
+    jmw-agent-windows-amd64.exe.sig
   v1.5.0/
     ...
 ```
 
-Filenames must match `jmw-agent-<os>-<arch>[.exe]`. The server picks the
-highest semver-clean directory per platform; dev/dirty tags are ignored on
-both sides (the agent will not auto-update from a clean release to a dirty
-one, and vice versa). On the next heartbeat after a new release lands, each
-eligible agent downloads the binary, verifies SHA-256, swaps it in, and
-re-execs in place. Docker deployments use Watchtower instead — see
+Filenames must match `jmw-agent-<os>-<arch>[.exe]`; signatures are base64
+Ed25519 detached signatures written by `cmd/updatesign`. Native agents must
+have `update_public_key` set in `agent.toml`; unsigned releases are not
+offered. The server picks the highest semver-clean directory per platform;
+dev/dirty tags are ignored on both sides (the agent will not auto-update from
+a clean release to a dirty one, and vice versa). On the next heartbeat after a
+new signed release lands, each eligible agent downloads the binary, verifies
+SHA-256 and the Ed25519 signature, swaps it in, and re-execs in place. Docker
+deployments use Watchtower instead — see
 [deploy/docker/README.md](deploy/docker/README.md#auto-updating-the-agent).
 Home Assistant add-ons use Supervisor updates backed by the
 `walljm/jmw-agent-ha:<version>` image.
@@ -129,6 +138,5 @@ MVP per [planning/implementation/plan.md](planning/implementation/plan.md):
 - P4 Network discovery (ARP)
 - P5 Deploy units + smoke test
 
-Future work (post-MVP): mDNS service discovery, topology graph, Docker/service
-inventory, retention rollups, agent auto-update with ed25519 signing,
-SMART/disk-IO, multi-user RBAC.
+Future work (post-MVP): mDNS service discovery, topology graph,
+Docker/service inventory, retention rollups, SMART/disk-IO, multi-user RBAC.

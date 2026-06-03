@@ -113,17 +113,15 @@ keeps the same agent ID.
 
 ## Auto-updating the agent
 
-The agent has a built-in self-update mechanism (downloads a new binary from
-the server, verifies SHA-256, and re-execs in place). Inside Docker, however,
-the binary lives on the container's read-only image layer, so the in-process
-updater cannot rewrite it. Two options:
+The native agent has a built-in self-update mechanism (downloads a signed new
+binary from the server, verifies SHA-256 plus Ed25519 signature, and re-execs in
+place). Inside Docker, however, the binary lives on the container's read-only
+image layer, so containerized agents skip native self-update. Two options:
 
 1. **Watchtower (recommended for Docker)**: run
    [`containrrr/watchtower`](https://containrrr.dev/watchtower/) on the NAS
-   to pull `walljm/jmw-agent:latest` on a schedule. The server's heartbeat
-   response will still advertise updates, but the container-side updater will
-   fail with a permission error (logged at WARN and harmless). Watchtower
-   handles the actual swap by recreating the container.
+  to pull `walljm/jmw-agent:latest` on a schedule. Watchtower handles the
+  actual swap by recreating the container.
 
    ```sh
    docker run -d --name watchtower --restart=always \
@@ -136,5 +134,6 @@ updater cannot rewrite it. Two options:
    walljm/jmw-agent:latest && docker rm -f jmw-agent` on the NAS and re-run
    the `docker run` command from step 4.
 
-For Linux/macOS bare-metal installs and Windows installs, no extra setup is
-needed — the agent updates itself when the server publishes a new release.
+For Linux/macOS bare-metal installs and Windows installs, configure
+`update_public_key` in `agent.toml`; the agent updates itself when the server
+publishes a signed new release.

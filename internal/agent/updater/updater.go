@@ -5,7 +5,8 @@
 //     running executable. Same-fs guarantees os.Rename is atomic.
 //  2. Verify SHA-256 against the value the server advertised in the
 //     heartbeat. Reject and remove on mismatch.
-//  3. Chmod 0755 (Unix) and hand off to platform-specific Apply().
+//  3. Verify the Ed25519 signature against the agent's configured public key.
+//  4. Chmod 0755 (Unix) and hand off to platform-specific Apply().
 //
 // On Linux and macOS the platform code performs an os.Rename + syscall.Exec
 // so the running process replaces itself in place with the same PID; init
@@ -26,11 +27,13 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
 	"sync"
 
 	"github.com/walljm/jmwagent/internal/agent/transport"
 	"github.com/walljm/jmwagent/internal/shared/proto"
+	"github.com/walljm/jmwagent/internal/shared/updatesig"
 )
 
 // inFlight guards against concurrent update attempts. A second heartbeat
@@ -41,9 +44,15 @@ var inFlight sync.Mutex
 // then re-execs (Unix) or exits cleanly (Windows). Returns nil only when
 // nothing needed to happen; otherwise it never returns on success because
 // the process is replaced.
-func Apply(ctx context.Context, cli *transport.Client, info *proto.UpdateInfo) error {
+func Apply(ctx context.Context, cli *transport.Client, info *proto.UpdateInfo, updatePublicKey string) error {
 	if info == nil || info.URL == "" || info.SHA256 == "" {
 		return errors.New("updater: empty update info")
+	}
+	if updatePublicKey == "" {
+		return errors.New("updater: update_public_key is required for signed updates")
+	}
+	if info.Signature == "" || info.SignatureAlgorithm != updatesig.Algorithm {
+		return fmt.Errorf("updater: unsupported update signature algorithm %q", info.SignatureAlgorithm)
 	}
 	if !inFlight.TryLock() {
 		return errors.New("updater: another update is already in progress")
@@ -76,7 +85,8 @@ func Apply(ctx context.Context, cli *transport.Client, info *proto.UpdateInfo) e
 	defer body.Close()
 
 	h := sha256.New()
-	if _, err := io.Copy(tmp, io.TeeReader(body, h)); err != nil {
+	written, err := io.Copy(tmp, io.TeeReader(body, h))
+	if err != nil {
 		_ = tmp.Close()
 		cleanup()
 		return fmt.Errorf("updater: write: %w", err)
@@ -90,6 +100,20 @@ func Apply(ctx context.Context, cli *transport.Client, info *proto.UpdateInfo) e
 	if got != info.SHA256 {
 		cleanup()
 		return fmt.Errorf("updater: sha256 mismatch: got %s want %s", got, info.SHA256)
+	}
+	if info.Size > 0 && written != info.Size {
+		cleanup()
+		return fmt.Errorf("updater: size mismatch: got %d want %d", written, info.Size)
+	}
+	meta := updatesig.Metadata{
+		Version:  info.Version,
+		Filename: path.Base(info.URL),
+		SHA256:   got,
+		Size:     written,
+	}
+	if err := updatesig.Verify(meta, info.Signature, updatePublicKey); err != nil {
+		cleanup()
+		return fmt.Errorf("updater: signature: %w", err)
 	}
 
 	if err := os.Chmod(tmpPath, 0o755); err != nil {

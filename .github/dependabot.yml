@@ -1,16 +1,25 @@
 version: 2
 updates:
+  # Version updates wait two weeks; Dependabot security updates are not delayed.
   - package-ecosystem: gomod
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 14
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 14
 
   - package-ecosystem: docker
-    directory: /deploy/docker
+    directories:
+      - /deploy/docker
+      - /jmw-agent
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 14

@@ -29,8 +29,20 @@ func EnsureID(path string) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(path, []byte(id+"\n"), 0o600); err != nil {
+	if err := WriteID(path, id); err != nil {
 		return "", err
 	}
 	return id, nil
+}
+
+// WriteID persists id as the agent's current identity.
+func WriteID(path, id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return errors.New("agent id is empty")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(id+"\n"), 0o600)
 }

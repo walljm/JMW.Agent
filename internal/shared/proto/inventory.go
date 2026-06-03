@@ -538,5 +538,6 @@ type InventoryRequest struct {
 
 // InventoryResponse is the server ack.
 type InventoryResponse struct {
-	Accepted bool `json:"accepted"`
+	Accepted         bool   `json:"accepted"`
+	CanonicalAgentID string `json:"canonical_agent_id,omitempty"`
 }

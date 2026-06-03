@@ -139,8 +139,20 @@ In **Settings → Secrets and variables → Actions**, add:
 | ------------------- | --------------------------------------- |
 | `DOCKER_HUB_USER`   | Docker Hub username (`walljm`)          |
 | `DOCKER_HUB_TOKEN`  | Docker Hub access token (not password)  |
+| `AGENT_UPDATE_SIGNING_KEY` | Base64 Ed25519 seed or private key used to sign native agent update binaries |
 
 `GITHUB_TOKEN` is provided automatically by Actions; no setup needed.
+
+To create a signing seed and derive the public key for native agent configs:
+
+```sh
+AGENT_UPDATE_SIGNING_KEY=$(openssl rand -base64 32)
+go run ./cmd/updatesign -key "$AGENT_UPDATE_SIGNING_KEY" -print-public-key
+```
+
+Store the private value as the repository secret. Put the printed public key in
+native agents' `update_public_key` config field. Docker and Home Assistant
+agents update through their container managers and do not use this key.
 
 ### 6. Lock down Actions settings
 
@@ -174,11 +186,11 @@ The release workflow fails early if they drift.
 Then watch the Actions tab. The `release` workflow:
 
 1. Builds 5 agent + 2 server binaries with `version=v1.5.0` stamped in.
-2. Creates a GitHub Release at <https://github.com/walljm/JMW.Agent/releases/tag/v1.5.0> with all binaries + `SHA256SUMS`.
+2. Signs each native agent binary with Ed25519 and creates a GitHub Release at <https://github.com/walljm/JMW.Agent/releases/tag/v1.5.0> with all binaries, `.sig` sidecars, `SHA256SUMS`, and Cosign checksum signature/bundle files.
 3. Pushes `walljm/jmw-agent:v1.5.0` and `:latest` to Docker Hub (Watchtower picks it up on the NAS boxes).
 4. Pushes the Home Assistant add-on image as `walljm/jmw-agent-ha:1.5.0`, `:v1.5.0`, and `:latest`.
 5. Installs the new `jmw-server` on core-services and restarts the service (~2s of downtime).
-6. Drops the agent binaries into `/var/lib/jmw/releases/v1.5.0/`. The running server's release scanner notices on next sweep, and agents auto-update on their next heartbeat cycle.
+6. Drops the signed agent binaries into `/var/lib/jmw/releases/v1.5.0/`. The running server's release scanner notices on next sweep, and native agents with the matching `update_public_key` auto-update on their next heartbeat cycle.
 
 The manual scripts ([scripts/deploy-server.sh](../../scripts/deploy-server.sh), [scripts/deploy-agent.sh](../../scripts/deploy-agent.sh)) remain available for initial host bring-up and break-glass deploys; they don't conflict with the CI/CD path.
 

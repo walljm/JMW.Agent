@@ -8,6 +8,7 @@
 #
 # Files are installed as user `jmw` (the server's runtime user) at:
 #   /var/lib/jmw/releases/<version>/jmw-agent-<os>-<arch>[.exe]
+#   /var/lib/jmw/releases/<version>/jmw-agent-<os>-<arch>[.exe].sig
 #
 # The script enumerates an explicit list of expected binaries — anything
 # else in srcdir is ignored.
@@ -54,7 +55,13 @@ for name in "${binaries[@]}"; do
     echo "missing expected binary: $src" >&2
     exit 5
   fi
+  sig="${src}.sig"
+  if [[ ! -f "$sig" ]]; then
+    echo "missing expected update signature: $sig" >&2
+    exit 6
+  fi
   install -o jmw -g jmw -m 0755 "$src" "${dest}/${name}"
+  install -o jmw -g jmw -m 0644 "$sig" "${dest}/${name}.sig"
 done
 
 # Copy SHA256SUMS too if present (informational; server doesn't read it).
@@ -62,4 +69,4 @@ if [[ -f "${srcdir}/SHA256SUMS" ]]; then
   install -o jmw -g jmw -m 0644 "${srcdir}/SHA256SUMS" "${dest}/SHA256SUMS"
 fi
 
-echo "published ${#binaries[@]} agent binaries to $dest"
+echo "published ${#binaries[@]} signed agent binaries to $dest"

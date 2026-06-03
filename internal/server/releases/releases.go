@@ -29,19 +29,21 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
 
 // Entry is one published agent binary.
 type Entry struct {
-	Version  string // e.g. "v1.3.0"
-	OS       string // "linux" | "darwin" | "windows"
-	Arch     string // "amd64" | "arm64"
-	Path     string // absolute path on disk
-	Size     int64
-	SHA256   string // hex
-	Filename string // base name (used in the download URL)
+	Version   string // e.g. "v1.3.0"
+	OS        string // "linux" | "darwin" | "windows"
+	Arch      string // "amd64" | "arm64"
+	Path      string // absolute path on disk
+	Size      int64
+	SHA256    string // hex
+	Signature string // base64 Ed25519 signature sidecar
+	Filename  string // base name (used in the download URL)
 }
 
 // Manager owns the scan state for a releases directory.
@@ -169,13 +171,14 @@ func (m *Manager) Scan() error {
 				sum = h
 			}
 			ent := Entry{
-				Version:  version,
-				OS:       goos,
-				Arch:     goarch,
-				Path:     full,
-				Size:     info.Size(),
-				SHA256:   sum,
-				Filename: fe.Name(),
+				Version:   version,
+				OS:        goos,
+				Arch:      goarch,
+				Path:      full,
+				Size:      info.Size(),
+				SHA256:    sum,
+				Signature: readSignature(full + ".sig"),
+				Filename:  fe.Name(),
 			}
 			key := goos + "/" + goarch
 			if cur, exists := newByPlatform[key]; !exists || semverLess(cur.Version, ent.Version) {
@@ -293,6 +296,14 @@ func hashFile(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func readSignature(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }
 
 // Validate confirms the manager's directory exists and is readable. Called

@@ -88,6 +88,7 @@ func (s *Server) agentTick(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Process inventory section.
+	canonicalAgentID := req.AgentID
 	if req.Inventory != nil {
 		collected := req.Inventory.Inventory.CollectedAt
 		if collected.IsZero() {
@@ -95,7 +96,6 @@ func (s *Server) agentTick(w http.ResponseWriter, r *http.Request) {
 		}
 		blob, _ := json.Marshal(req.Inventory.Inventory)
 		primaryIP := pickPrimaryIP(req.Inventory.Inventory)
-		_ = s.Store.SetAgentInventory(ctx, req.AgentID, string(blob), primaryIP, collected)
 
 		if _, pErr := s.Ingestor.Ingest(ctx, "agent-inventory", srcID, &req.Inventory.Inventory); pErr != nil {
 			slog.Warn("tick: inventory ingest failed", "agent", req.AgentID, "err", pErr)
@@ -104,8 +104,9 @@ func (s *Server) agentTick(w http.ResponseWriter, r *http.Request) {
 		// Link the agent to its hardware so Device.AgentID is populated on the
 		// device detail page (hydrateDevices joins systems on hardware_id).
 		if mac := pickPrimaryMAC(req.Inventory.Inventory); mac != "" {
-			_ = s.Store.EnsureAgentSystem(ctx, req.AgentID, pipeline.NormalizeMAC(mac), a.Hostname, a.OS)
+			canonicalAgentID = s.linkAgentHardware(ctx, "agentTick", req.AgentID, pipeline.NormalizeMAC(mac), a.Hostname, a.OS)
 		}
+		_ = s.Store.SetAgentInventory(ctx, canonicalAgentID, string(blob), primaryIP, collected)
 
 		// Temperature + battery snapshots.
 		if len(req.Inventory.Inventory.Hardware.Temperatures) > 0 {
@@ -113,14 +114,14 @@ func (s *Server) agentTick(w http.ResponseWriter, r *http.Request) {
 			for i, t := range req.Inventory.Inventory.Hardware.Temperatures {
 				temps[i] = store.TempSnapshot{Sensor: t.Name, Celsius: t.Celsius}
 			}
-			_ = s.Store.InsertTemperatureSnapshots(ctx, req.AgentID, collected, temps)
+			_ = s.Store.InsertTemperatureSnapshots(ctx, canonicalAgentID, collected, temps)
 		}
 		if ch := req.Inventory.Inventory.Chassis; ch != nil && ch.Battery != nil {
-			_ = s.Store.InsertBatterySnapshot(ctx, req.AgentID, collected,
+			_ = s.Store.InsertBatterySnapshot(ctx, canonicalAgentID, collected,
 				ch.Battery.ChargePercent, ch.Battery.State, ch.Battery.HealthPercent)
 		}
 	}
 
-	resp := proto.TickResponse{Accepted: true}
+	resp := proto.TickResponse{Accepted: true, CanonicalAgentID: canonicalAgentID}
 	writeJSON(w, http.StatusOK, resp)
 }

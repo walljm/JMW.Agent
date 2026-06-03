@@ -1,6 +1,7 @@
 package httpsrv
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -160,11 +161,17 @@ func (s *Server) agentHeartbeat(w http.ResponseWriter, r *http.Request) {
 	// builds at the same MAJOR.MINOR.PATCH, so the comparison Just Works.
 	if s.Releases != nil && s.Releases.Enabled() && a.OS != "" && a.Arch != "" {
 		if e, ok := s.Releases.Latest(a.OS, a.Arch); ok && releases.SemverGreater(req.Version, e.Version) {
-			resp.Update = &proto.UpdateInfo{
-				Version: e.Version,
-				URL:     "/api/v1/agent/releases/" + e.Version + "/" + e.Filename,
-				SHA256:  e.SHA256,
-				Size:    e.Size,
+			if e.Signature == "" {
+				slog.Warn("release update skipped: missing signature", "version", e.Version, "filename", e.Filename)
+			} else {
+				resp.Update = &proto.UpdateInfo{
+					Version:            e.Version,
+					URL:                "/api/v1/agent/releases/" + e.Version + "/" + e.Filename,
+					SHA256:             e.SHA256,
+					Size:               e.Size,
+					Signature:          e.Signature,
+					SignatureAlgorithm: "ed25519",
+				}
 			}
 		}
 	}
@@ -305,16 +312,7 @@ func (s *Server) agentInventory(w http.ResponseWriter, r *http.Request) {
 		collected = time.Now().UTC()
 	}
 	primaryIP := pickPrimaryIP(req.Inventory)
-	if err := s.Store.SetAgentInventory(r.Context(), req.AgentID, string(blob), primaryIP, collected); err != nil {
-		slog.Error("set agent inventory failed", "handler", "agentInventory", "agent_id", req.AgentID, "err", err)
-		writeJSONError(w, http.StatusInternalServerError, "db_error", "internal error")
-		return
-	}
-	_ = s.Store.LogEvent(r.Context(), &store.Event{
-		Type: "agent.inventory", Severity: store.SeverityInfo,
-		SourceKind: "agent", SourceID: req.AgentID,
-		Summary: "Inventory updated: " + a.Hostname,
-	})
+	canonicalAgentID := req.AgentID
 
 	// Feed through the entity pipeline as the sole write path.
 	if s.Ingestor != nil {
@@ -329,8 +327,19 @@ func (s *Server) agentInventory(w http.ResponseWriter, r *http.Request) {
 	// Link the agent to its hardware so Device.AgentID is populated on the
 	// device detail page (hydrateDevices joins systems on hardware_id).
 	if mac := pickPrimaryMAC(req.Inventory); mac != "" {
-		_ = s.Store.EnsureAgentSystem(r.Context(), req.AgentID, pipeline.NormalizeMAC(mac), a.Hostname, a.OS)
+		canonicalAgentID = s.linkAgentHardware(r.Context(), "agentInventory", req.AgentID, pipeline.NormalizeMAC(mac), a.Hostname, a.OS)
 	}
+
+	if err := s.Store.SetAgentInventory(r.Context(), canonicalAgentID, string(blob), primaryIP, collected); err != nil {
+		slog.Error("set agent inventory failed", "handler", "agentInventory", "agent_id", canonicalAgentID, "reported_agent_id", req.AgentID, "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "db_error", "internal error")
+		return
+	}
+	_ = s.Store.LogEvent(r.Context(), &store.Event{
+		Type: "agent.inventory", Severity: store.SeverityInfo,
+		SourceKind: "agent", SourceID: canonicalAgentID,
+		Summary: "Inventory updated: " + a.Hostname,
+	})
 
 	// Write expanded metric snapshots from inventory data (temperature, battery).
 	if len(req.Inventory.Hardware.Temperatures) > 0 {
@@ -338,14 +347,39 @@ func (s *Server) agentInventory(w http.ResponseWriter, r *http.Request) {
 		for i, t := range req.Inventory.Hardware.Temperatures {
 			temps[i] = store.TempSnapshot{Sensor: t.Name, Celsius: t.Celsius}
 		}
-		_ = s.Store.InsertTemperatureSnapshots(r.Context(), req.AgentID, collected, temps)
+		_ = s.Store.InsertTemperatureSnapshots(r.Context(), canonicalAgentID, collected, temps)
 	}
 	if ch := req.Inventory.Chassis; ch != nil && ch.Battery != nil {
-		_ = s.Store.InsertBatterySnapshot(r.Context(), req.AgentID, collected,
+		_ = s.Store.InsertBatterySnapshot(r.Context(), canonicalAgentID, collected,
 			ch.Battery.ChargePercent, ch.Battery.State, ch.Battery.HealthPercent)
 	}
 
-	writeJSON(w, http.StatusOK, proto.InventoryResponse{Accepted: true})
+	writeJSON(w, http.StatusOK, proto.InventoryResponse{Accepted: true, CanonicalAgentID: canonicalAgentID})
+}
+
+func (s *Server) linkAgentHardware(ctx context.Context, handler, agentID, mac, hostname, osFamily string) string {
+	result, err := s.Store.EnsureAgentSystem(ctx, agentID, mac, hostname, osFamily)
+	if err != nil {
+		slog.Warn("link agent hardware failed", "handler", handler, "agent_id", agentID, "mac", mac, "err", err)
+		return agentID
+	}
+	if result == nil || result.CanonicalAgentID == "" {
+		return agentID
+	}
+	for _, oldID := range result.SupersededAgentIDs {
+		slog.Info("agent superseded", "handler", handler, "agent_id", oldID, "canonical_agent_id", result.CanonicalAgentID)
+		_ = s.Store.LogEvent(ctx, &store.Event{
+			Type:       "agent.superseded",
+			Severity:   store.SeverityInfo,
+			SourceKind: "agent",
+			SourceID:   oldID,
+			Summary:    "Agent superseded by canonical agent: " + result.CanonicalAgentID,
+			Detail: map[string]any{
+				"canonical_agent_id": result.CanonicalAgentID,
+			},
+		})
+	}
+	return result.CanonicalAgentID
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

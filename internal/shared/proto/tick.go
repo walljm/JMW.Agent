@@ -18,6 +18,7 @@ type TickRequest struct {
 
 // TickResponse is the server's response to a tick.
 type TickResponse struct {
-	Accepted bool        `json:"accepted"`
-	Update   *UpdateInfo `json:"update,omitempty"`
+	Accepted         bool        `json:"accepted"`
+	CanonicalAgentID string      `json:"canonical_agent_id,omitempty"`
+	Update           *UpdateInfo `json:"update,omitempty"`
 }
