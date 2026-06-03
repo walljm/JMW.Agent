@@ -400,8 +400,8 @@ func (s *Store) RotateChannelSecrets(ctx context.Context, decryptKey, encryptKey
 	defer rows.Close()
 
 	type chanRow struct {
-		id         int64
-		kind, cfg  string
+		id        int64
+		kind, cfg string
 	}
 	var channels []chanRow
 	for rows.Next() {

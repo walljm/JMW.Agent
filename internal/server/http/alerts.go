@@ -517,10 +517,10 @@ func (s *Server) deviceDetail(w http.ResponseWriter, r *http.Request) {
 		"EditNotes":       editNotes,
 		"DNSActivity":     dnsActivity,
 		"Networks":        deviceNetworks,
-		"Agent":        agent,
-		"Latest":       latest,
-		"Inventory":    inventory,
-		"HasInventory": inventory != nil,
+		"Agent":           agent,
+		"Latest":          latest,
+		"Inventory":       inventory,
+		"HasInventory":    inventory != nil,
 	})
 }
 

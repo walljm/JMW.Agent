@@ -624,7 +624,7 @@ type technitiumZonesList struct {
 
 type technitiumZoneSummary struct {
 	Name     string `json:"name"`
-	Type     string `json:"type"`     // "Primary", "Secondary", "Stub", etc.
+	Type     string `json:"type"` // "Primary", "Secondary", "Stub", etc.
 	Disabled bool   `json:"disabled"`
 }
 

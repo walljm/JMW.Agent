@@ -20,12 +20,12 @@ type RegisterRequest struct {
 
 // RegisterResponse tells the agent what happened.
 type RegisterResponse struct {
-	Status               string `json:"status"`             // "approved" | "pending"
-	Message              string `json:"message"`
-	HeartbeatInterval    int    `json:"heartbeat_interval"`    // seconds; 0 = use local default
-	DiscoveryIntervalSecs int   `json:"discovery_interval_secs"` // seconds; 0 = use local default
-	InventoryIntervalSecs int   `json:"inventory_interval_secs"` // seconds; 0 = use local default
-	ServerCertSHA256     string `json:"server_cert_sha256"` // hex; agent pins this
+	Status                string `json:"status"` // "approved" | "pending"
+	Message               string `json:"message"`
+	HeartbeatInterval     int    `json:"heartbeat_interval"`      // seconds; 0 = use local default
+	DiscoveryIntervalSecs int    `json:"discovery_interval_secs"` // seconds; 0 = use local default
+	InventoryIntervalSecs int    `json:"inventory_interval_secs"` // seconds; 0 = use local default
+	ServerCertSHA256      string `json:"server_cert_sha256"`      // hex; agent pins this
 }
 
 // HeartbeatRequest is sent on every interval.
@@ -40,7 +40,7 @@ type HeartbeatRequest struct {
 // HeartbeatResponse may include directives back to the agent.
 type HeartbeatResponse struct {
 	Approved              bool        `json:"approved"`
-	NextHeartbeatIn       int         `json:"next_heartbeat_in"`        // seconds; 0 = no change
+	NextHeartbeatIn       int         `json:"next_heartbeat_in"`       // seconds; 0 = no change
 	DiscoveryIntervalSecs int         `json:"discovery_interval_secs"` // seconds; 0 = no change
 	InventoryIntervalSecs int         `json:"inventory_interval_secs"` // seconds; 0 = no change
 	Update                *UpdateInfo `json:"update,omitempty"`
