@@ -207,6 +207,8 @@ func (s *Server) devicesList(w http.ResponseWriter, r *http.Request) {
 		networkID = "monitored"
 	case "all":
 		devices, err = s.Store.ListDevices(ctx)
+	case "unclassified":
+		devices, err = s.Store.ListUnclassifiedDevices(ctx)
 	default:
 		// Specific network selected.
 		devices, err = s.Store.ListDevicesOnNetwork(ctx, networkID)
@@ -515,10 +517,10 @@ func (s *Server) deviceDetail(w http.ResponseWriter, r *http.Request) {
 		"EditNotes":       editNotes,
 		"DNSActivity":     dnsActivity,
 		"Networks":        deviceNetworks,
-		"Agent":        agent,
-		"Latest":       latest,
-		"Inventory":    inventory,
-		"HasInventory": inventory != nil,
+		"Agent":           agent,
+		"Latest":          latest,
+		"Inventory":       inventory,
+		"HasInventory":    inventory != nil,
 	})
 }
 

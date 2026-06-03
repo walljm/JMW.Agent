@@ -89,14 +89,14 @@ func buildRootDSERequest(attrs []string) []byte {
 	}
 
 	// SearchRequest body
-	body := berOctetStr("")       // baseObject = ""
-	body = append(body, berEnum(0)...)   // scope = baseObject(0)
-	body = append(body, berEnum(0)...)   // derefAliases = neverDerefAliases(0)
-	body = append(body, berInt(0)...)    // sizeLimit = 0
-	body = append(body, berInt(10)...)   // timeLimit = 10s
-	body = append(body, berBool(false)...) // typesOnly = false
+	body := berOctetStr("")                           // baseObject = ""
+	body = append(body, berEnum(0)...)                // scope = baseObject(0)
+	body = append(body, berEnum(0)...)                // derefAliases = neverDerefAliases(0)
+	body = append(body, berInt(0)...)                 // sizeLimit = 0
+	body = append(body, berInt(10)...)                // timeLimit = 10s
+	body = append(body, berBool(false)...)            // typesOnly = false
 	body = append(body, berPresent("objectClass")...) // filter: (objectClass=*)
-	body = append(body, berSeq(attrBytes)...)          // attributes
+	body = append(body, berSeq(attrBytes)...)         // attributes
 
 	// [APPLICATION 3] CONSTRUCTED = 0x63
 	msg := berInt(1) // messageID = 1
@@ -266,10 +266,10 @@ func berTLV(tag byte, val []byte) []byte {
 	return append(b, val...)
 }
 
-func berSeq(val []byte) []byte      { return berTLV(0x30, val) }
-func berInt(n int) []byte           { return berTLV(0x02, []byte{byte(n)}) }
-func berEnum(n int) []byte          { return berTLV(0x0a, []byte{byte(n)}) }
-func berOctetStr(s string) []byte   { return berTLV(0x04, []byte(s)) }
+func berSeq(val []byte) []byte    { return berTLV(0x30, val) }
+func berInt(n int) []byte         { return berTLV(0x02, []byte{byte(n)}) }
+func berEnum(n int) []byte        { return berTLV(0x0a, []byte{byte(n)}) }
+func berOctetStr(s string) []byte { return berTLV(0x04, []byte(s)) }
 func berBool(b bool) []byte {
 	v := byte(0x00)
 	if b {

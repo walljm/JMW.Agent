@@ -25,8 +25,8 @@ import (
 func main() {
 	var (
 		cfgPath  = flag.String("config", "agent.toml", "path to agent config file")
-		serverU = flag.String("server", "", "server URL (overrides config)")
-		idPath  = flag.String("id-file", "", "agent identity file (overrides config)")
+		serverU  = flag.String("server", "", "server URL (overrides config)")
+		idPath   = flag.String("id-file", "", "agent identity file (overrides config)")
 		interval = flag.Int("interval", 0, "metrics interval seconds (overrides config)")
 		showVer  = flag.Bool("version", false, "print version and exit")
 	)
@@ -230,8 +230,8 @@ func sendHeartbeatFull(ctx context.Context, cli *transport.Client, id string) (*
 		return nil, err
 	}
 	if resp != nil && resp.Update != nil {
-		if hostfs.Active() {
-			slog.Debug("update offered but skipped (containerized; handled by image updater)", "version", resp.Update.Version)
+		if hostfs.Active() || os.Getenv("SUPERVISOR_TOKEN") != "" {
+			slog.Debug("update offered but skipped (containerized; handled by image or Supervisor updater)", "version", resp.Update.Version)
 			return resp, nil
 		}
 		slog.Info("server offered update", "version", resp.Update.Version)

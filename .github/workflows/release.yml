@@ -119,6 +119,33 @@ jobs:
             --push \
             .
 
+      - name: Verify Home Assistant add-on version
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          addon_version=$(sed -n 's/^version: "\(.*\)"/\1/p' jmw-agent/config.yaml)
+          if [[ "v${addon_version}" != "${VERSION}" ]]; then
+            echo "Home Assistant add-on version ${addon_version} must match release tag ${VERSION}" >&2
+            exit 1
+          fi
+          echo "ADDON_VERSION=${addon_version}" >> "$GITHUB_ENV"
+
+      - name: Build & push Home Assistant add-on image
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg "BINARY_VERSION=${VERSION}" \
+            --build-arg "ADDON_VERSION=${ADDON_VERSION}" \
+            -f jmw-agent/Dockerfile \
+            -t "walljm/jmw-agent-ha:${ADDON_VERSION}" \
+            -t "walljm/jmw-agent-ha:${VERSION}" \
+            -t "walljm/jmw-agent-ha:latest" \
+            --push \
+            .
+
       - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac  # v3
 
       - name: Sign Docker image
@@ -128,6 +155,9 @@ jobs:
         run: |
           cosign sign --yes "walljm/jmw-agent:${VERSION}"
           cosign sign --yes "walljm/jmw-agent:latest"
+          cosign sign --yes "walljm/jmw-agent-ha:${ADDON_VERSION}"
+          cosign sign --yes "walljm/jmw-agent-ha:${VERSION}"
+          cosign sign --yes "walljm/jmw-agent-ha:latest"
 
   deploy-server:
     needs: build

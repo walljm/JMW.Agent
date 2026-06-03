@@ -31,6 +31,18 @@ type ObservationInput struct {
 	HostnameSources map[string]string // source kind → raw hostname
 	Addresses       []AddressInput
 	Hints           *InterfaceHints
+
+	// Fingerprints are identity markers extracted by the adapter. The resolver
+	// uses these to find existing devices before creating new ones, and
+	// registers any new fingerprints it discovers.
+	Fingerprints []Fingerprint
+}
+
+// Fingerprint is a single identity marker for device resolution.
+type Fingerprint struct {
+	Kind   string // "mac", "serial:system", "serial:board", "docker_engine_id"
+	Value  string // normalized value
+	Source string // what reported it: "agent", "discovery", "terrain-dhcp", etc.
 }
 
 // AddressInput describes an IP address to associate with the interface.
@@ -103,7 +115,7 @@ func (p *Pipeline) Process(ctx context.Context, inputs []ObservationInput) (*Res
 
 func (p *Pipeline) processOne(ctx context.Context, resolver *Resolver, obs *ObservationInput, result *Result) (string, error) {
 	// Stage 1: Resolve
-	iface, err := resolver.ResolveInterface(ctx, obs.MAC, obs.Hints)
+	iface, err := resolver.ResolveInterface(ctx, obs.MAC, obs.Hints, obs.Fingerprints)
 	if err != nil {
 		return "", fmt.Errorf("stage resolve: %w", err)
 	}

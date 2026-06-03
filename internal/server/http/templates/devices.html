@@ -8,6 +8,7 @@
     <select name="network" onchange="this.form.submit()">
       <option value="monitored" {{if eq .NetworkFilter "monitored"}}selected{{end}}>Monitored networks</option>
       <option value="all" {{if eq .NetworkFilter "all"}}selected{{end}}>All networks</option>
+      <option value="unclassified" {{if eq .NetworkFilter "unclassified"}}selected{{end}}>Unclassified</option>
       {{range .Networks}}
         <option value="{{.ID}}" {{if eq $.NetworkFilter .ID}}selected{{end}}>
           {{if .Name}}{{.Name}}{{else}}{{.GatewayMAC}}{{end}}
@@ -68,7 +69,9 @@
   </table>
   </div>
   {{else}}
-    {{if and .NetworkFilter (ne .NetworkFilter "monitored") (ne .NetworkFilter "all")}}
+    {{if eq .NetworkFilter "unclassified"}}
+      <p class="muted">No unclassified devices. All discovered devices fall within a known network's CIDR range.</p>
+    {{else if and .NetworkFilter (ne .NetworkFilter "monitored") (ne .NetworkFilter "all")}}
       <p class="muted">No devices found on the selected network. The network may not have a CIDR configured, or no discovered devices match its address range.</p>
     {{else}}
       <p class="muted">No devices discovered yet. Agents will report ARP/mDNS sightings during their normal cycle.</p>

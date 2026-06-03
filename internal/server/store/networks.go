@@ -246,6 +246,60 @@ func (s *Store) ListDevicesOnNetwork(ctx context.Context, networkID string) ([]*
 	return s.ListDevicesInCIDR(ctx, nw.CIDR)
 }
 
+// ListUnclassifiedDevices returns devices whose IPv4 address does not fall
+// within any known network's CIDR, plus devices with no IP address at all.
+func (s *Store) ListUnclassifiedDevices(ctx context.Context) ([]*Device, error) {
+	nets, err := s.ListNetworks(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	var ipNets []*net.IPNet
+	for _, n := range nets {
+		if n.CIDR == "" {
+			continue
+		}
+		_, ipNet, err := net.ParseCIDR(n.CIDR)
+		if err != nil {
+			continue
+		}
+		ipNets = append(ipNets, ipNet)
+	}
+
+	all, err := s.ListDevices(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// If no networks have CIDRs, nothing can be classified — return empty.
+	if len(ipNets) == 0 {
+		return all, nil
+	}
+
+	var out []*Device
+	for _, d := range all {
+		if d.IP == "" {
+			out = append(out, d)
+			continue
+		}
+		ip := net.ParseIP(d.IP)
+		if ip == nil {
+			out = append(out, d)
+			continue
+		}
+		classified := false
+		for _, n := range ipNets {
+			if n.Contains(ip) {
+				classified = true
+				break
+			}
+		}
+		if !classified {
+			out = append(out, d)
+		}
+	}
+	return out, nil
+}
+
 // ListDevicesOnMonitoredNetworks returns devices on any monitored network.
 func (s *Store) ListDevicesOnMonitoredNetworks(ctx context.Context) ([]*Device, error) {
 	nets, err := s.ListNetworks(ctx, NetworkStatusMonitored)

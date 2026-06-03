@@ -376,6 +376,7 @@ For each release:
 - `jmw-server-darwin-amd64`
 - `jmw-server-darwin-arm64`
 - Docker image: `walljm/jmw-agent:latest` + `walljm/jmw-agent:v1.X.Y`
+- Home Assistant add-on image: `walljm/jmw-agent-ha:latest` + `walljm/jmw-agent-ha:1.X.Y`
 
 ---
 
@@ -446,4 +447,6 @@ Docker-deployed agents don't use the binary self-update path. Instead:
 
 ### Home Assistant Agents
 
-HA add-on agents update through the Supervisor's add-on update mechanism. The add-on repository references the latest binary version; Supervisor handles download and restart.
+HA add-on agents update through the Supervisor's add-on update mechanism. Home Assistant installs this repo as an add-on repository, reads `jmw-agent/config.yaml`, and pulls the prebuilt `docker.io/walljm/jmw-agent-ha:<version>` image. The add-on manifest version omits the binary tag's leading `v` (`2.3.0` in `config.yaml` for release tag `v2.3.0`). The release workflow validates that match, publishes the image, and Supervisor handles download and restart.
+
+The in-process binary updater is disabled inside HA add-ons because `SUPERVISOR_TOKEN` means Supervisor owns the container lifecycle.

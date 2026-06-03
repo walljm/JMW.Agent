@@ -342,7 +342,7 @@ func (s *Store) GetSystemByAgent(ctx context.Context, agentID string) (*System, 
 // It looks up the interface by MAC to get the hardware_id, then creates or
 // updates the systems row so that hydrateDevices can populate Device.AgentID.
 // Call this after inventory ingest once the pipeline has created the interface.
-func (s *Store) EnsureAgentSystem(ctx context.Context, agentID, mac string) error {
+func (s *Store) EnsureAgentSystem(ctx context.Context, agentID, mac, hostname, osFamily string) error {
 	iface, err := s.GetInterfaceByMAC(ctx, mac)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -360,20 +360,21 @@ func (s *Store) EnsureAgentSystem(ctx context.Context, agentID, mac string) erro
 	}
 	if existing != nil {
 		_, err = s.DB.ExecContext(ctx,
-			`UPDATE systems SET hardware_id = ?, last_seen_at = ?, updated_at = ? WHERE id = ?`,
-			iface.HardwareID, now, now, existing.ID)
+			`UPDATE systems SET hardware_id = ?, hostname = ?, os_family = ?, last_seen_at = ?, updated_at = ? WHERE id = ?`,
+			iface.HardwareID, hostname, osFamily, now, now, existing.ID)
 		return err
 	}
 
 	// No existing row — insert a minimal one.
 	id := uuid.New().String()
 	_, err = s.DB.ExecContext(ctx,
-		`INSERT INTO systems (id, hardware_id, agent_id, hostname, first_seen_at, last_seen_at, created_at, updated_at)
-		 VALUES (?, ?, ?, '', ?, ?, ?, ?)
+		`INSERT INTO systems (id, hardware_id, agent_id, hostname, os_family, first_seen_at, last_seen_at, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
 		    hardware_id = excluded.hardware_id, agent_id = excluded.agent_id,
+		    hostname = excluded.hostname, os_family = excluded.os_family,
 		    last_seen_at = excluded.last_seen_at, updated_at = excluded.updated_at`,
-		id, iface.HardwareID, agentID, now, now, now, now)
+		id, iface.HardwareID, agentID, hostname, osFamily, now, now, now, now)
 	return err
 }
 

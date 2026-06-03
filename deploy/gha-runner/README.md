@@ -167,13 +167,18 @@ are what sudoers grants permission to execute.
 git tag v1.5.0 && git push origin v1.5.0
 ```
 
+Before tagging, update `jmw-agent/config.yaml` so its
+`version:` matches the tag without the leading `v` (`1.5.0` for `v1.5.0`).
+The release workflow fails early if they drift.
+
 Then watch the Actions tab. The `release` workflow:
 
 1. Builds 5 agent + 2 server binaries with `version=v1.5.0` stamped in.
 2. Creates a GitHub Release at <https://github.com/walljm/JMW.Agent/releases/tag/v1.5.0> with all binaries + `SHA256SUMS`.
 3. Pushes `walljm/jmw-agent:v1.5.0` and `:latest` to Docker Hub (Watchtower picks it up on the NAS boxes).
-4. Installs the new `jmw-server` on core-services and restarts the service (~2s of downtime).
-5. Drops the agent binaries into `/var/lib/jmw/releases/v1.5.0/`. The running server's release scanner notices on next sweep, and agents auto-update on their next heartbeat cycle.
+4. Pushes the Home Assistant add-on image as `walljm/jmw-agent-ha:1.5.0`, `:v1.5.0`, and `:latest`.
+5. Installs the new `jmw-server` on core-services and restarts the service (~2s of downtime).
+6. Drops the agent binaries into `/var/lib/jmw/releases/v1.5.0/`. The running server's release scanner notices on next sweep, and agents auto-update on their next heartbeat cycle.
 
 The manual scripts ([scripts/deploy-server.sh](../../scripts/deploy-server.sh), [scripts/deploy-agent.sh](../../scripts/deploy-agent.sh)) remain available for initial host bring-up and break-glass deploys; they don't conflict with the CI/CD path.
 

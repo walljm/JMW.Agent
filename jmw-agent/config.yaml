@@ -1,31 +1,31 @@
 # Home Assistant add-on manifest for jmw-agent.
 # Reference: https://developers.home-assistant.io/docs/add-ons/configuration
 name: JMW Agent
-version: "1.5.4"
+version: "2.2.5"
 slug: jmw_agent
 description: Inventory + telemetry agent that reports this Home Assistant host to a JMW server.
 url: https://github.com/walljm/JMW.Agent
+image: docker.io/walljm/jmw-agent-ha
 arch:
   - aarch64
   - amd64
-  - armv7
 init: false
 boot: auto
 startup: services
 # host_network gives the agent the real interfaces / hostname instead of the
 # add-on's bridge interface (REQ-038 ICMP probes, network inventory).
 host_network: true
-# host_pid lets the listening-port collector and `who`/`ps` collectors see
-# host processes, not just the add-on's own PID namespace.
+# host_pid lets the listening-port collector and process collectors see host
+# processes, not just the add-on's own PID namespace.
 host_pid: true
-# full_access bind-mounts the host root into the container so JMW_HOST_ROOT
-# can read /proc, /sys, /etc/os-release, and statfs mountpoints from the host.
+# full_access gives the agent enough privilege to inspect host /proc, /sys,
+# devices, and mount information exposed by the Supervisor container runtime.
 full_access: true
 # docker_api exposes /var/run/docker.sock so the docker container collector
 # can inventory the other HA add-ons running on this box.
 docker_api: true
 # hassio_api gives the add-on a SUPERVISOR_TOKEN env var and lets us call
-# /supervisor/info, /addons, /os/info — used to populate Inventory.Hassio.
+# /supervisor/info, /addons, /os/info - used to populate Inventory.Hassio.
 hassio_api: true
 hassio_role: default
 # homeassistant_api widens the token scope to /core/info so we can report

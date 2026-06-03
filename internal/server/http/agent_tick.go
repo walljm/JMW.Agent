@@ -104,7 +104,7 @@ func (s *Server) agentTick(w http.ResponseWriter, r *http.Request) {
 		// Link the agent to its hardware so Device.AgentID is populated on the
 		// device detail page (hydrateDevices joins systems on hardware_id).
 		if mac := pickPrimaryMAC(req.Inventory.Inventory); mac != "" {
-			_ = s.Store.EnsureAgentSystem(ctx, req.AgentID, pipeline.NormalizeMAC(mac))
+			_ = s.Store.EnsureAgentSystem(ctx, req.AgentID, pipeline.NormalizeMAC(mac), a.Hostname, a.OS)
 		}
 
 		// Temperature + battery snapshots.
