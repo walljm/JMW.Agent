@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/walljm/jmwagent/internal/server/store"
 )
@@ -133,7 +134,8 @@ func (r *Resolver) ResolveInterface(ctx context.Context, mac string, hints *Inte
 }
 
 // mergeDevices merges multiple hardware records into one. Picks the hardware
-// with the earliest first_seen_at as the survivor. Reassigns all fingerprints,
+// with the earliest first_seen_at as the survivor, falling back to insertion
+// order when old whole-second timestamps tie. Reassigns all fingerprints,
 // interfaces, and systems from the losers to the survivor, then deletes the losers.
 func (r *Resolver) mergeDevices(ctx context.Context, hits map[string]store.FingerprintInput) (string, error) {
 	// Collect all hardware IDs and find the oldest.
@@ -142,19 +144,29 @@ func (r *Resolver) mergeDevices(ctx context.Context, hits map[string]store.Finge
 		hwIDs = append(hwIDs, hwID)
 	}
 
-	var survivorID string
-	var oldestSeen string
+	type mergeCandidate struct {
+		id        string
+		firstSeen time.Time
+		rowID     int64
+	}
+
+	var survivor mergeCandidate
 	for _, hwID := range hwIDs {
 		hw, err := r.store.GetHardware(ctx, hwID)
 		if err != nil {
 			return "", fmt.Errorf("get hardware %s: %w", hwID, err)
 		}
-		seen := hw.FirstSeenAt.Format("2006-01-02T15:04:05Z07:00")
-		if survivorID == "" || seen < oldestSeen {
-			survivorID = hwID
-			oldestSeen = seen
+		rowID, err := hardwareRowID(ctx, r.store, hwID)
+		if err != nil {
+			return "", fmt.Errorf("get hardware rowid %s: %w", hwID, err)
+		}
+		candidate := mergeCandidate{id: hwID, firstSeen: hw.FirstSeenAt, rowID: rowID}
+		if survivor.id == "" || candidate.firstSeen.Before(survivor.firstSeen) ||
+			(candidate.firstSeen.Equal(survivor.firstSeen) && candidate.rowID < survivor.rowID) {
+			survivor = candidate
 		}
 	}
+	survivorID := survivor.id
 
 	// Reassign everything from the losers to the survivor.
 	for _, hwID := range hwIDs {
@@ -193,6 +205,12 @@ func (r *Resolver) mergeDevices(ctx context.Context, hits map[string]store.Finge
 	}
 
 	return survivorID, nil
+}
+
+func hardwareRowID(ctx context.Context, st *store.Store, hardwareID string) (int64, error) {
+	var rowID int64
+	err := st.DB.QueryRowContext(ctx, `SELECT rowid FROM hardware WHERE id = ?`, hardwareID).Scan(&rowID)
+	return rowID, err
 }
 
 // ResolveByAgent resolves an agent ID to its System entity.

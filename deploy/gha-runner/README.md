@@ -35,7 +35,7 @@ apt-get update
 apt-get install -y curl tar git ca-certificates jq
 
 # Go (match the version in go.mod; bump as needed)
-GO_VERSION=1.26.0
+GO_VERSION=1.26.4
 curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
   | tar -C /usr/local -xzf -
 ln -sf /usr/local/go/bin/go     /usr/local/bin/go

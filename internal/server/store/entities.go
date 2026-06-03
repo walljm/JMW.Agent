@@ -160,6 +160,7 @@ type DiskSMART struct {
 // UpsertHardware inserts or updates a hardware record. Returns the ID.
 func (s *Store) UpsertHardware(ctx context.Context, hw *Hardware) (string, error) {
 	now := time.Now().UTC()
+	nowStr := now.Format(time.RFC3339Nano)
 	if hw.ID == "" {
 		hw.ID = uuid.New().String()
 	}
@@ -184,8 +185,7 @@ func (s *Store) UpsertHardware(ctx context.Context, hw *Hardware) (string, error
 		nullStr(hw.BoardVendor), nullStr(hw.BoardModel),
 		nullStr(hw.CPUModel), hw.CPUCores, hw.CPULogicalCores,
 		hw.TotalMemBytes, nullStr(hw.Virtualization), nullStr(hw.ChassisType),
-		now.Format(time.RFC3339), now.Format(time.RFC3339),
-		now.Format(time.RFC3339), now.Format(time.RFC3339))
+		nowStr, nowStr, nowStr, nowStr)
 	if err != nil {
 		return "", err
 	}
@@ -234,10 +234,10 @@ func (s *Store) GetHardware(ctx context.Context, id string) (*Hardware, error) {
 	}
 	hw.Virtualization = virt.String
 	hw.ChassisType = chassis.String
-	hw.FirstSeenAt, _ = time.Parse(time.RFC3339, firstSeen)
-	hw.LastSeenAt, _ = time.Parse(time.RFC3339, lastSeen)
-	hw.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	hw.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	hw.FirstSeenAt, _ = time.Parse(time.RFC3339Nano, firstSeen)
+	hw.LastSeenAt, _ = time.Parse(time.RFC3339Nano, lastSeen)
+	hw.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+	hw.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedAt)
 	return hw, nil
 }
 

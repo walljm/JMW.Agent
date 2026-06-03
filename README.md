@@ -22,7 +22,7 @@ sightings of every other device on their subnet. Devices that can't run an agent
 
 ## Build
 
-Requires Go 1.26+.
+Requires Go 1.26.4+.
 
 ```sh
 make build           # builds bin/jmw-server and bin/jmw-agent for the host

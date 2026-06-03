@@ -404,6 +404,15 @@ func TestResolveInterface_MergePreservesMetadata(t *testing.T) {
 		t.Fatal("expected different hardware IDs before merge")
 	}
 
+	// Force the legacy whole-second timestamp tie that used to make survivor
+	// selection depend on map iteration order.
+	_, err = st.DB.ExecContext(ctx,
+		`UPDATE hardware SET first_seen_at = ? WHERE id IN (?, ?)`,
+		"2026-06-03T00:00:00Z", iface1.HardwareID, iface2.HardwareID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	// Register a serial fingerprint on device 2.
 	err = st.RegisterFingerprints(ctx, iface2.HardwareID, []store.FingerprintInput{
 		{Kind: "serial:system", Value: "Dell\x00SVC9999", Source: "agent"},
@@ -422,7 +431,7 @@ func TestResolveInterface_MergePreservesMetadata(t *testing.T) {
 	}
 
 	// After merge, the surviving hardware should have the metadata from both.
-	// Device 1 was older (created first), so it's the survivor.
+	// Device 1 was inserted first, so it is the survivor when timestamps tie.
 	hw, err := st.GetHardware(ctx, iface1.HardwareID)
 	if err != nil {
 		t.Fatal(err)

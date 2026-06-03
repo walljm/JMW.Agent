@@ -92,7 +92,20 @@ func (s *Store) ReassignSystems(ctx context.Context, fromHardwareID, toHardwareI
 // target, filling any gaps without overwriting existing values. This ensures no
 // metadata is lost when two hardware records are merged.
 func (s *Store) MergeHardwareMetadata(ctx context.Context, targetID, sourceID string) error {
-	_, err := s.DB.ExecContext(ctx,
+	target, err := s.GetHardware(ctx, targetID)
+	if err != nil {
+		return err
+	}
+	source, err := s.GetHardware(ctx, sourceID)
+	if err != nil {
+		return err
+	}
+	firstSeenAt := target.FirstSeenAt
+	if source.FirstSeenAt.Before(firstSeenAt) {
+		firstSeenAt = source.FirstSeenAt
+	}
+
+	_, err = s.DB.ExecContext(ctx,
 		`UPDATE hardware SET
 		    system_serial    = COALESCE(hardware.system_serial,    (SELECT system_serial    FROM hardware h2 WHERE h2.id = ?)),
 		    board_serial     = COALESCE(hardware.board_serial,     (SELECT board_serial     FROM hardware h2 WHERE h2.id = ?)),
@@ -106,13 +119,13 @@ func (s *Store) MergeHardwareMetadata(ctx context.Context, targetID, sourceID st
 		    total_mem_bytes  = COALESCE(hardware.total_mem_bytes,  (SELECT total_mem_bytes  FROM hardware h2 WHERE h2.id = ?)),
 		    virtualization   = COALESCE(hardware.virtualization,   (SELECT virtualization   FROM hardware h2 WHERE h2.id = ?)),
 		    chassis_type     = COALESCE(hardware.chassis_type,     (SELECT chassis_type     FROM hardware h2 WHERE h2.id = ?)),
-		    first_seen_at    = MIN(hardware.first_seen_at,         (SELECT first_seen_at    FROM hardware h2 WHERE h2.id = ?)),
+		    first_seen_at    = ?,
 		    updated_at       = ?
 		 WHERE id = ?`,
 		sourceID, sourceID, sourceID, sourceID,
 		sourceID, sourceID, sourceID, sourceID,
 		sourceID, sourceID, sourceID, sourceID,
-		sourceID,
+		firstSeenAt.Format(time.RFC3339Nano),
 		time.Now().UTC().Format(time.RFC3339),
 		targetID)
 	return err
