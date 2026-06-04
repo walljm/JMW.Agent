@@ -178,20 +178,8 @@ func (r *Resolver) mergeDevices(ctx context.Context, hits map[string]store.Finge
 			"from", hwID, "to", survivorID,
 			"trigger", hits[hwID].Kind+":"+hits[hwID].Value)
 
-		if err := r.store.MergeHardwareMetadata(ctx, survivorID, hwID); err != nil {
-			return "", fmt.Errorf("merge hardware metadata from %s: %w", hwID, err)
-		}
-		if err := r.store.ReassignFingerprints(ctx, hwID, survivorID); err != nil {
-			return "", fmt.Errorf("reassign fingerprints from %s: %w", hwID, err)
-		}
-		if err := r.store.ReassignInterfaces(ctx, hwID, survivorID); err != nil {
-			return "", fmt.Errorf("reassign interfaces from %s: %w", hwID, err)
-		}
-		if err := r.store.ReassignSystems(ctx, hwID, survivorID); err != nil {
-			return "", fmt.Errorf("reassign systems from %s: %w", hwID, err)
-		}
-		if err := r.store.DeleteHardware(ctx, hwID); err != nil {
-			return "", fmt.Errorf("delete merged hardware %s: %w", hwID, err)
+		if err := r.store.MergeHardware(ctx, survivorID, hwID); err != nil {
+			return "", fmt.Errorf("merge hardware %s into %s: %w", hwID, survivorID, err)
 		}
 	}
 

@@ -193,6 +193,19 @@ func (s *Store) MergeHardware(ctx context.Context, targetID, sourceID string) er
 		return err
 	}
 
+	if _, err = tx.ExecContext(ctx,
+		`DELETE FROM device_fingerprints
+		 WHERE hardware_id = ?
+		   AND EXISTS (
+		       SELECT 1 FROM device_fingerprints target
+		       WHERE target.hardware_id = ?
+		         AND target.kind = device_fingerprints.kind
+		         AND target.value = device_fingerprints.value
+		   )`,
+		sourceID, targetID); err != nil {
+		return err
+	}
+
 	if _, err = tx.ExecContext(ctx, `UPDATE device_fingerprints SET hardware_id = ? WHERE hardware_id = ?`, targetID, sourceID); err != nil {
 		return err
 	}
