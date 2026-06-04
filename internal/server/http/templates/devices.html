@@ -4,8 +4,8 @@
   <h1>Discovered devices</h1>
 
   {{if .Networks}}
-  <form method="GET" action="/devices" class="filter-row">
-    <select name="network" onchange="this.form.submit()">
+  <div class="filter-row">
+    <select onchange="window.location.href='/devices?network='+encodeURIComponent(this.value)">
       <option value="monitored" {{if eq .NetworkFilter "monitored"}}selected{{end}}>Monitored networks</option>
       <option value="all" {{if eq .NetworkFilter "all"}}selected{{end}}>All networks</option>
       <option value="unclassified" {{if eq .NetworkFilter "unclassified"}}selected{{end}}>Unclassified</option>
@@ -18,7 +18,7 @@
       {{end}}
     </select>
     <a href="/networks" class="link-btn">Manage networks</a>
-  </form>
+  </div>
   {{end}}
 
   {{if .Groups}}
