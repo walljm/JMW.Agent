@@ -464,7 +464,7 @@ func (s *Server) deviceDetail(w http.ResponseWriter, r *http.Request) {
 	allDevices, _ := s.Store.ListDevices(r.Context())
 	mergeCandidates := make([]*store.Device, 0, len(allDevices))
 	for _, candidate := range allDevices {
-		if candidate.GroupID == d.GroupID {
+		if d.GroupID != "" && candidate.GroupID == d.GroupID {
 			continue
 		}
 		mergeCandidates = append(mergeCandidates, candidate)
