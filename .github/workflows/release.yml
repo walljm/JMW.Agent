@@ -33,13 +33,21 @@ jobs:
       - id: version
         run: echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
 
+      - id: pubkey
+        env:
+          AGENT_UPDATE_SIGNING_KEY: ${{ secrets.AGENT_UPDATE_SIGNING_KEY }}
+        run: |
+          pk=$(go run ./cmd/updatesign -key "$AGENT_UPDATE_SIGNING_KEY" -print-public-key)
+          echo "key=$pk" >> "$GITHUB_OUTPUT"
+
       - name: Build all binaries
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          UPDATE_PUBLIC_KEY: ${{ steps.pubkey.outputs.key }}
         run: |
           set -euo pipefail
           mkdir -p dist
-          LDFLAGS="-s -w -X github.com/walljm/jmwagent/internal/shared/version.Version=${VERSION}"
+          LDFLAGS="-s -w -X github.com/walljm/jmwagent/internal/shared/version.Version=${VERSION} -X github.com/walljm/jmwagent/internal/shared/version.UpdatePublicKey=${UPDATE_PUBLIC_KEY}"
 
           # Agent: all platforms.
           for combo in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do

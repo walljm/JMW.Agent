@@ -98,6 +98,9 @@ func main() {
 		slog.Error("server URL and PSK are required (config or flags)")
 		os.Exit(1)
 	}
+	if cfg.UpdatePublicKey == "" {
+		cfg.UpdatePublicKey = version.UpdatePublicKey
+	}
 
 	id, err := identity.EnsureID(cfg.IDFile)
 	if err != nil {
