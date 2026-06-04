@@ -3,6 +3,9 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -137,6 +140,95 @@ func (s *Store) DeleteHardware(ctx context.Context, hardwareID string) error {
 	_, err := s.DB.ExecContext(ctx,
 		`DELETE FROM hardware WHERE id = ?`, hardwareID)
 	return err
+}
+
+// MergeHardware merges sourceID into targetID. The target hardware row survives;
+// metadata gaps are filled from the source, and fingerprints, interfaces, and
+// systems are reassigned to the target before deleting the source.
+func (s *Store) MergeHardware(ctx context.Context, targetID, sourceID string) error {
+	targetID = strings.TrimSpace(targetID)
+	sourceID = strings.TrimSpace(sourceID)
+	if targetID == "" || sourceID == "" {
+		return errors.New("hardware IDs required")
+	}
+	if targetID == sourceID {
+		return nil
+	}
+
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	firstSeenAt, err := earliestHardwareFirstSeen(ctx, tx, targetID, sourceID)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.ExecContext(ctx,
+		`UPDATE hardware SET
+		    system_serial    = COALESCE(hardware.system_serial,    (SELECT system_serial    FROM hardware h2 WHERE h2.id = ?)),
+		    board_serial     = COALESCE(hardware.board_serial,     (SELECT board_serial     FROM hardware h2 WHERE h2.id = ?)),
+		    system_vendor    = COALESCE(hardware.system_vendor,    (SELECT system_vendor    FROM hardware h2 WHERE h2.id = ?)),
+		    system_model     = COALESCE(hardware.system_model,     (SELECT system_model     FROM hardware h2 WHERE h2.id = ?)),
+		    board_vendor     = COALESCE(hardware.board_vendor,     (SELECT board_vendor     FROM hardware h2 WHERE h2.id = ?)),
+		    board_model      = COALESCE(hardware.board_model,      (SELECT board_model      FROM hardware h2 WHERE h2.id = ?)),
+		    cpu_model        = COALESCE(hardware.cpu_model,        (SELECT cpu_model        FROM hardware h2 WHERE h2.id = ?)),
+		    cpu_cores        = COALESCE(hardware.cpu_cores,        (SELECT cpu_cores        FROM hardware h2 WHERE h2.id = ?)),
+		    cpu_logical_cores= COALESCE(hardware.cpu_logical_cores,(SELECT cpu_logical_cores FROM hardware h2 WHERE h2.id = ?)),
+		    total_mem_bytes  = COALESCE(hardware.total_mem_bytes,  (SELECT total_mem_bytes  FROM hardware h2 WHERE h2.id = ?)),
+		    virtualization   = COALESCE(hardware.virtualization,   (SELECT virtualization   FROM hardware h2 WHERE h2.id = ?)),
+		    chassis_type     = COALESCE(hardware.chassis_type,     (SELECT chassis_type     FROM hardware h2 WHERE h2.id = ?)),
+		    first_seen_at    = ?,
+		    updated_at       = ?
+		 WHERE id = ?`,
+		sourceID, sourceID, sourceID, sourceID,
+		sourceID, sourceID, sourceID, sourceID,
+		sourceID, sourceID, sourceID, sourceID,
+		firstSeenAt.Format(time.RFC3339Nano),
+		time.Now().UTC().Format(time.RFC3339Nano),
+		targetID)
+	if err != nil {
+		return err
+	}
+
+	if _, err = tx.ExecContext(ctx, `UPDATE device_fingerprints SET hardware_id = ? WHERE hardware_id = ?`, targetID, sourceID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE interfaces SET hardware_id = ? WHERE hardware_id = ?`, targetID, sourceID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE systems SET hardware_id = ? WHERE hardware_id = ?`, targetID, sourceID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM hardware WHERE id = ?`, sourceID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func earliestHardwareFirstSeen(ctx context.Context, tx *sql.Tx, targetID, sourceID string) (time.Time, error) {
+	var targetFirstSeen, sourceFirstSeen string
+	if err := tx.QueryRowContext(ctx, `SELECT first_seen_at FROM hardware WHERE id = ?`, targetID).Scan(&targetFirstSeen); err != nil {
+		return time.Time{}, fmt.Errorf("target hardware %s: %w", targetID, err)
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT first_seen_at FROM hardware WHERE id = ?`, sourceID).Scan(&sourceFirstSeen); err != nil {
+		return time.Time{}, fmt.Errorf("source hardware %s: %w", sourceID, err)
+	}
+	targetTime, err := time.Parse(time.RFC3339Nano, targetFirstSeen)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parse target first_seen_at: %w", err)
+	}
+	sourceTime, err := time.Parse(time.RFC3339Nano, sourceFirstSeen)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parse source first_seen_at: %w", err)
+	}
+	if sourceTime.Before(targetTime) {
+		return sourceTime, nil
+	}
+	return targetTime, nil
 }
 
 // FingerprintInput is the data needed to register or look up a fingerprint.

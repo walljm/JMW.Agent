@@ -79,7 +79,7 @@ If a view needs data that requires joining 5 tables and computing aggregates, th
 **Actions:**
 - Edit notes/tags
 - Manual hostname override
-- Merge with another hardware entity
+- Merge another hardware entity into the current device by interface ID or MAC
 - Split incorrectly grouped interfaces
 - Archive (hide from active views)
 

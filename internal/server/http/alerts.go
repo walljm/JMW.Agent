@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/walljm/jmwagent/internal/server/pipeline"
 	"github.com/walljm/jmwagent/internal/server/store"
 	"github.com/walljm/jmwagent/internal/server/terrain"
 	"github.com/walljm/jmwagent/internal/shared/proto"
@@ -460,6 +461,14 @@ func (s *Server) deviceDetail(w http.ResponseWriter, r *http.Request) {
 
 	// Networks this device has been seen on.
 	deviceNetworks, _ := s.Store.NetworksForDevice(r.Context(), memberIDs)
+	allDevices, _ := s.Store.ListDevices(r.Context())
+	mergeCandidates := make([]*store.Device, 0, len(allDevices))
+	for _, candidate := range allDevices {
+		if candidate.GroupID == d.GroupID {
+			continue
+		}
+		mergeCandidates = append(mergeCandidates, candidate)
+	}
 
 	// If this device is one of our managed agents, additionally load
 	// agent metadata, latest metrics, and parsed inventory. The merged
@@ -517,6 +526,7 @@ func (s *Server) deviceDetail(w http.ResponseWriter, r *http.Request) {
 		"EditNotes":       editNotes,
 		"DNSActivity":     dnsActivity,
 		"Networks":        deviceNetworks,
+		"MergeCandidates": mergeCandidates,
 		"Agent":           agent,
 		"Latest":          latest,
 		"Inventory":       inventory,
@@ -617,6 +627,49 @@ func (s *Server) deviceEdit(w http.ResponseWriter, r *http.Request) {
 		slog.Error("set device tags failed", "handler", "deviceEdit", "id", d.ID, "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
+	}
+	http.Redirect(w, r, "/devices/"+d.ID, http.StatusSeeOther)
+}
+
+// deviceMerge handles POST /devices/{id}/merge. The current device's hardware
+// row survives and the target device's hardware is merged into it.
+func (s *Server) deviceMerge(w http.ResponseWriter, r *http.Request) {
+	id := strings.ToLower(chi.URLParam(r, "id"))
+	d, err := s.Store.GetDevice(r.Context(), id)
+	if err != nil || d == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	targetRef := strings.ToLower(strings.TrimSpace(r.FormValue("target")))
+	if targetRef == "" {
+		http.Error(w, "merge target required", http.StatusBadRequest)
+		return
+	}
+	target, err := s.Store.GetDevice(r.Context(), targetRef)
+	if err != nil {
+		slog.Error("lookup merge target failed", "handler", "deviceMerge", "id", d.ID, "target", targetRef, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if target == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if d.GroupID == target.GroupID {
+		http.Redirect(w, r, "/devices/"+d.ID, http.StatusSeeOther)
+		return
+	}
+	if err := s.Store.MergeHardware(r.Context(), d.GroupID, target.GroupID); err != nil {
+		slog.Error("merge hardware failed", "handler", "deviceMerge", "survivor", d.GroupID, "source", target.GroupID, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if err := pipeline.DeriveDeviceKindForHardware(r.Context(), s.Store, d.GroupID); err != nil {
+		slog.Warn("derive device kind after manual merge failed", "handler", "deviceMerge", "hardware_id", d.GroupID, "err", err)
 	}
 	http.Redirect(w, r, "/devices/"+d.ID, http.StatusSeeOther)
 }

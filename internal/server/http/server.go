@@ -261,6 +261,7 @@ func (s *Server) Router() http.Handler {
 		pr.With(s.requireCSRF).Post("/agents/{id}/deregister", s.agentDeregister)
 		pr.With(s.requireCSRF).Post("/agents/{id}/edit", s.agentEdit)
 		pr.With(s.requireCSRF).Post("/devices/{id}/edit", s.deviceEdit)
+		pr.With(s.requireCSRF).Post("/devices/{id}/merge", s.deviceMerge)
 		pr.With(s.requireCSRF).Post("/networks/{id}/edit", s.networkEdit)
 		pr.With(s.requireCSRF).Post("/alerts", s.alertCreate)
 		pr.With(s.requireCSRF).Post("/alerts/{id}/delete", s.alertDelete)

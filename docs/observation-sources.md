@@ -396,7 +396,7 @@ Observation {
 
 ### Special Cases
 
-- **Manual hardware grouping:** User drags interfaces together in UI → produces a hardware merge operation (not a standard observation). Sets `identity_source = user`, locks the grouping.
+- **Manual hardware grouping:** User merges another device from the device detail page by selecting a target interface ID or MAC. This produces a hardware merge operation (not a standard observation): the current hardware row survives, metadata gaps are filled from the selected row, and the selected row's interfaces, systems, and fingerprints are reassigned to the survivor.
 - **Manual hardware split:** User separates incorrectly grouped interfaces → produces a hardware split operation.
 - **Notes and tags:** These aren't priority-competitive fields — they're additive. Always applied regardless of source.
 

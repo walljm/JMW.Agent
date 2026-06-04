@@ -182,6 +182,95 @@ func TestUpsertInterface_Conflict(t *testing.T) {
 	}
 }
 
+func TestMergeHardwareMovesIdentityRecords(t *testing.T) {
+	st := testStore(t)
+	ctx := context.Background()
+
+	targetID, err := st.UpsertHardware(ctx, &Hardware{SystemModel: "OnHub"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceID, err := st.UpsertHardware(ctx, &Hardware{SystemVendor: "Google Inc.", SystemSerial: "SVC1234"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceSystemID, err := st.UpsertSystem(ctx, &System{
+		HardwareID: sourceID,
+		Hostname:   "onhub",
+		OSFamily:   "linux",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpsertInterface(ctx, &Interface{HardwareID: targetID, MAC: "70:3a:cb:ea:a7:bb", IsUp: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpsertInterface(ctx, &Interface{SystemID: sourceSystemID, HardwareID: sourceID, MAC: "70:3a:cb:ea:a7:bc", IsUp: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RegisterFingerprints(ctx, targetID, []FingerprintInput{{Kind: "mac", Value: "70:3a:cb:ea:a7:bb", Source: "discovery"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RegisterFingerprints(ctx, sourceID, []FingerprintInput{
+		{Kind: "mac", Value: "70:3a:cb:ea:a7:bc", Source: "discovery"},
+		{Kind: "serial:system", Value: "Google Inc.\x00SVC1234", Source: "agent"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := st.MergeHardware(ctx, targetID, sourceID); err != nil {
+		t.Fatal(err)
+	}
+
+	merged, err := st.GetHardware(ctx, targetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if merged.SystemModel != "OnHub" {
+		t.Fatalf("target model overwritten: %q", merged.SystemModel)
+	}
+	if merged.SystemVendor != "Google Inc." {
+		t.Fatalf("source vendor not copied: %q", merged.SystemVendor)
+	}
+	if merged.SystemSerial != "SVC1234" {
+		t.Fatalf("source serial not copied: %q", merged.SystemSerial)
+	}
+	if _, err := st.GetHardware(ctx, sourceID); err == nil {
+		t.Fatal("expected source hardware to be deleted")
+	}
+
+	iface, err := st.GetInterfaceByMAC(ctx, "70:3a:cb:ea:a7:bc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if iface.HardwareID != targetID {
+		t.Fatalf("source interface hardware = %q, want %q", iface.HardwareID, targetID)
+	}
+	sys, err := st.GetSystem(ctx, sourceSystemID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sys.HardwareID != targetID {
+		t.Fatalf("source system hardware = %q, want %q", sys.HardwareID, targetID)
+	}
+	hits, err := st.LookupFingerprints(ctx, []FingerprintInput{
+		{Kind: "mac", Value: "70:3a:cb:ea:a7:bb"},
+		{Kind: "mac", Value: "70:3a:cb:ea:a7:bc"},
+		{Kind: "serial:system", Value: "Google Inc.\x00SVC1234"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 1 {
+		t.Fatalf("expected all fingerprints to resolve to one hardware, got %d", len(hits))
+	}
+	for hardwareID := range hits {
+		if hardwareID != targetID {
+			t.Fatalf("fingerprints resolve to %q, want %q", hardwareID, targetID)
+		}
+	}
+}
+
 func TestEnsureAgentSystemAdoptsReplacementIntoExistingAgent(t *testing.T) {
 	st := testStore(t)
 	ctx := context.Background()

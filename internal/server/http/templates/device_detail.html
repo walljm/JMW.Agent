@@ -120,6 +120,27 @@
   </section>
   {{end}}
 
+  {{if .MergeCandidates}}
+  <section>
+    <h2>Manual grouping</h2>
+    <details>
+      <summary>Merge another device</summary>
+      <form class="edit-form" method="POST" action="/devices/{{.Device.ID}}/merge" onsubmit="return confirm('Merge these hardware records? Interfaces, fingerprints, systems, and metadata from the selected device will move onto this device.')">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+        <label for="merge-target">Device ID or MAC</label>
+        <input type="text" id="merge-target" name="target" list="merge-candidates" autocomplete="off" required placeholder="70:3a:cb:ea:a7:bc" />
+        <datalist id="merge-candidates">
+        {{range .MergeCandidates}}
+          <option value="{{if .MAC}}{{.MAC}}{{else}}{{.ID}}{{end}}" label="{{if .Hostname}}{{.Hostname}}{{else if .IP}}{{.IP}}{{else}}{{.ID}}{{end}} - {{.IP}} - {{.Vendor}}"></option>
+        {{end}}
+        </datalist>
+        <p class="help">The current device remains the primary record. The selected device's interfaces and fingerprints move here.</p>
+        <div><button class="primary" type="submit">Merge</button></div>
+      </form>
+    </details>
+  </section>
+  {{end}}
+
   <section>
     <h2>Description &amp; tags</h2>
     {{if $isAgent}}
