@@ -146,16 +146,13 @@ jobs:
             --push \
             .
 
-      - name: Verify Home Assistant add-on version
+      - name: Set Home Assistant add-on version
         env:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
-          addon_version=$(sed -n 's/^version: "\(.*\)"/\1/p' jmw-agent/config.yaml)
-          if [[ "v${addon_version}" != "${VERSION}" ]]; then
-            echo "Home Assistant add-on version ${addon_version} must match release tag ${VERSION}" >&2
-            exit 1
-          fi
+          addon_version="${VERSION#v}"
+          sed -i "s/^version: \".*\"/version: \"${addon_version}\"/" jmw-agent/config.yaml
           echo "ADDON_VERSION=${addon_version}" >> "$GITHUB_ENV"
 
       - name: Build & push Home Assistant add-on image
