@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"os"
 	"os/signal"
 	"sync"
@@ -180,7 +181,7 @@ func run(ctx context.Context, cfg *agentcfg.Config, cfgPath, id string) error {
 		"discovery_secs", discoverySecs,
 		"inventory_secs", inventorySecs)
 
-	metricTick := time.NewTicker(time.Duration(heartbeatSecs) * time.Second)
+	metricTick := time.NewTicker(jitteredInterval(heartbeatSecs))
 	defer metricTick.Stop()
 
 	discoveryTick := time.NewTicker(time.Duration(discoverySecs) * time.Second)
@@ -240,7 +241,7 @@ func run(ctx context.Context, cfg *agentcfg.Config, cfgPath, id string) error {
 				// Re-arm tickers if the server changed any interval.
 				if resp.NextHeartbeatIn > 0 && resp.NextHeartbeatIn != heartbeatSecs {
 					heartbeatSecs = resp.NextHeartbeatIn
-					metricTick.Reset(time.Duration(heartbeatSecs) * time.Second)
+					metricTick.Reset(jitteredInterval(heartbeatSecs))
 					slog.Info("heartbeat interval updated", "secs", heartbeatSecs)
 				}
 				if resp.DiscoveryIntervalSecs > 0 && resp.DiscoveryIntervalSecs != discoverySecs {
@@ -352,6 +353,14 @@ func sendInventory(ctx context.Context, cli *transport.Client, id string, includ
 		Inventory: inv,
 	})
 	return resp, err
+}
+
+// jitteredInterval returns base ± 25% so agents spread their heartbeats
+// naturally without significantly changing their effective average rate.
+func jitteredInterval(secs int) time.Duration {
+	base := time.Duration(secs) * time.Second
+	quarter := base / 4
+	return base - quarter/2 + time.Duration(rand.Int64N(int64(quarter)))
 }
 
 func sleepCtx(ctx context.Context, d time.Duration) bool {

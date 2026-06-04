@@ -11,17 +11,17 @@ COPY cmd ./cmd
 COPY internal ./internal
 
 ARG TARGETARCH
-ARG BINARY_VERSION=dev
+ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \
     go build -trimpath \
-        -ldflags="-s -w -X github.com/walljm/jmwagent/internal/shared/version.Version=${BINARY_VERSION}" \
+        -ldflags="-s -w -X github.com/walljm/jmwagent/internal/shared/version.Version=${VERSION}" \
         -o /out/jmw-agent ./cmd/agent
 
 FROM ghcr.io/home-assistant/base:latest
 
-ARG ADDON_VERSION=dev
+ARG VERSION=dev
 LABEL \
-    io.hass.version="${ADDON_VERSION}" \
+    io.hass.version="${VERSION}" \
     io.hass.type="app" \
     io.hass.arch="aarch64|amd64"
 

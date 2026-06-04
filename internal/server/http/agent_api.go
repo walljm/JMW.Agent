@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -18,6 +19,10 @@ import (
 	"github.com/walljm/jmwagent/internal/server/store"
 	"github.com/walljm/jmwagent/internal/shared/proto"
 )
+
+// warnedMissingSignature tracks which release filenames have already triggered
+// a missing-signature warning so we log once per binary rather than per heartbeat.
+var warnedMissingSignature sync.Map // key: "version/filename"
 
 // pickPrimaryMAC returns the first non-loopback, non-empty MAC from the
 // inventory — the canonical interface the agent reports itself as.
@@ -162,7 +167,10 @@ func (s *Server) agentHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if s.Releases != nil && s.Releases.Enabled() && a.OS != "" && a.Arch != "" {
 		if e, ok := s.Releases.Latest(a.OS, a.Arch); ok && releases.SemverGreater(req.Version, e.Version) {
 			if e.Signature == "" {
-				slog.Warn("release update skipped: missing signature", "version", e.Version, "filename", e.Filename)
+				key := e.Version + "/" + e.Filename
+				if _, seen := warnedMissingSignature.LoadOrStore(key, struct{}{}); !seen {
+					slog.Warn("release update skipped: missing signature", "version", e.Version, "filename", e.Filename)
+				}
 			} else {
 				resp.Update = &proto.UpdateInfo{
 					Version:            e.Version,
