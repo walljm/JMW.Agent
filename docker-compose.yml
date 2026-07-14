@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: jmwfacts
+      POSTGRES_USER: jmwfacts
+      POSTGRES_PASSWORD: "${JMW_DB_PASSWORD:?Set JMW_DB_PASSWORD in .env — see .env.example}"
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jmwfacts"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build:
+      context: .
+      dockerfile: src/Server.Web/Dockerfile
+    environment:
+      JMW_DB_CONNECTION: "Host=postgres;Port=5432;Database=jmwfacts;Username=jmwfacts;Password=${JMW_DB_PASSWORD:?Set JMW_DB_PASSWORD in .env — see .env.example};Search Path=jmwdiscovery,public"
+      JMW_KEY_RING_PATH: /var/lib/jmw-server/keys
+      JMW_API_KEY_SECRET: "${JMW_API_KEY_SECRET:?Set JMW_API_KEY_SECRET in .env — see .env.example (openssl rand -hex 32)}"
+      # Local/dev only — no TLS in front of this compose file. The heartbeat response carries
+      # decrypted device credentials and every agent request carries its bearer API key, so a
+      # production deployment MUST terminate TLS in front of the server (reverse proxy, Kestrel
+      # HTTPS endpoint, or — as core.home does — a natively-run instance behind Step CA) rather
+      # than exposing this http:// port beyond localhost/a trusted host. Agents default to
+      # rejecting a non-https server_url; see AgentConfig.AllowInsecureHttp.
+      ASPNETCORE_URLS: http://+:8080
+      # Private CA(s) trusted fleet-wide and distributed to agents via heartbeat config,
+      # so validating collectors can authenticate private-CA HTTPS endpoints (e.g. ha.home).
+      JMW_TRUSTED_CA_PATH: /etc/jmw/trusted-ca
+      # OIDC SSO (Kanidm on core.home) — absent/empty disables SSO entirely (button hidden,
+      # challenge endpoint 404s). Values come from a gitignored .env file, not committed here;
+      # see docs/scratch or the Kanidm registration commands for how to obtain them.
+      JMW_OIDC_AUTHORITY: "${JMW_OIDC_AUTHORITY:-}"
+      JMW_OIDC_CLIENT_ID: "${JMW_OIDC_CLIENT_ID:-}"
+      JMW_OIDC_CLIENT_SECRET: "${JMW_OIDC_CLIENT_SECRET:-}"
+      JMW_OIDC_CALLBACK_PATH: "${JMW_OIDC_CALLBACK_PATH:-}"
+    ports:
+      - "8090:8080"
+    volumes:
+      - server_keys:/var/lib/jmw-server/keys
+      - ./deploy/trusted-ca:/etc/jmw/trusted-ca:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/readyz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  server_keys:

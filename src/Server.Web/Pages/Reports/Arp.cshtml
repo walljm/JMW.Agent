@@ -1,0 +1,18 @@
+@page "/arp"
+@model JMW.Discovery.Server.Pages.Reports.ArpModel
+@{
+    ViewData["Title"] = "ARP Table — JMW Discovery";
+    ViewData["ActiveNav"] = "network";
+}
+<main class="main data-grid-page">
+    <div class="page-head">
+        <h1>ARP Table</h1>
+        <span class="meta">@Model.Entries.Count neighbors shown</span>
+    </div>
+
+    <partial name="_HubTabs" model="@(new HubTabsModel(HubTabSets.Network, "/arp", "Network views"))"/>
+
+    <partial name="_FilterBar" model="Model.FilterBar"/>
+
+    <partial name="_ArpTable" model="Model"/>
+</main>

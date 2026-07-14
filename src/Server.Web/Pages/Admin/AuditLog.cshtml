@@ -1,0 +1,42 @@
+@page "/admin/audit-log"
+@model JMW.Discovery.Server.Pages.Admin.AuditLogModel
+@{
+    ViewData["Title"] = "Activity Log — JMW Discovery";
+    ViewData["ActiveNav"] = "system";
+}
+<main class="main">
+    <div class="page-head">
+        <h1>Activity Log</h1>
+        <span class="meta">@Model.Entries.Count shown</span>
+    </div>
+
+    <partial name="_HubTabs" model="@(new HubTabsModel(HubTabSets.System, "/admin/audit-log", "System views"))"/>
+
+    <partial name="_FilterBar" model="Model.FilterBar"/>
+
+    <form method="get" class="toolbar" style="margin-top:var(--space-3)">
+        <input type="hidden" name="action" value="@Model.Action">
+        <input type="hidden" name="actor" value="@Model.Actor">
+        <input type="hidden" name="q" value="@Model.Q">
+        <div class="field"><label for="auditSince">Since</label>
+            <input class="input" type="date" id="auditSince" name="since" value="@Model.Since"></div>
+        <div class="field"><label for="auditUntil">Until</label>
+            <input class="input" type="date" id="auditUntil" name="until" value="@Model.Until"></div>
+        <button class="btn btn-sm" type="submit" style="margin-top:var(--space-4)">Filter</button>
+        @if (Model.Since is not null || Model.Until is not null)
+        {
+            <a class="btn btn-sm" style="margin-top:var(--space-4)" href="@Model.ClearDatesHref">Clear dates</a>
+        }
+    </form>
+
+    <partial name="_AuditLogTable" model="Model"/>
+</main>
+
+@section Scripts {
+    <script>
+        function toggleAuditDetail(id) {
+            const row = document.getElementById(id);
+            if (row) row.hidden = !row.hidden;
+        }
+    </script>
+}

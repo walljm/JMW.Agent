@@ -1,0 +1,175 @@
+@page "/subnets"
+@using JMW.Discovery.Server.Reporting
+@model JMW.Discovery.Server.Pages.Reports.SubnetsModel
+@{
+    ViewData["Title"] = "Subnets — JMW Discovery";
+    ViewData["ActiveNav"] = "network";
+
+    static string SubnetHref(string cidr)
+    {
+        int slash = cidr.IndexOf('/');
+        return "/subnets/" + cidr[..slash] + "/" + cidr[(slash + 1)..];
+    }
+
+    static string SourceLabel(string code) => code switch
+    {
+        "D" => "DHCP scope",
+        "I" => "Interface CIDR",
+        "R" => "Route",
+        _ => code,
+    };
+
+    string activeTab = Model.ActiveTab;
+}
+<main class="main">
+    <div class="page-head">
+        <h1>Subnets</h1>
+        <span class="meta">@Model.Subnets.Count subnets</span>
+    </div>
+
+    <partial name="_HubTabs" model="@(new HubTabsModel(HubTabSets.Network, "/subnets", "Network views"))"/>
+
+    <div class="tabs" role="tablist" aria-label="Subnet views">
+        <button class="tab @(activeTab == "topology" ? "active" : "")" role="tab" id="tab-btn-topology"
+                aria-controls="tab-topology" aria-selected="@(activeTab == "topology" ? "true" : "false")"
+                onclick="switchTab('topology')">Topology
+        </button>
+        <button class="tab @(activeTab == "l2" ? "active" : "")" role="tab" id="tab-btn-l2"
+                aria-controls="tab-l2" aria-selected="@(activeTab == "l2" ? "true" : "false")"
+                onclick="switchTab('l2')">Physical/L2
+        </button>
+        <button class="tab @(activeTab == "list" ? "active" : "")" role="tab" id="tab-btn-list"
+                aria-controls="tab-list" aria-selected="@(activeTab == "list" ? "true" : "false")"
+                onclick="switchTab('list')">Subnet List
+        </button>
+    </div>
+
+    <form class="toolbar" method="get" action="/subnets">
+        <input type="hidden" name="tab" value="@activeTab"/>
+        <input class="input" type="search" name="q" value="@Model.Q"
+               aria-label="Search subnets" placeholder="Search CIDR, name, gateway…" style="flex:1"/>
+        <button class="btn" type="submit">Filter</button>
+        @if (!string.IsNullOrEmpty(Model.Q))
+        {
+            <a class="btn" href="@Model.ClearHref">Clear</a>
+        }
+    </form>
+
+    <partial name="_SectionError" model="Model.LoadError"/>
+    @if (Model.LoadError is null)
+    {
+        <div class="tabpanel" id="tab-topology" role="tabpanel" aria-labelledby="tab-btn-topology" @(activeTab == "topology" ? "" : "hidden")>
+            <div class="card" style="overflow-x:auto">
+                <div id="topology-graph" class="tgraph-container" data-graph="@Model.L3GraphJson"></div>
+            </div>
+        </div>
+
+        <div class="tabpanel" id="tab-l2" role="tabpanel" aria-labelledby="tab-btn-l2" @(activeTab == "l2" ? "" : "hidden")>
+            <div class="card" style="overflow-x:auto">
+                <div id="l2-graph" class="tgraph-container" data-graph="@Model.L2GraphJson"></div>
+            </div>
+        </div>
+
+        <div class="tabpanel" id="tab-list" role="tabpanel" aria-labelledby="tab-btn-list" @(activeTab == "list" ? "" : "hidden")>
+            @if (Model.Subnets.Count == 0 && !string.IsNullOrEmpty(Model.Q))
+            {
+                <div class="empty">
+                    No subnets match “@Model.Q”. <a href="@Model.ClearHref">Clear the filter</a> to see all subnets.
+                </div>
+            }
+            else if (Model.Subnets.Count == 0)
+            {
+                <div class="empty">
+                    No subnets found yet. Subnets are derived from agent interface CIDRs and DHCP
+                    scopes — deploy an agent or configure a DHCP service target to populate this view.
+                </div>
+            }
+            else
+            {
+                <div class="grid-scroll">
+                    <table class="data" aria-label="Subnets">
+                        <thead>
+                        <tr>
+                            <th>CIDR</th>
+                            <th>Name</th>
+                            <th>Gateway</th>
+                            <th class="num">Hosts</th>
+                            <th>Source</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (SubnetListItem s in Model.Subnets)
+                        {
+                            <tr>
+                                <td class="mono"><a href="@SubnetHref(s.Cidr)">@s.Cidr</a></td>
+                                <td>@(s.Name ?? "—")</td>
+                                <td class="mono">
+                                    @if (!string.IsNullOrEmpty(s.Gateway) && !string.IsNullOrEmpty(s.GatewayDeviceId))
+                                    {
+                                        <a href="/devices/@s.GatewayDeviceId?from=subnets">
+                                            @s.Gateway (@(s.GatewayHostname ?? s.GatewayDeviceId))
+                                        </a>
+                                    }
+                                    else
+                                    {
+                                        @(s.Gateway ?? "—")
+                                    }
+                                </td>
+                                <td class="num mono">@s.HostCount</td>
+                                <td class="text-dim">
+                                    @foreach (string src in s.Sources)
+                                    {
+                                        <span title="@SourceLabel(src)">@src</span>
+                                        @if (src != s.Sources[^1])
+                                        {
+                                            @:&nbsp;
+                                        }
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+</main>
+
+@section Scripts {
+    <script src="/js/d3.v7.min.js" asp-append-version="true"></script>
+    <script src="/js/topology-graph.js" asp-append-version="true"></script>
+    <script>
+        (function () {
+            const l3El = document.getElementById('topology-graph');
+            if (l3El) {
+                renderTopologyGraph('topology-graph', JSON.parse(l3El.dataset.graph || '{}'));
+            }
+            const l2El = document.getElementById('l2-graph');
+            if (l2El) {
+                renderTopologyGraph('l2-graph', JSON.parse(l2El.dataset.graph || '{}'));
+            }
+        })();
+
+        const TABS = ['topology', 'l2', 'list'];
+
+        function switchTab(name) {
+            TABS.forEach((t) => {
+                const panel = document.getElementById('tab-' + t);
+                if (panel) {
+                    panel.hidden = t !== name;
+                }
+
+                const btn = document.getElementById('tab-btn-' + t);
+                if (btn) {
+                    btn.classList.toggle('active', t === name);
+                    btn.setAttribute('aria-selected', t === name ? 'true' : 'false');
+                }
+            });
+            const url = new URL(location.href);
+            url.searchParams.set('tab', name);
+            history.replaceState(null, '', url);
+            document.querySelector('form.toolbar input[name="tab"]').value = name;
+        }
+    </script>
+}

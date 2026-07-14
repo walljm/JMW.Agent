@@ -1,0 +1,64 @@
+@page
+@model BootstrapModel
+@{
+    Layout = null;
+    ViewData["Title"] = "Welcome — First-Run Setup — JMW Discovery";
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@ViewData["Title"]</title>
+    <link rel="stylesheet" href="/css/design-system.css">
+</head>
+<body class="dark-mode">
+<main style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:var(--space-6)">
+    <div style="width:480px;max-width:100%">
+        <div class="brand"
+             style="text-align:center;font-size:var(--fs-xl);color:var(--accent);margin-bottom:var(--space-6)">◆ JMW
+            Discovery
+        </div>
+        <form method="post"
+              style="background:var(--surface);border:var(--border-hair);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);padding:var(--space-6)">
+            @Html.AntiForgeryToken()
+            <h1 style="font-size:var(--fs-xl)">Welcome to JMW Discovery</h1>
+            <p class="prose text-dim">
+                First-run setup. Create your admin account to get started.
+            </p>
+
+            <div class="field">
+                <label for="st">Setup token</label>
+                <input class="input" id="st" asp-for="SetupToken" autocomplete="off">
+                <span class="help">Printed to the server console/logs when it started with no admin account.</span>
+            </div>
+            <div class="field">
+                <label for="u">Username</label>
+                <input class="input" id="u" asp-for="Username" autofocus autocomplete="username">
+            </div>
+            <div class="field">
+                <label for="p">Password</label>
+                <input class="input" id="p" asp-for="Password" type="password" autocomplete="new-password">
+            </div>
+            <div class="field">
+                <label for="pc">Confirm password</label>
+                <input class="input" id="pc" asp-for="ConfirmPassword" type="password" autocomplete="new-password">
+            </div>
+
+            @if (Model.ErrorMessage is not null)
+            {
+                <div class="banner error" role="alert">@Model.ErrorMessage</div>
+            }
+
+            <button class="btn btn-primary" type="submit" style="width:100%">Create admin account</button>
+        </form>
+        <p class="meta prose" style="text-align:center;margin-top:var(--space-4)">
+            Already set up? <a href="/login">Sign in</a>.
+        </p>
+    </div>
+</main>
+<button class="btn mode-toggle" aria-label="Toggle light/dark mode"
+        onclick="document.body.classList.toggle('dark-mode');document.body.classList.toggle('light-mode')">◐ Mode
+</button>
+</body>
+</html>

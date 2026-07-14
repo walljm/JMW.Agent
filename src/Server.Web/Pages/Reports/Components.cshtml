@@ -1,0 +1,18 @@
+@page "/components"
+@model JMW.Discovery.Server.Pages.Reports.ComponentsModel
+@{
+    ViewData["Title"] = "Component Inventory — JMW Discovery";
+    ViewData["ActiveNav"] = "inventory";
+}
+<main class="main data-grid-page">
+    <div class="page-head">
+        <h1>Component Inventory</h1>
+        <span class="meta">@Model.Components.Count components shown</span>
+    </div>
+
+    <partial name="_HubTabs" model="@(new HubTabsModel(HubTabSets.Inventory, "/components", "Inventory views"))"/>
+
+    <partial name="_FilterBar" model="Model.FilterBar"/>
+
+    <partial name="_ComponentsTable" model="Model"/>
+</main>

@@ -1,0 +1,83 @@
+@model JMW.Discovery.Server.Pages.Reports.TerrainCaModel
+@{
+    static string KindLabel(string kind) => kind switch
+    {
+        "operated" => "Operated",
+        "trusted-on-host" => "Trusted on host",
+        "observed-in-traffic" => "Observed in traffic",
+        _ => kind,
+    };
+
+    static bool IsExpiringSoon(DateTime? notAfter) =>
+        notAfter is not null && notAfter.Value <= DateTime.UtcNow.AddDays(30);
+}
+
+<div id="ca-table" class="grid-panel">
+    <partial name="_SectionError" model="Model.LoadError"/>
+
+    @if (Model.LoadError is null)
+    {
+        @if (Model.Cas.Count == 0)
+        {
+            <div class="empty">No certificate authorities found in the terrain.</div>
+        }
+        else
+        {
+            <div class="grid-scroll">
+                <table class="data" aria-label="Certificate authorities">
+                    <thead>
+                    <tr>
+                        <th>Kind</th>
+                        <th>Subject / Issuer</th>
+                        <th>Fingerprint</th>
+                        <th>Not Before</th>
+                        <th>Not After</th>
+                        <th>Seen On</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (JMW.Discovery.Server.Pages.Reports.TerrainCaItem ca in Model.Cas)
+                    {
+                        <tr>
+                            <td>
+                                @KindLabel(ca.Kind)
+                                @if (!string.IsNullOrEmpty(ca.Subtype))
+                                {
+                                    <span class="text-faint">(@ca.Subtype)</span>
+                                }
+                            </td>
+                            <td>@(ca.SubjectDn ?? "—")</td>
+                            <td class="mono">@(ca.Fingerprint is { Length: > 0 } fp ? fp[..Math.Min(16, fp.Length)] + "…" : "—")</td>
+                            <td>@(ca.NotBefore?.ToString("yyyy-MM-dd") ?? "—")</td>
+                            <td>
+                                @if (ca.NotAfter is not null && IsExpiringSoon(ca.NotAfter))
+                                {
+                                    <span class="status warn" title="Expires @ca.NotAfter.Value.ToString("yyyy-MM-dd")">@ca.NotAfter.Value.ToString("yyyy-MM-dd")</span>
+                                }
+                                else
+                                {
+                                    @(ca.NotAfter?.ToString("yyyy-MM-dd") ?? "—")
+                                }
+                            </td>
+                            <td>
+                                @if (!string.IsNullOrEmpty(ca.ServiceRef))
+                                {
+                                    <a href="/services/@ca.ServiceRef">@ca.ServiceRef</a>
+                                }
+                                else if (ca.SeenOnCount is { } count)
+                                {
+                                    @($"{count} device{(count == 1 ? "" : "s")}")
+                                }
+                                else
+                                {
+                                    @:—
+                                }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+</div>

@@ -1,0 +1,147 @@
+@using System.Globalization
+@using JMW.Discovery.Server.Pages.Reports
+@model JMW.Discovery.Server.Pages.Reports.DashboardModel
+@{
+    string? err = Model.PanelError("totals");
+    TotalsVm? t = Model.Totals;
+}
+<div class="stat-row" hx-get="/dashboard?fragment=totals" hx-trigger="every 300s" hx-swap="outerHTML"
+     style="margin-bottom:var(--space-5)">
+    @if (err is not null)
+    {
+        <div style="grid-column:1/-1">
+            <partial name="_SectionError" model="err"/>
+        </div>
+    }
+    else if (t is null)
+    {
+        <div class="empty" style="grid-column:1/-1">Loading…</div>
+    }
+    else
+    {
+        double devDenom = t.ManagedDevices + t.DiscoveredDevices;
+        double managedPct = Pct(t.ManagedDevices, devDenom);
+        double discoveredPct = Pct(t.DiscoveredDevices, devDenom);
+
+        // The pw-bar only has 3 segment colours (seg-1/2/3); collapse the top-N+Other
+        // services breakdown down to top-2 + a combined "other" tail for this tile only.
+        IReadOnlyList<LabelCount> svc = t.ServicesByType;
+        LabelCount? svc1 = svc.Count > 0 ? svc[0] : null;
+        LabelCount? svc2 = svc.Count > 1 ? svc[1] : null;
+        long svcOther = svc.Count > 2 ? svc.Skip(2).Sum(x => x.Count) : 0;
+        double svcDenom = t.ServicesTotal;
+        double svc1Pct = svc1 is not null ? Pct(svc1.Count, svcDenom) : 0;
+        double svc2Pct = svc2 is not null ? Pct(svc2.Count, svcDenom) : 0;
+        double svcOtherPct = Pct(svcOther, svcDenom);
+
+        double reportDenom = t.Reporting24h + t.Quiet24h;
+        double reportingPct = Pct(t.Reporting24h, reportDenom);
+        double quietPct = Pct(t.Quiet24h, reportDenom);
+
+        <div class="stat">
+            <a class="stat-head" href="/all-hosts">
+                <div class="label">Total devices</div>
+                <div class="value">@t.TotalDevices</div>
+            </a>
+            <div class="pw-bar" aria-hidden="true">
+                <span class="seg-1"
+                      style="width:@(managedPct.ToString("0.#", CultureInfo.InvariantCulture))%"></span>
+                <span class="seg-2"
+                      style="width:@(discoveredPct.ToString("0.#", CultureInfo.InvariantCulture))%"></span>
+            </div>
+            <div class="pw-cap">
+                <span class="sw sw-1"></span><a href="/all-hosts?status=managed">@t.ManagedDevices managed</a>
+                <span class="sw sw-2" style="margin-left:var(--space-3)"></span><a
+                    href="/all-hosts?status=discovered">@t.DiscoveredDevices discovered</a>
+            </div>
+        </div>
+
+        <div class="stat">
+            <a class="stat-head" href="/services">
+                <div class="label">Services</div>
+                <div class="value">@t.ServicesTotal</div>
+            </a>
+            <div class="pw-bar" aria-hidden="true">
+                @if (svc1 is not null)
+                {
+                    <span class="seg-1"
+                          style="width:@(svc1Pct.ToString("0.#", CultureInfo.InvariantCulture))%"></span>
+                }
+                @if (svc2 is not null)
+                {
+                    <span class="seg-2"
+                          style="width:@(svc2Pct.ToString("0.#", CultureInfo.InvariantCulture))%"></span>
+                }
+                @if (svcOther > 0)
+                {
+                    <span class="seg-3"
+                          style="width:@(svcOtherPct.ToString("0.#", CultureInfo.InvariantCulture))%"></span>
+                }
+            </div>
+            <div class="pw-cap">
+                @if (svc1 is not null)
+                {
+                    <span class="sw sw-1"></span>
+                    @svc1.Count
+                    @svc1.Label
+                }
+                @if (svc2 is not null)
+                {
+                    <span class="sw sw-2" style="margin-left:var(--space-3)"></span>
+                    @svc2.Count
+                    @svc2.Label
+                }
+                @if (svcOther > 0)
+                {
+                    <span class="sw sw-3" style="margin-left:var(--space-3)"></span>
+                    @($"{svcOther} other")
+                }
+            </div>
+        </div>
+
+        <div class="stat">
+            <a class="stat-head" href="/all-hosts?status=reporting">
+                <div class="label">Reporting (24h)</div>
+                <div class="value">@t.Reporting24h</div>
+            </a>
+            <div class="pw-bar" aria-hidden="true">
+                <span class="seg-ok"
+                      style="width:@(reportingPct.ToString("0.#", CultureInfo.InvariantCulture))%"></span>
+                <span class="seg-quiet"
+                      style="width:@(quietPct.ToString("0.#", CultureInfo.InvariantCulture))%"></span>
+            </div>
+            <div class="pw-cap">
+                <span class="sw sw-ok"></span><a href="/all-hosts?status=reporting">@t.Reporting24h reporting</a>
+                <span class="sw sw-quiet" style="margin-left:var(--space-3)"></span><a
+                    href="/all-hosts?status=stale">@t.Quiet24h quiet</a>
+            </div>
+        </div>
+
+        <div class="stat">
+            @if (User.IsInRole("admin"))
+            {
+                <a class="stat-head" href="/fleet/agents">
+                    <div class="label">Zones</div>
+                    <div class="value">@t.DistinctZones</div>
+                </a>
+            }
+            else
+            {
+                <div class="stat-head">
+                    <div class="label">Zones</div>
+                    <div class="value">@t.DistinctZones</div>
+                </div>
+            }
+            <div class="pw-cap" style="margin-top:var(--space-2)">
+                @(t.ZoneNames.Count > 0 ? string.Join(" · ", t.ZoneNames) : "No zones reported yet.")
+            </div>
+        </div>
+    }
+</div>
+
+@functions {
+
+    private static double Pct(double numerator, double denominator) =>
+        denominator <= 0 ? 0 : numerator / denominator * 100;
+
+}

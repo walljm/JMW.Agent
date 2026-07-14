@@ -1,0 +1,16 @@
+@page "/services"
+@model JMW.Discovery.Server.Pages.Reports.ServicesModel
+@{
+    ViewData["Title"] = "Services — JMW Discovery";
+    ViewData["ActiveNav"] = "services";
+}
+<main class="main data-grid-page">
+    <div class="page-head">
+        <h1>Services</h1>
+        <span class="meta">@Model.Services.Count services shown</span>
+    </div>
+
+    <partial name="_FilterBar" model="Model.FilterBar"/>
+
+    <partial name="_ServicesTable" model="Model"/>
+</main>

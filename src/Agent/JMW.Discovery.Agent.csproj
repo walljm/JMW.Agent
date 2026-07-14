@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <OutputType>Exe</OutputType>
+        <!-- Publish as a self-contained single-file binary:
+             dotnet publish -r linux-x64 -c Release /p:PublishSingleFile=true /p:SelfContained=true -->
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="../Core/JMW.Discovery.Core.csproj"/>
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="SSH.NET" Version="2025.*"/>
+        <PackageReference Include="Lextm.SharpSnmpLib" Version="12.*"/>
+        <!-- Parses the Google Wifi OnHub /api/v1/diagnostic-report protobuf. The
+             message class is generated from diagnosticreport.proto by Grpc.Tools
+             into obj/ (so it stays out of the strict analyzers). -->
+        <PackageReference Include="Google.Protobuf" Version="3.*"/>
+        <PackageReference Include="Grpc.Tools" Version="2.*" PrivateAssets="all"/>
+        <PackageReference Include="System.ServiceProcess.ServiceController" Version="9.*"/>
+        <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.*"/>
+    </ItemGroup>
+    <ItemGroup>
+        <Protobuf Include="Collection/Device/OnHub/diagnosticreport.proto" GrpcServices="None"/>
+    </ItemGroup>
+    <ItemGroup>
+        <!-- Curated Rapid7 Recog (BSD-2) device-fingerprint corpus, matched on-agent to drive
+             adaptive HTTP probing. Ships inside the single-file binary; updates ride self-update. -->
+        <EmbeddedResource Include="Collection/Network/Recog/*.xml"/>
+        <!-- IANA Private Enterprise Numbers registry snapshot — SNMP sysObjectID vendor
+             resolution. See Collection/Device/EnterpriseNumbers/ATTRIBUTION.md. -->
+        <EmbeddedResource Include="Collection/Device/EnterpriseNumbers/*.tsv"/>
+    </ItemGroup>
+</Project>

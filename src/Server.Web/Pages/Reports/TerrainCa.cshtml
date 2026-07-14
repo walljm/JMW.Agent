@@ -1,0 +1,17 @@
+@page "/terrain/ca"
+@model JMW.Discovery.Server.Pages.Reports.TerrainCaModel
+@{
+    ViewData["Title"] = "Certificate Authorities — JMW Discovery";
+    ViewData["ActiveNav"] = "network";
+}
+<main class="main">
+    <div class="page-head">
+        <h1>Certificate Authorities</h1>
+    </div>
+
+    <partial name="_HubTabs" model="@(new HubTabsModel(HubTabSets.Network, "/terrain/ca", "Network views"))"/>
+
+    <partial name="_FilterBar" model="Model.FilterBar"/>
+
+    <partial name="_TerrainCaTable" model="Model"/>
+</main>

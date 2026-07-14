@@ -1,0 +1,12 @@
+@model PaginationLinks
+<div class="pagination">
+    <span class="page-info"></span>
+    @if (Model.FirstHref is not null)
+    {
+        <a class="btn btn-sm" href="@Model.FirstHref">‹ First</a>
+    }
+    @if (Model.NextHref is not null)
+    {
+        <a class="btn btn-sm" href="@Model.NextHref">Next ›</a>
+    }
+</div>

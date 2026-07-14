@@ -11,7 +11,12 @@ bin/
 dist/
 out/
 
+/docs/scratch/**
+
 # --- Project-local data + secrets ---
+.env
+.env.*
+!.env.example
 data/
 agent-data/
 *.db
@@ -49,8 +54,48 @@ $RECYCLE.BIN/
 .Trashes
 .fseventsd
 
+# --- .NET ---
+# Build outputs
+obj/
+bin/
+# Test results and coverage
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+# Publish output
+publish/
+artifacts/
+# Visual Studio
+.vs/
+*.suo
+*.user
+!JMW.Agent.Facts.sln.DotSettings.user
+*.userosscache
+*.sln.docstates
+# Rider (project-level files are tracked; workspace state is not)
+.idea/.idea.*/workspace.xml
+.idea/.idea.*/.idea/dataSources/
+.idea/.idea.*/.idea/dataSources.local.xml
+.idea/.idea.*/.idea/sqldialects.xml
+.idea/.idea.*/.idea/dynamic.xml
+# C# generated files
+*.generated.cs
+
+# --- Dev agent config ---
+dev-agent.json
+dev-agent-state/
+agent.json
+
 # --- Tooling / misc ---
 .backup
 .sdev/
 **/.playwright-mcp/
 node_modules/
+.sdev/
+.sdev/

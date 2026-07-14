@@ -1,0 +1,51 @@
+@using System.Text.Json
+@using JMW.Discovery.Server.Pages.Admin
+@model JMW.Discovery.Server.Pages.Admin.ConflictsModel
+
+@* Conflicts is a deliberate exception to the app's flat <table class="data"> row
+   pattern: one fingerprint fans out to N devices, which is genuinely relational,
+   not tabular. Don't "fix" this back into a flat comma-joined row. *@
+<div id="conflicts-table" class="grid-panel">
+    @if (Model.Conflicts.Count == 0)
+    {
+        <p class="prose text-dim">No conflicts match the current filters.</p>
+    }
+    else
+    {
+        <div class="conflict-groups">
+            @foreach (ConflictItem c in Model.Conflicts)
+            {
+                <details class="conflict-group">
+                    <summary>
+                        <span class="conflict-summary-main">
+                            <span class="mono">@c.FpType</span>
+                            <span class="mono text-dim">@c.FpValue</span>
+                        </span>
+                        <span class="badge-discovered">@c.DeviceIds.Length devices</span>
+                        <span class="conflict-actions" onclick="event.stopPropagation()">
+                            <button class="btn btn-sm js-merge"
+                                    data-fp-type="@c.FpType"
+                                    data-fp-value="@c.FpValue"
+                                    data-device-ids="@JsonSerializer.Serialize(c.DeviceIds)">
+                                Merge
+                            </button>
+                            <button class="btn btn-sm js-exclude" style="color:var(--warn)"
+                                    data-fp-type="@c.FpType"
+                                    data-fp-value="@c.FpValue">
+                                Exclude
+                            </button>
+                        </span>
+                    </summary>
+                    <ul class="conflict-devices">
+                        @foreach (string deviceId in c.DeviceIds)
+                        {
+                            <li><a href="/devices/@deviceId" class="mono">@deviceId</a></li>
+                        }
+                    </ul>
+                </details>
+            }
+        </div>
+
+        <partial name="_Pagination" model="Model.Pagination"/>
+    }
+</div>

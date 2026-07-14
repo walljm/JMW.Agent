@@ -1,0 +1,9 @@
+@using JMW.Discovery.Server.UI
+@model HubTabsModel
+<nav class="tabs" aria-label="@Model.AriaLabel">
+    @foreach (HubTab tab in Model.Tabs)
+    {
+        bool active = string.Equals(tab.Href, Model.ActiveHref, StringComparison.Ordinal);
+        <a class="@(active ? "tab active" : "tab")" aria-current="@(active ? "page" : null)" href="@tab.Href">@tab.Label</a>
+    }
+</nav>

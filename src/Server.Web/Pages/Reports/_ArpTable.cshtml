@@ -1,0 +1,68 @@
+@using JMW.Discovery.Server.Reporting
+@model JMW.Discovery.Server.Pages.Reports.ArpModel
+
+<div id="arp-table" class="grid-panel">
+    <partial name="_SectionError" model="Model.LoadError"/>
+
+    @if (Model.LoadError is null && Model.Entries.Count == 0)
+    {
+        <div class="empty">No ARP entries match the current filters.</div>
+    }
+    else if (Model.LoadError is null)
+    {
+        <div class="grid-scroll">
+            <table class="data" aria-label="ARP neighbors">
+                <thead>
+                <tr>
+                    <th sort-key="device" sort-grid="Model.Grid" sort-target="#arp-table">Observer</th>
+                    <th style="cursor:default">IP</th>
+                    <th sort-key="mac" sort-grid="Model.Grid" sort-target="#arp-table">MAC</th>
+                    <th style="cursor:default">OUI</th>
+                    <th style="cursor:default">MAC Type</th>
+                    <th style="cursor:default">Interface</th>
+                    <th style="cursor:default">State</th>
+                    <th style="cursor:default">Resolved Device</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (ArpListItem a in Model.Entries)
+                {
+                    (string Label, string Title, string Css) flag = ViewFormat.MacFlag(a.Mac);
+                    <tr>
+                        <td>@(string.IsNullOrEmpty(a.ObserverHostname) ? a.Device : a.ObserverHostname)</td>
+                        <td class="mono">@a.Ip</td>
+                        <td class="mono">@ViewFormat.FormatMac(a.Mac)</td>
+                        <td class="text-dim" title="NIC manufacturer from MAC OUI">@ViewFormat.FormatOui(a.Oui, a.OuiCountry)</td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(flag.Label) && flag.Label != "—")
+                            {
+                                <span class="mac-flag @flag.Css" title="@flag.Title">@flag.Label</span>
+                            }
+                            else
+                            {
+                                @:—
+                            }
+                        </td>
+                        <td>@(a.Iface ?? "—")</td>
+                        <td>@(a.State ?? "—")</td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(a.ResolvedDeviceId))
+                            {
+                                <a href="/devices/@a.ResolvedDeviceId?from=arp">
+                                    @(string.IsNullOrEmpty(a.ResolvedHostname) ? a.ResolvedDeviceId : a.ResolvedHostname)
+                                </a>
+                            }
+                            else
+                            {
+                                <span class="text-dim">—</span>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+
+        <partial name="_Pagination" model="Model.Pagination"/>
+    }
+</div>

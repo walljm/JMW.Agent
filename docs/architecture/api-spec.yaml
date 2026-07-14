@@ -1,0 +1,774 @@
+openapi: 3.1.0
+info:
+  title: JMW Agent Facts Server API
+  version: "1.0.0"
+  description: >
+    Iteration-2 API for the JMW Agent Facts Server. Two principal types:
+    agents (Bearer API key) on /api/v1/agent/*, and users (session cookie) on
+    all other endpoints. All list endpoints use keyset pagination. Errors use a
+    uniform envelope. See api-spec.md and conventions.md.
+servers:
+  - url: /api/v1
+    description: Versioned base path (single version this iteration)
+
+components:
+  securitySchemes:
+    agentApiKey:
+      type: http
+      scheme: bearer
+      description: Agent API key issued at registration; only its hash is stored.
+    userSession:
+      type: apiKey
+      in: cookie
+      name: session
+      description: httpOnly Secure SameSite=Strict session cookie.
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, description: snake_case domain code }
+            message: { type: string }
+    Fingerprint:
+      type: object
+      required: [type, value]
+      properties:
+        type: { type: string, example: mac }
+        value: { type: string, example: "001a2b3c4d5e" }
+    Fact:
+      type: object
+      description: A single fact; id uses a placeholder device root, rewritten server-side.
+      required: [id, attribute_path, kind]
+      properties:
+        id: { type: string }
+        attribute_path: { type: string }
+        key_values: { type: object, additionalProperties: { type: string } }
+        kind: { type: integer }
+        value_str: { type: string, nullable: true }
+        value_long: { type: integer, format: int64, nullable: true }
+        value_double: { type: number, nullable: true }
+    FactBatchElement:
+      type: object
+      required: [fingerprints, facts]
+      properties:
+        fingerprints:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/Fingerprint' }
+        facts:
+          type: array
+          maxItems: 50000
+          items: { $ref: '#/components/schemas/Fact' }
+    AgentRegisterRequest:
+      type: object
+      required: [agent_id, hostname, version]
+      properties:
+        agent_id: { type: string, format: uuid }
+        hostname: { type: string }
+        zone: { type: string, nullable: true }
+        version: { type: string }
+        passive_discovery_mode: { type: string, enum: [full, degraded] }
+    AgentRegisterResponse:
+      type: object
+      required: [agent_id, status, api_key]
+      properties:
+        agent_id: { type: string, format: uuid }
+        status: { type: string, enum: [pending, approved, disabled] }
+        api_key: { type: string, description: Returned once; only the hash is stored. }
+    HeartbeatRequest:
+      type: object
+      required: [agent_id]
+      properties:
+        agent_id: { type: string, format: uuid }
+        passive_discovery_mode: { type: string, enum: [full, degraded] }
+    HeartbeatResponse:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [pending, approved, disabled] }
+        config:
+          type: object
+          nullable: true
+          description: Present only when status=approved.
+          properties:
+            interval: { type: integer }
+            max_concurrency: { type: integer }
+            targets: { type: array, items: { type: object } }
+            services: { type: array, items: { type: object } }
+    FactsRequest:
+      type: object
+      required: [agent_id, collected_at, fact_batches]
+      properties:
+        agent_id: { type: string, format: uuid }
+        collected_at: { type: string, format: date-time }
+        fact_batches:
+          type: array
+          items: { $ref: '#/components/schemas/FactBatchElement' }
+    FactsResponse:
+      type: object
+      properties:
+        accepted_batches: { type: integer }
+        resolved_devices:
+          type: array
+          items:
+            type: object
+            properties:
+              fingerprints_hash: { type: string }
+              device_id: { type: string, format: uuid }
+              is_new: { type: boolean }
+    DeviceListItem:
+      type: object
+      properties:
+        device_id: { type: string, format: uuid }
+        hostname: { type: string, nullable: true }
+        vendor: { type: string, nullable: true }
+        kind: { type: string, nullable: true }
+        management_status: { type: string, enum: [managed, discovered] }
+        last_seen: { type: string, format: date-time, nullable: true }
+        fingerprint_count: { type: integer }
+    DeviceList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/DeviceListItem' } }
+        next_cursor: { type: string, nullable: true }
+    MergeRequest:
+      type: object
+      required: [into_device_id]
+      properties:
+        into_device_id: { type: string, format: uuid }
+    AgentUpdateRequest:
+      type: object
+      description: Partial update of agent metadata (any subset of fields).
+      properties:
+        name: { type: string }
+        zone: { type: string }
+        enabled: { type: boolean }
+    AgentConfigRequest:
+      type: object
+      required: [heartbeat_interval_secs, discovery_interval_secs, inventory_interval_secs]
+      properties:
+        heartbeat_interval_secs: { type: integer }
+        discovery_interval_secs: { type: integer }
+        inventory_interval_secs: { type: integer }
+    CollectorToggleRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+    CollectorIntervalRequest:
+      type: object
+      required: [interval_secs]
+      properties:
+        interval_secs: { type: integer }
+    TargetUpdateRequest:
+      type: object
+      required: [endpoint, collector_type]
+      properties:
+        endpoint: { type: string, description: Bare host/IP for device-style collector types, or a full URL for service-style ones (technitium-dns, home-assistant). }
+        collector_type: { type: string, enum: [ssh, snmp, http, cert, bacnet, modbus, google-wifi, technitium-dns, home-assistant] }
+        credential_id: { type: string, format: uuid, nullable: true }
+        label: { type: string, nullable: true }
+    TargetEnabledRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+    CredentialMetaUpdateRequest:
+      type: object
+      required: [name, type]
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [ssh-key, ssh-password, snmp, api-token] }
+    CredentialSecretUpdateRequest:
+      type: object
+      required: [secret]
+      properties:
+        secret: { type: string, description: Plaintext, write-only; re-encrypted before storage. Never returned. }
+    ConflictResolveRequest:
+      oneOf:
+        - type: object
+          required: [action, winner_device_id]
+          properties:
+            action: { type: string, enum: [merge] }
+            winner_device_id: { type: string, format: uuid }
+        - type: object
+          required: [action]
+          properties:
+            action: { type: string, enum: [exclude] }
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string }
+    User:
+      type: object
+      properties:
+        username: { type: string }
+        role: { type: string, enum: [admin, viewer] }
+    PagedResult:
+      type: object
+      properties:
+        items: { type: array, items: { type: object } }
+        next_cursor: { type: string, nullable: true }
+  parameters:
+    Cursor:
+      name: after
+      in: query
+      schema: { type: string }
+      description: Opaque keyset cursor (base64 of last sort tuple); the prior page's next_cursor value.
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, default: 50, maximum: 200 }
+  responses:
+    Unauthorized:
+      description: Missing/invalid credentials
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Forbidden:
+      description: RBAC or approval gate
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: Resource not found
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+paths:
+  /agent/register:
+    post:
+      summary: Self-register an agent (open registration, admin approval)
+      security: []
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AgentRegisterRequest' } } }
+      responses:
+        '201':
+          description: Registered (pending)
+          content: { application/json: { schema: { $ref: '#/components/schemas/AgentRegisterResponse' } } }
+        '409':
+          description: Agent already registered
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+  /agent/heartbeat:
+    post:
+      summary: Liveness + config pull
+      security: [{ agentApiKey: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/HeartbeatRequest' } } }
+      responses:
+        '200':
+          description: Status + config (config only when approved)
+          content: { application/json: { schema: { $ref: '#/components/schemas/HeartbeatResponse' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /agent/facts:
+    post:
+      summary: Identity-free fact ingest (gzip JSON)
+      security: [{ agentApiKey: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/FactsRequest' } } }
+      responses:
+        '202':
+          description: Accepted
+          content: { application/json: { schema: { $ref: '#/components/schemas/FactsResponse' } } }
+        '400':
+          description: Invalid batch (no valid fingerprints, or too many facts)
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '413':
+          description: Payload too large
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+  /devices:
+    get:
+      summary: List devices (keyset)
+      security: [{ userSession: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+        - { name: status, in: query, schema: { type: string, enum: [managed, discovered] } }
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Page of devices
+          content: { application/json: { schema: { $ref: '#/components/schemas/DeviceList' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /devices/{id}:
+    get:
+      summary: Device detail
+      security: [{ userSession: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Device detail with projected child summaries and fingerprints }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /devices/{id}/merge:
+    post:
+      summary: Manual merge (admin)
+      security: [{ userSession: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/MergeRequest' } } }
+      responses:
+        '200': { description: Merged }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Merge conflict
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+  /devices/{id}/promote:
+    post:
+      summary: Promote discovered to managed (admin)
+      security: [{ userSession: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_id, credential_id, target_address]
+              properties:
+                agent_id: { type: string }
+                credential_id: { type: string }
+                target_address: { type: string, description: "IP or hostname for SSH/SNMP collection" }
+      responses:
+        '200': { description: Promoted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/agents:
+    get:
+      summary: List agents (admin)
+      security: [{ userSession: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+        - { name: status, in: query, schema: { type: string } }
+      responses:
+        '200': { description: Page of agents, content: { application/json: { schema: { $ref: '#/components/schemas/PagedResult' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/agents/{id}:
+    patch:
+      summary: Update agent metadata — name, zone, enabled (admin)
+      security: [{ userSession: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AgentUpdateRequest' } } }
+      responses:
+        '200': { description: Updated }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: Validation error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /admin/agents/{id}/approve:
+    patch:
+      summary: Approve an agent (admin)
+      security: [{ userSession: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Approved }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/agents/{id}/config:
+    put:
+      summary: Update agent collection intervals (admin)
+      security: [{ userSession: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AgentConfigRequest' } } }
+      responses:
+        '200': { description: Config updated; delivered on next heartbeat }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: Validation error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /admin/agents/{id}/collectors/{collector_name}/toggle:
+    post:
+      summary: Enable/disable a specific collector for an agent (admin)
+      security: [{ userSession: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: collector_name, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CollectorToggleRequest' } } }
+      responses:
+        '200': { description: Collector toggled }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: Unknown collector, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /admin/agents/{id}/collectors/{collector_name}/interval:
+    put:
+      summary: Set a per-collector frequency override (admin)
+      security: [{ userSession: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: collector_name, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CollectorIntervalRequest' } } }
+      responses:
+        '200': { description: Interval override set }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: Unknown collector or bad interval, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /admin/agents/{id}/clear-cache:
+    post:
+      summary: Request the agent clear its local delta-tracker cache on its next heartbeat (admin)
+      security: [{ userSession: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: 'Requested — takes effect on the agent''s next heartbeat, no synchronous confirmation' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/targets:
+    get:
+      summary: List targets (admin) — unified device- and service-style polling targets
+      security: [{ userSession: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+        - { name: agent_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Page of targets, content: { application/json: { schema: { $ref: '#/components/schemas/PagedResult' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Create a target (admin)
+      security: [{ userSession: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses:
+        '201': { description: Created }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { description: Validation error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /admin/targets/{id}:
+    put:
+      summary: Update a target — endpoint, collector_type, credential (admin)
+      security: [{ userSession: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TargetUpdateRequest' } } }
+      responses:
+        '200': { description: Updated }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: Validation error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      summary: Delete a target (admin)
+      security: [{ userSession: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/targets/{id}/enabled:
+    patch:
+      summary: Toggle a target enabled/disabled (admin)
+      security: [{ userSession: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TargetEnabledRequest' } } }
+      responses:
+        '200': { description: Toggled }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/credentials:
+    get:
+      summary: List credentials metadata (admin; no plaintext)
+      security: [{ userSession: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { description: Page of credential metadata, content: { application/json: { schema: { $ref: '#/components/schemas/PagedResult' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Create a credential (admin; secret write-only, encrypted at rest)
+      security: [{ userSession: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, type, secret]
+              properties:
+                name: { type: string }
+                type: { type: string, enum: [ssh-key, ssh-password, snmp, api-token] }
+                secret: { type: string, description: Plaintext, write-only; encrypted before storage. }
+      responses:
+        '201': { description: Created }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/credentials/{id}:
+    put:
+      summary: Update credential metadata — name, type (admin; does not touch secret)
+      security: [{ userSession: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CredentialMetaUpdateRequest' } } }
+      responses:
+        '200': { description: Updated }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: Validation error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      summary: Delete a credential (admin)
+      security: [{ userSession: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Credential in use, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /admin/credentials/{id}/secret:
+    put:
+      summary: Rotate a credential's secret (admin; write-only, secret never returned)
+      security: [{ userSession: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CredentialSecretUpdateRequest' } } }
+      responses:
+        '204': { description: Secret rotated; no response body — secret is never returned }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/conflicts:
+    get:
+      summary: List fingerprint conflicts (admin)
+      security: [{ userSession: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: Page of fingerprint conflicts (device pairs sharing a fingerprint)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        fp_type: { type: string }
+                        fp_value: { type: string }
+                        device_a:
+                          type: object
+                          properties:
+                            device_id: { type: string, format: uuid }
+                            hostname: { type: string, nullable: true }
+                            management_status: { type: string, enum: [managed, discovered] }
+                        device_b:
+                          type: object
+                          properties:
+                            device_id: { type: string, format: uuid }
+                            hostname: { type: string, nullable: true }
+                            management_status: { type: string, enum: [managed, discovered] }
+                        first_seen: { type: string, format: date-time }
+                  next_cursor: { type: string, nullable: true }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/conflicts/{fp_type}/{fp_value}/resolve:
+    post:
+      summary: Resolve a fingerprint conflict — merge or exclude (admin)
+      security: [{ userSession: [] }]
+      parameters:
+        - { name: fp_type, in: path, required: true, schema: { type: string } }
+        - { name: fp_value, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ConflictResolveRequest' } } }
+      responses:
+        '200': { description: Resolved (merge → survivor_device_id; exclude → fingerprint excluded from future matching) }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: No such conflict, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: Already resolved, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: Bad resolve action, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /admin/audit-log:
+    get:
+      summary: Read the audit log (admin, keyset)
+      security: [{ userSession: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+        - { name: device_id, in: query, schema: { type: string, format: uuid }, description: Filters against target_ref }
+        - { name: agent_id, in: query, schema: { type: string, format: uuid }, description: Filters against actor/target_ref }
+        - { name: action, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Page of audit-log entries (keyset on occurred_at DESC, id)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer, format: int64 }
+                        occurred_at: { type: string, format: date-time }
+                        actor: { type: string }
+                        action: { type: string }
+                        target_ref: { type: string, nullable: true }
+                        detail: { type: object, nullable: true }
+                  next_cursor: { type: string, nullable: true }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /report/hosts:
+    get:
+      summary: All-hosts report (keyset, read-only)
+      security: [{ userSession: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: os, in: query, schema: { type: string } }
+        - { name: vendor, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [managed, discovered, all], default: all }, description: Management-status filter (SCR-004 / dashboard cards) }
+        - { name: source, in: query, schema: { type: string }, description: "Discovery source filter, e.g. arp, mdns, lldp, snmp" }
+      responses:
+        '200': { description: Page of hosts, content: { application/json: { schema: { $ref: '#/components/schemas/PagedResult' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /report/services:
+    get:
+      summary: Service list (keyset, read-only)
+      security: [{ userSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/Limit' }]
+      responses:
+        '200': { description: Page of services, content: { application/json: { schema: { $ref: '#/components/schemas/PagedResult' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /report/services/{id}:
+    get:
+      summary: Service detail (read-only)
+      security: [{ userSession: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Service detail }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /report/security:
+    get:
+      summary: Security posture (keyset, read-only)
+      security: [{ userSession: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+        - { name: health, in: query, schema: { type: string } }
+      responses:
+        '200': { description: Page of security rows, content: { application/json: { schema: { $ref: '#/components/schemas/PagedResult' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /report/certs:
+    get:
+      summary: Certificate inventory (keyset, read-only)
+      security: [{ userSession: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+        - { name: expires_before, in: query, schema: { type: string, format: date-time } }
+        - { name: issuer, in: query, schema: { type: string } }
+        - { name: device_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Page of certificate rows, content: { application/json: { schema: { $ref: '#/components/schemas/PagedResult' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /report/patches:
+    get:
+      summary: Patch status (keyset, read-only)
+      security: [{ userSession: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+        - { name: reboot_required, in: query, schema: { type: boolean } }
+      responses:
+        '200': { description: Page of patch-status rows, content: { application/json: { schema: { $ref: '#/components/schemas/PagedResult' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /report/ports:
+    get:
+      summary: Open ports cross-device search (keyset, read-only)
+      security: [{ userSession: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+        - { name: port, in: query, schema: { type: integer } }
+        - { name: proto, in: query, schema: { type: string, enum: [tcp, udp] } }
+      responses:
+        '200': { description: Page of ports, content: { application/json: { schema: { $ref: '#/components/schemas/PagedResult' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /report/containers:
+    get:
+      summary: Container fleet (keyset, read-only)
+      security: [{ userSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/Limit' }]
+      responses:
+        '200': { description: Page of containers, content: { application/json: { schema: { $ref: '#/components/schemas/PagedResult' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /report/storage:
+    get:
+      summary: Storage health (keyset, read-only)
+      security: [{ userSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/Limit' }]
+      responses:
+        '200': { description: Page of storage rows, content: { application/json: { schema: { $ref: '#/components/schemas/PagedResult' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /report/arp:
+    get:
+      summary: ARP cross-reference (keyset, read-only)
+      security: [{ userSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/Limit' }]
+      responses:
+        '200': { description: Page of ARP rows, content: { application/json: { schema: { $ref: '#/components/schemas/PagedResult' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /report/changes:
+    get:
+      summary: Change feed from facts_history (keyset, read-only)
+      security: [{ userSession: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+        - { name: since, in: query, schema: { type: string, format: date-time } }
+        - { name: device_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Page of change rows, content: { application/json: { schema: { $ref: '#/components/schemas/PagedResult' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { description: Invalid cursor/filter, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /auth/login:
+    post:
+      summary: User login (sets session cookie)
+      security: []
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/LoginRequest' } } }
+      responses:
+        '200':
+          description: Logged in
+          content: { application/json: { schema: { type: object, properties: { user: { $ref: '#/components/schemas/User' } } } } }
+        '401':
+          description: Invalid credentials
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '429':
+          description: Rate limited
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+  /auth/logout:
+    post:
+      summary: Logout (clears session)
+      security: [{ userSession: [] }]
+      responses:
+        '204': { description: Logged out }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/me:
+    get:
+      summary: Current user
+      security: [{ userSession: [] }]
+      responses:
+        '200':
+          description: Current user
+          content: { application/json: { schema: { type: object, properties: { user: { $ref: '#/components/schemas/User' } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }

@@ -1,0 +1,63 @@
+@using JMW.Discovery.Server.Reporting
+@model JMW.Discovery.Server.Pages.Reports.ChangesModel
+
+<div id="changes-table" class="grid-panel">
+    <partial name="_SectionError" model="Model.LoadError"/>
+
+    @if (Model.LoadError is null && Model.Changes.Count == 0)
+    {
+        <div class="empty">No changes recorded for the current filters.</div>
+    }
+    else if (Model.LoadError is null)
+    {
+        <div class="grid-scroll">
+            <table class="data" aria-label="Change feed">
+                <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Device</th>
+                    <th>Fact Path</th>
+                    <th>Value</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (ChangeListItem c in Model.Changes)
+                {
+                    <tr>
+                        <td title="@(c.CollectedAt.ToString("yyyy-MM-dd HH:mm:ss")) UTC">@ViewFormat.RelativeTime(c.CollectedAt)</td>
+                        <td>@(string.IsNullOrEmpty(c.Hostname) ? "—" : c.Hostname)</td>
+                        <td class="mono">@c.FullPath</td>
+                        <td class="mono">@c.Value</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+
+        <partial name="_Pagination" model="BuildPaginationLinks()"/>
+    }
+</div>
+
+@functions {
+
+    private string FilterParams()
+    {
+        List<string> parts = [];
+        if (!string.IsNullOrEmpty(Model.Since)) parts.Add("since=" + Uri.EscapeDataString(Model.Since));
+        if (!string.IsNullOrEmpty(Model.DeviceId)) parts.Add("deviceId=" + Uri.EscapeDataString(Model.DeviceId));
+        return string.Join('&', parts);
+    }
+
+    private PaginationLinks BuildPaginationLinks()
+    {
+        string filterQuery = FilterParams();
+        string? firstHref = string.IsNullOrEmpty(Model.After)
+            ? null
+            : "/changes" + (filterQuery.Length > 0 ? "?" + filterQuery : "");
+        string? nextHref = string.IsNullOrEmpty(Model.NextCursor)
+            ? null
+            : "/changes?after=" + Uri.EscapeDataString(Model.NextCursor) + (filterQuery.Length > 0 ? "&" + filterQuery : "");
+        return new PaginationLinks(firstHref, nextHref);
+    }
+
+}

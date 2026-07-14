@@ -1,0 +1,319 @@
+@page "/services/{id}"
+@using JMW.Discovery.Server.FactViews
+@using JMW.Discovery.Server.Reporting
+@model JMW.Discovery.Server.Pages.Reports.ServiceDetailModel
+@{
+    ViewData["Title"] = Model.Service + " — JMW Discovery";
+    ViewData["ActiveNav"] = "services";
+
+    // Tabs are shown only when the service actually has that kind of data (matches the
+    // Device Detail convention of hiding sections with no data, REQ-012) — a Home Assistant
+    // service never has CA/DNS/DHCP data and should not land on a dead "no data" panel.
+    bool hasCa = Model.CaStatus is not null || Model.RootSubjectDn is not null;
+    bool hasDns = Model.TotalQueries.HasValue || Model.BlockedPct.HasValue || Model.Zones.Count > 0 || Model.Records.Count > 0;
+    bool hasDhcp = Model.Scopes.Count > 0;
+    bool hasDetails = Model.FactViews.Count > 0;
+
+    List<(string Key, string Label)> tabOrder = [];
+    if (hasCa) tabOrder.Add(("ca", "CA Certificate"));
+    if (hasDns) tabOrder.Add(("dns", "DNS Zones"));
+    if (hasDhcp) tabOrder.Add(("dhcp", "DHCP Scopes"));
+    if (hasDetails) tabOrder.Add(("details", "Details"));
+
+    string tabsJson = "[" + string.Join(",", tabOrder.Select(t => "'" + t.Key + "'")) + "]";
+}
+<main class="main">
+    <div class="page-head">
+        <h1><a href="/services" style="color:var(--text-dim)">Services</a> / @Model.Service</h1>
+    </div>
+
+    <div class="identity">
+        <div>
+            <div class="title">@(string.IsNullOrEmpty(Model.ServiceId) ? Model.Service : Model.ServiceId)</div>
+            <dl class="kv" style="margin-top:var(--space-3)">
+                <dt>Service ID</dt>
+                <dd class="mono">@Model.Service</dd>
+                <dt>Type</dt>
+                <dd>@(Model.Type ?? "—")</dd>
+                <dt>Device</dt>
+                <dd>
+                    @if (!string.IsNullOrEmpty(Model.DeviceId))
+                    {
+                        <a href="/devices/@Model.DeviceId" class="mono">@Model.DeviceId</a>
+                    }
+                    else
+                    {
+                        <span>—</span>
+                    }
+                </dd>
+            </dl>
+        </div>
+    </div>
+
+    @if (tabOrder.Count == 0)
+    {
+        <div class="empty">No detail data available for this service.</div>
+    }
+    else
+    {
+        <div class="tabs" role="tablist">
+            @foreach ((string key, string label) in tabOrder)
+            {
+                <button class="tab" role="tab" aria-selected="false" data-tab="@key">@label</button>
+            }
+        </div>
+    }
+
+    @if (hasCa)
+    {
+        <div class="tabpanel" role="tabpanel" data-panel="ca" hidden>
+            <dl class="kv">
+                <dt>Status</dt>
+                <dd>@(Model.CaStatus ?? "—")</dd>
+                <dt>Address</dt>
+                <dd class="mono">@(Model.CaAddress ?? "—")</dd>
+                <dt>Root Subject</dt>
+                <dd>@(Model.RootSubjectDn ?? "—")</dd>
+                <dt>Root Valid From</dt>
+                <dd>
+                    @if (Model.RootNotBefore.HasValue)
+                    {
+                        <time data-utc="@ViewFormat.IsoUtc(Model.RootNotBefore.Value)">@Model.RootNotBefore.Value.ToString("yyyy-MM-dd HH:mm") UTC</time>
+                    }
+                    else
+                    {
+                        @:—
+                    }
+                </dd>
+                <dt>Root Expires</dt>
+                <dd>
+                    @if (Model.RootNotAfter.HasValue)
+                    {
+                        <time data-utc="@ViewFormat.IsoUtc(Model.RootNotAfter.Value)">@Model.RootNotAfter.Value.ToString("yyyy-MM-dd HH:mm") UTC</time>
+                    }
+                    else
+                    {
+                        @:—
+                    }
+                </dd>
+                <dt>Root Fingerprint</dt>
+                <dd class="mono">@(Model.RootFingerprint ?? "—")</dd>
+                <dt>Intermediate Subject</dt>
+                <dd>@(Model.IntSubjectDn ?? "—")</dd>
+                <dt>Intermediate Valid From</dt>
+                <dd>
+                    @if (Model.IntNotBefore.HasValue)
+                    {
+                        <time data-utc="@ViewFormat.IsoUtc(Model.IntNotBefore.Value)">@Model.IntNotBefore.Value.ToString("yyyy-MM-dd HH:mm") UTC</time>
+                    }
+                    else
+                    {
+                        @:—
+                    }
+                </dd>
+                <dt>Intermediate Expires</dt>
+                <dd>
+                    @if (Model.IntNotAfter.HasValue)
+                    {
+                        <time data-utc="@ViewFormat.IsoUtc(Model.IntNotAfter.Value)">@Model.IntNotAfter.Value.ToString("yyyy-MM-dd HH:mm") UTC</time>
+                    }
+                    else
+                    {
+                        @:—
+                    }
+                </dd>
+            </dl>
+
+            @if (Model.Provisioners.Count > 0)
+            {
+                <h2 style="margin-top:var(--space-5)">Provisioners</h2>
+                <table class="data">
+                    <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Default Duration</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (ServiceProvisioner p in Model.Provisioners)
+                    {
+                        <tr>
+                            <td>@p.Provisioner</td>
+                            <td>@(p.Type ?? "—")</td>
+                            <td>@(p.DefaultDuration ?? "—")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+
+    @if (hasDns)
+    {
+    <div class="tabpanel" role="tabpanel" data-panel="dns" hidden>
+        @if (Model.TotalQueries.HasValue || Model.BlockedPct.HasValue)
+        {
+            <dl class="kv">
+                <dt>Total Queries</dt>
+                <dd>@(Model.TotalQueries?.ToString() ?? "—")</dd>
+                <dt>Total Blocked</dt>
+                <dd>@(Model.TotalBlocked?.ToString() ?? "—")</dd>
+                <dt>Blocked %</dt>
+                <dd>@(Model.BlockedPct.HasValue ? Model.BlockedPct.Value.ToString("0.#") + "%" : "—")</dd>
+            </dl>
+        }
+        @if (Model.Zones.Count == 0)
+        {
+            <div class="empty">No DNS zones for this service.</div>
+        }
+        else
+        {
+            <table class="data">
+                <thead>
+                <tr>
+                    <th>Zone</th>
+                    <th>Type</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (ServiceZone z in Model.Zones)
+                {
+                    <tr>
+                        <td class="mono">@z.Zone</td>
+                        <td>@(z.Type ?? "—")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+
+        @if (Model.Records.Count > 0)
+        {
+            <h3 class="section-title" style="margin-top:var(--space-5)">
+                Records (@Model.Records.Count)</h3>
+            <div class="detail-table-scroll">
+                <table class="data">
+                    <thead>
+                    <tr>
+                        <th>Zone</th>
+                        <th>Record</th>
+                        <th>Type</th>
+                        <th>Value</th>
+                        <th>TTL</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (ServiceDnsRecord r in Model.Records)
+                    {
+                        <tr>
+                            <td class="mono">@r.Zone</td>
+                            <td class="mono">@r.Record</td>
+                            <td>@r.Type</td>
+                            <td class="mono">@(r.Value ?? "—")</td>
+                            <td>@(r.Ttl?.ToString() ?? "—")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+    }
+
+    @if (hasDhcp)
+    {
+    <div class="tabpanel" role="tabpanel" data-panel="dhcp" hidden>
+        <table class="data">
+            <thead>
+            <tr>
+                <th>Scope</th>
+                <th>Enabled</th>
+                <th>Range</th>
+                <th>Subnet Mask</th>
+                <th>Gateway</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (ServiceScope s in Model.Scopes)
+            {
+                <tr>
+                    <td class="mono">@s.Scope</td>
+                    <td>@(s.Enabled.HasValue ? s.Enabled.Value ? "yes" : "no" : "—")</td>
+                    <td class="mono">@(string.IsNullOrEmpty(s.StartAddress) ? "—" : s.StartAddress + " – " + (s.EndAddress ?? "?"))</td>
+                    <td class="mono">@(s.SubnetMask ?? "—")</td>
+                    <td class="mono">@(s.Gateway ?? "—")</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+    }
+
+    @if (Model.FactViews.Count > 0)
+    {
+        <div class="tabpanel" role="tabpanel" data-panel="details" hidden>
+            @foreach (RenderedFactView view in Model.FactViews)
+            {
+                <h3 class="section-title">@view.Title</h3>
+                <div class="detail-table-scroll" style="margin-bottom:var(--space-4)">
+                    <table class="data">
+                        <thead>
+                        <tr>
+                            @foreach (string header in view.Headers)
+                            {
+                                <th>@header</th>
+                            }
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (IReadOnlyList<string?> row in view.Rows)
+                        {
+                            <tr>
+                                @foreach (string? cell in row)
+                                {
+                                    <td>@(cell ?? "—")</td>
+                                }
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+</main>
+
+@section Scripts {
+    <script>
+        var TABS = @Html.Raw(tabsJson);
+
+        function switchTab(target) {
+            if (TABS.length === 0) return;
+            if (TABS.indexOf(target) < 0) target = TABS[0];
+            document.querySelectorAll('.tab').forEach(function (t) {
+                var active = t.getAttribute('data-tab') === target;
+                t.classList.toggle('active', active);
+                t.setAttribute('aria-selected', active ? 'true' : 'false');
+            });
+            document.querySelectorAll('.tabpanel').forEach(function (panel) {
+                panel.hidden = panel.getAttribute('data-panel') !== target;
+            });
+            var url = new URL(location.href);
+            url.searchParams.set('tab', target);
+            history.replaceState(null, '', url);
+        }
+
+        document.querySelectorAll('.tab').forEach(function (tab) {
+            tab.addEventListener('click', function () {
+                switchTab(tab.getAttribute('data-tab'));
+            });
+        });
+
+        document.addEventListener('DOMContentLoaded', function () {
+            var tab = new URLSearchParams(location.search).get('tab');
+            switchTab(TABS.indexOf(tab) >= 0 ? tab : TABS[0]);
+        });
+    </script>
+}

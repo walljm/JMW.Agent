@@ -1,0 +1,4 @@
+<Project>
+    <!-- Root Directory.Build.props for the scratch/ tree.
+         Provides a stop-point for the lib/Directory.Build.props parent-import chain. -->
+</Project>

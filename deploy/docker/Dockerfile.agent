@@ -1,38 +1,63 @@
-# Multi-stage build keeps the final image at the binary + a CA bundle only.
-# Build the agent for linux/amd64; ASUSTOR ADM x86 NAS units (e.g. AS6810T,
-# AS5304T) are Intel x86_64 and run upstream Linux kernels under the hood.
-
-FROM golang:1.26.4-alpine@sha256:f23e8b227fb4493eabe03bede4d5a32d04092da71962f1fb79b5f7d1e6c2a17f AS build
+# Multi-stage build for the containerized agent. Unlike the old Go agent, the
+# C# build is NOT a static binary — the final stage needs the .NET runtime, so
+# it uses the runtime base image (not distroless-static) and a real package
+# manager for smartmontools (see below), same trade-off already called out in
+# docs/architecture/deployment.md.
+#
+# The build stage is pinned to --platform=$BUILDPLATFORM (same trick the old
+# Go Dockerfile used) rather than letting buildx build it natively per target
+# arch: Grpc.Tools' bundled linux_arm64 protoc (used for the OnHub protobuf
+# codegen) segfaults (exit 139) when invoked by MSBuild's Exec task under
+# arm64, whether native or emulated — reproduced directly against
+# mcr.microsoft.com/dotnet/sdk:10.0.300. Forcing the build to always run on
+# the builder's own architecture avoids that entirely; the published output
+# is framework-dependent IL, so it's architecture-independent and runs fine
+# under whichever runtime image the (unpinned) final stage resolves to.
+ARG BUILDPLATFORM
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.300 AS build
 WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-ARG TARGETARCH=amd64
-# VERSION is stamped into the binary and reported on register/heartbeat.
-# Pass via --build-arg VERSION=$(git describe --tags --always --dirty); the
-# Makefile target docker-build-agent does this automatically.
-ARG VERSION=dev
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \
-    go build -trimpath \
-        -ldflags="-s -w -X github.com/walljm/jmwagent/internal/shared/version.Version=${VERSION}" \
-        -o /out/jmw-agent ./cmd/agent
 
-# Extract a statically-linked smartctl from the alpine smartmontools package so
-# it can be copied into the distroless final image (which has no package manager
-# or shell). smartctl needs direct device access at runtime — the container must
-# be started with --privileged or explicit --device flags; see deploy/docker/README.md.
-FROM alpine:3@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11 AS smartctl
-RUN apk add --no-cache smartmontools && cp /usr/sbin/smartctl /smartctl
+# .editorconfig carries analyzer severity overrides and Directory.Build.props sets
+# TreatWarningsAsErrors solution-wide — both apply per-directory during a plain
+# `dotnet publish`, so copy them even though we're not restoring the full .slnx.
+COPY .editorconfig .
+COPY Directory.Build.props .
 
-# Distroless static is tiny (~2 MB) and has no shell — fine because the agent
-# is a single static binary that talks to /proc, /sys, and the network.
-FROM gcr.io/distroless/static-debian12:nonroot@sha256:d093aa3e30dbadd3efe1310db061a14da60299baff8450a17fe0ccc514a16639
-COPY --from=build /out/jmw-agent /jmw-agent
-COPY --from=smartctl /smartctl /usr/sbin/smartctl
-USER nonroot:nonroot
+# Project files first (cache layer for restore) — the agent only depends on Core,
+# not the lib/ITPIE.* database libraries (those are Server.Web-only).
+COPY src/Core/JMW.Discovery.Core.csproj src/Core/
+COPY src/Agent/JMW.Discovery.Agent.csproj src/Agent/
 
-# Agent reads the host filesystem through this prefix when set; the host root
-# must be bind-mounted into the container at /host (read-only).
-ENV JMW_HOST_ROOT=/host
+COPY src/Core/ src/Core/
+COPY src/Agent/ src/Agent/
 
-ENTRYPOINT ["/jmw-agent", "--config", "/etc/jmw-agent/agent.toml"]
+RUN dotnet publish src/Agent/JMW.Discovery.Agent.csproj -c Release -o /app/publish
+
+FROM mcr.microsoft.com/dotnet/runtime:10.0 AS final
+WORKDIR /app
+COPY --from=build /app/publish .
+
+# Trust the WallJM Home root CA for the agent's own outbound HTTPS calls to a
+# private-CA-issued server host (e.g. core.home) — matches Server.Web/Dockerfile.
+COPY deploy/trusted-ca/walljm-home-root-ca.crt /usr/local/share/ca-certificates/walljm-home-root-ca.crt
+
+# smartmontools gives DiskCollector a `smartctl` binary on PATH (it shells out,
+# same as on a bare-metal install) — needs --privileged or --device grants at
+# `docker run` time to open raw disk devices; see deploy/docker/README.md.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends smartmontools ca-certificates \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system jmw \
+    && useradd --system --gid jmw --no-create-home jmw \
+    && mkdir -p /var/lib/jmw-agent /etc/jmw-agent \
+    && chown -R jmw:jmw /var/lib/jmw-agent /app
+
+USER jmw
+
+# /var/lib/jmw-agent is the default JMW_AGENT_STATE_DIR (agent-id + API key) —
+# mount a named volume there so re-creating the container doesn't re-register.
+VOLUME ["/var/lib/jmw-agent"]
+
+ENTRYPOINT ["dotnet", "JMW.Discovery.Agent.dll"]
+CMD ["/etc/jmw-agent/agent.json"]

@@ -1,0 +1,117 @@
+@using System.Globalization
+@using JMW.Discovery.Server.Reporting
+@model JMW.Discovery.Server.Pages.Reports.TerrainDhcpModel
+@{
+    // DHCP lease expiry is stored as an ISO-8601 string whose zone varies by
+    // collector. Normalize to UTC for display when parseable; otherwise show it
+    // raw rather than guess a zone.
+    static DateTime? ParseExpires(string? raw) =>
+        !string.IsNullOrEmpty(raw) && DateTimeOffset.TryParse(
+            raw,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.RoundtripKind,
+            out DateTimeOffset dto
+        )
+            ? dto.UtcDateTime
+            : null;
+}
+
+<div id="dhcp-table" class="grid-panel">
+    <partial name="_SectionError" model="Model.LoadError"/>
+
+    @if (Model.LoadError is null)
+    {
+        @if (Model.Scopes.Count > 0)
+        {
+            <h2 class="section-title">DHCP Scopes</h2>
+            <div class="grid-scroll">
+                <table class="data" aria-label="DHCP scopes">
+                    <thead>
+                    <tr>
+                        <th>Service</th>
+                        <th>Scope</th>
+                        <th>Enabled</th>
+                        <th>Range</th>
+                        <th>Subnet Mask</th>
+                        <th>Gateway</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (JMW.Discovery.Server.Pages.Reports.TerrainDhcpScope sc in Model.Scopes)
+                    {
+                        <tr>
+                            <td><a href="/services/@sc.Service">@sc.Service</a></td>
+                            <td class="mono">@sc.Scope</td>
+                            <td>@(sc.Enabled == true ? "yes" : sc.Enabled == false ? "no" : "—")</td>
+                            <td class="mono">
+                                @if (!string.IsNullOrEmpty(sc.StartAddress))
+                                {
+                                    @(sc.StartAddress + " – " + (sc.EndAddress ?? "?"))
+                                }
+                                else
+                                {
+                                    <span>—</span>
+                                }
+                            </td>
+                            <td class="mono">@(sc.SubnetMask ?? "—")</td>
+                            <td class="mono">@(sc.Gateway ?? "—")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        @if (Model.Leases.Count == 0)
+        {
+            <div class="empty">No DHCP leases match the current filters.</div>
+        }
+        else
+        {
+            <h2 class="section-title">DHCP Leases</h2>
+            <div class="grid-scroll">
+                <table class="data" aria-label="DHCP leases">
+                    <thead>
+                    <tr>
+                        <th>DHCP Server</th>
+                        <th>MAC</th>
+                        <th>OUI</th>
+                        <th>IP</th>
+                        <th>Hostname</th>
+                        <th>Expires</th>
+                        <th>Source</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (DhcpLeaseItem l in Model.Leases)
+                    {
+                        <tr>
+                            <td>@(string.IsNullOrEmpty(l.ObserverHostname) ? l.Device : l.ObserverHostname)</td>
+                            <td class="mono">@l.Mac</td>
+                            <td class="text-dim">@ViewFormat.FormatOui(l.Oui, l.OuiCountry)</td>
+                            <td class="mono">@(l.Ip ?? "—")</td>
+                            <td>@(l.ClientHostname ?? "—")</td>
+                            <td>
+                                @{
+                                    DateTime? expires = ParseExpires(l.ExpiresAt);
+                                }
+                                @if (expires.HasValue)
+                                {
+                                    <time data-utc="@ViewFormat.IsoUtc(expires.Value)">@expires.Value.ToString("yyyy-MM-dd HH:mm") UTC</time>
+                                }
+                                else
+                                {
+                                    @(string.IsNullOrEmpty(l.ExpiresAt) ? "—" : l.ExpiresAt)
+                                }
+                            </td>
+                            <td class="text-dim">@(l.Source ?? "—")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+
+            <partial name="_Pagination" model="Model.Pagination"/>
+        }
+    }
+</div>

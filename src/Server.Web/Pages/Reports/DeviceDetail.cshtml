@@ -1,0 +1,1119 @@
+@page "/devices/{id}"
+@using JMW.Discovery.Server.FactViews
+@using JMW.Discovery.Server.ManualFacts
+@using JMW.Discovery.Server.Pages.Reports
+@using JMW.Discovery.Server.Reporting
+@model JMW.Discovery.Server.Pages.Reports.DeviceDetailModel
+@{
+    string displayName = string.IsNullOrEmpty(Model.Hostname) ? Model.DeviceId : Model.Hostname;
+    ViewData["Title"] = displayName + " — JMW Discovery";
+    ViewData["ActiveNav"] = Model.ActiveNavKey;
+
+    static string CaClass(string? status) =>
+        string.IsNullOrEmpty(status) ? "status info"
+        : string.Equals(status, "ok", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(status, "healthy", StringComparison.OrdinalIgnoreCase) ? "status ok"
+        : "status warn";
+}
+<main class="main">
+    <div class="page-head">
+        <h1><a href="@Model.BreadcrumbHref" style="color:var(--text-dim)">@Model.BreadcrumbLabel</a> / @displayName</h1>
+        @if (User.IsInRole("admin"))
+        {
+            <button class="btn btn-sm" onclick="openMergeDevice()">Merge into…</button>
+        }
+    </div>
+
+    <div class="identity">
+        <div>
+            <div class="title">
+                @displayName
+                @if (Model.ManagementStatus == "managed")
+                {
+                    <span class="badge-managed">managed</span>
+                }
+                else
+                {
+                    <span class="badge-discovered">discovered</span>
+                }
+            </div>
+            <dl class="kv" style="margin-top:var(--space-3)">
+                <dt>UUID</dt>
+                <dd class="mono">@Model.DeviceId</dd>
+                <dt>Vendor / Type</dt>
+                <dd>
+                    @(Model.Vendor ?? "—")@(string.IsNullOrEmpty(Model.Kind) ? "" : " · " + Model.Kind)
+                    @if (Model.VendorIsGuess)
+                    {
+                        <span class="text-dim"> (inferred)</span>
+                    }
+                    else if (!string.IsNullOrEmpty(Model.Vendor) && !string.IsNullOrEmpty(Model.VendorSourceName))
+                    {
+                        <span class="text-dim"> (via @Model.VendorSourceName)</span>
+                    }
+                </dd>
+                <dt>IP Address</dt>
+                <dd class="mono">@(string.IsNullOrEmpty(Model.LastSeenIp) ? "—" : Model.LastSeenIp)</dd>
+                <dt>OS</dt>
+                <dd>
+                    @(Model.OsDistro ?? Model.OsFamily ?? "—")
+                    @if (Model.OsDistroIsGuess)
+                    {
+                        <span class="text-dim"> (inferred)</span>
+                    }
+                </dd>
+                <dt>Last Seen</dt>
+                <dd>
+                    @if (Model.LastSeen.HasValue)
+                    {
+                        <time data-utc="@ViewFormat.IsoUtc(Model.LastSeen.Value)">@Model.LastSeen.Value.ToString("yyyy-MM-dd HH:mm") UTC</time>
+                    }
+                    else
+                    {
+                        @:—
+                    }
+                </dd>
+            </dl>
+        </div>
+    </div>
+
+    @* Sections are grouped in a vertical nav; only sections with data are rendered (built in
+       DeviceDetailModel.BuildNav). Each fact-view table is its own destination — the old
+       catch-all "Details" tab is split into per-view panels below. *@
+    <div class="detail-body">
+        <nav class="section-nav" role="tablist" aria-label="Device sections" data-default="@Model.DefaultSection">
+            @foreach (DeviceSectionGroup navGroup in Model.NavGroups)
+            {
+                <div class="section-nav-group">
+                    <span class="group-label eyebrow">@navGroup.Label</span>
+                    @foreach (DeviceSectionItem item in navGroup.Items)
+                    {
+                        <button type="button" class="section-nav-item" role="tab" aria-selected="false"
+                                data-tab="@item.Id">
+                            <span class="section-nav-label">@item.Label</span>
+                            @if (item.Count is { } count)
+                            {
+                                <span class="section-nav-count">@count</span>
+                            }
+                        </button>
+                    }
+                </div>
+            }
+        </nav>
+        <div class="section-panels">
+
+            <div class="tabpanel" role="tabpanel" data-panel="history" hidden>
+                <partial name="_SectionError" model="Model.History.Error"/>
+                @if (Model.History.Error is null)
+                {
+                    @if (Model.History.Data.Count == 0)
+                    {
+                        <div class="empty">No history recorded for this device yet.</div>
+                    }
+                    else
+                    {
+                        <div class="tl">
+                            @foreach (HistoryRow h in Model.History.Data)
+                            {
+                                string dotClass = h.Kind switch { "open" => "crit", "resolved" => "ok", _ => "info" };
+                                string label = IncidentDisplay.Label(h.Kind, h.TypeName);
+                                <div class="tl-item">
+                                    <div class="tl-when">@ViewFormat.RelativeTime(h.At.UtcDateTime)</div>
+                                    <div class="tl-rail">
+                                        <span class="tl-dot @dotClass"></span>
+                                        <span class="tl-line"></span>
+                                    </div>
+                                    <div class="tl-body">
+                                        <div class="tl-title">
+                                            @label
+                                            @if (h.Kind != "event")
+                                            {
+                                                <span class="text-dim"> — @h.Kind</span>
+                                            }
+                                            @if (h.Duration is { } d)
+                                            {
+                                                <span class="act-dur">(@ViewFormat.Duration((long)d.TotalSeconds))</span>
+                                            }
+                                        </div>
+                                        @if (h.Detail is not null)
+                                        {
+                                            <div class="tl-sub">@h.Detail</div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+
+            <div class="tabpanel" role="tabpanel" data-panel="sources" hidden>
+                <partial name="_SectionError" model="Model.Sources.Error"/>
+                @if (Model.Sources.Error is null)
+                {
+                    @if (Model.Sources.Data.Count == 0)
+                    {
+                        <div class="empty">No discovery sources recorded for this device.</div>
+                    }
+                    else
+                    {
+                        <div class="detail-table-scroll">
+                            <table class="data">
+                                <thead>
+                                <tr>
+                                    <th>Type</th>
+                                    <th>Value</th>
+                                    <th>Source</th>
+                                    <th>Last Seen</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @foreach (DeviceFingerprint fp in Model.Sources.Data)
+                                {
+                                    <tr>
+                                        <td>@fp.Type</td>
+                                        <td class="mono">@fp.Value</td>
+                                        <td>@(string.IsNullOrEmpty(fp.Source) ? "—" : fp.Source)</td>
+                                        <td><time data-utc="@ViewFormat.IsoUtc(fp.LastSeen)">@fp.LastSeen.ToString("yyyy-MM-dd HH:mm") UTC</time></td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+            </div>
+
+            <div class="tabpanel" role="tabpanel" data-panel="services" hidden>
+                <partial name="_SectionError" model="Model.Services.Error"/>
+                @if (Model.Services.Error is null)
+                {
+                    @if (Model.Services.Data.Count == 0)
+                    {
+                        <div class="empty">No services discovered on this device.</div>
+                    }
+                    else
+                    {
+                        <div class="detail-table-scroll">
+                            <table class="data">
+                                <thead>
+                                <tr>
+                                    <th>Service</th>
+                                    <th>Type</th>
+                                    <th>CA Status</th>
+                                    <th>CA Expiry</th>
+                                    <th>DNS Queries</th>
+                                    <th>Blocked</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @foreach (DeviceServiceRow svc in Model.Services.Data)
+                                {
+                                    <tr>
+                                        <td class="mono">
+                                            <a href="/services/@Uri.EscapeDataString(svc.Service)"
+                                               title="@svc.Service">@ViewFormat.Truncate(svc.Service, 32)</a>
+                                        </td>
+                                        <td>@(svc.Type ?? "—")</td>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(svc.CaStatus))
+                                            {
+                                                <span class="@CaClass(svc.CaStatus)">@svc.CaStatus</span>
+                                            }
+                                            else
+                                            {
+                                                <span>—</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (svc.RootNotAfter.HasValue)
+                                            {
+                                                <time data-utc="@ViewFormat.IsoUtc(svc.RootNotAfter.Value)" data-utc-format="date">@svc.RootNotAfter.Value.ToString("yyyy-MM-dd") UTC</time>
+                                            }
+                                            else
+                                            {
+                                                @:—
+                                            }
+                                        </td>
+                                        <td>@(svc.TotalQueries?.ToString() ?? "—")</td>
+                                        <td>@(svc.BlockedPct.HasValue ? svc.BlockedPct.Value.ToString("F1") + "%" : "—")</td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+            </div>
+
+            <div class="tabpanel" role="tabpanel" data-panel="system" hidden>
+                <partial name="_SectionError" model="Model.SystemFacts.Error"/>
+                @if (Model.SystemFacts.Error is null)
+                {
+                    @if (Model.SystemFacts.Data is null)
+                    {
+                        <div class="empty">No system facts for this device.</div>
+                    }
+                    else
+                    {
+                        SystemFacts? s = Model.SystemFacts.Data;
+                        <dl class="kv">
+                            <dt>Hostname</dt>
+                            <dd>@(s.Hostname ?? "—")</dd>
+                            <dt>OS</dt>
+                            <dd>@(s.OsDistro ?? s.OsFamily ?? "—")</dd>
+                        </dl>
+                        <p class="prose text-dim" style="margin-top:var(--space-3)">
+                            OS version, kernel, timezone, boot time, and live resource usage are
+                            under "OS Details" / "Resource Usage" in the Software section.
+                        </p>
+                    }
+                }
+            </div>
+
+            <div class="tabpanel" role="tabpanel" data-panel="hardware" hidden>
+                <partial name="_SectionError" model="Model.HardwareFacts.Error"/>
+                @if (Model.HardwareFacts.Error is null)
+                {
+                    @if (Model.HardwareFacts.Data is null)
+                    {
+                        <div class="empty">No hardware facts for this device.</div>
+                    }
+                    else
+                    {
+                        HardwareFacts? h = Model.HardwareFacts.Data;
+                        <dl class="kv">
+                            <dt>CPU</dt>
+                            <dd>@(h.CpuModel ?? "—")</dd>
+                            <dt>Cores</dt>
+                            <dd>@(h.CpuCores?.ToString() ?? "—") physical
+                                · @(h.CpuLogicalCores?.ToString() ?? "—") logical
+                            </dd>
+                            <dt>Memory</dt>
+                            <dd>@ViewFormat.Bytes(h.TotalMemBytes)</dd>
+                            <dt>System</dt>
+                            <dd>@(h.SystemVendor ?? "—") @(h.SystemModel ?? "")</dd>
+                            <dt>Serial</dt>
+                            <dd class="mono">@(h.SystemSerial ?? "—")</dd>
+                            <dt>BIOS</dt>
+                            <dd>@(h.BiosVersion ?? "—")</dd>
+                            <dt>Virtualization</dt>
+                            <dd>@(h.Virtualization ?? "—")</dd>
+                        </dl>
+                    }
+                }
+            </div>
+
+            <div class="tabpanel" role="tabpanel" data-panel="interfaces" hidden>
+                <partial name="_SectionError" model="Model.Interfaces.Error"/>
+                @if (Model.Interfaces.Error is null)
+                {
+                    @if (Model.Interfaces.Data.Count == 0)
+                    {
+                        <div class="empty">No interfaces for this device.</div>
+                    }
+                    else
+                    {
+                        <div class="detail-table-scroll">
+                            <table class="data">
+                                <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>IPv4</th>
+                                    <th>IPv6</th>
+                                    <th>MAC</th>
+                                    <th>OUI</th>
+                                    <th>MAC Type</th>
+                                    <th>MTU</th>
+                                    <th>State</th>
+                                    <th>Speed</th>
+                                    <th>Type</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @foreach (InterfaceRow i in Model.Interfaces.Data)
+                                {
+                                    (string Label, string Title, string Css) flag = ViewFormat.MacFlag(i.MacAddress ?? i.ObscuredMac);
+                                    <tr>
+                                        <td>@(i.Name ?? "—")</td>
+                                        <td class="mono">@(i.Ipv4 ?? "—")</td>
+                                        <td class="mono">@(i.Ipv6 ?? "—")</td>
+                                        <td class="mono">
+                                            @if (!string.IsNullOrEmpty(i.MacAddress))
+                                            {
+                                                @ViewFormat.FormatMac(i.MacAddress)
+                                            }
+                                            else if (!string.IsNullOrEmpty(i.ObscuredMac))
+                                            {
+                                                <span class="text-dim" title="Obscured MAC">@i.ObscuredMac</span>
+                                            }
+                                            else
+                                            {
+                                                @:—
+                                            }
+                                        </td>
+                                        <td class="text-dim">@ViewFormat.FormatOui(i.Oui, i.OuiCountry)</td>
+                                        <td><span class="mac-flag @flag.Css" title="@flag.Title">@flag.Label</span></td>
+                                        <td>@(i.Mtu?.ToString() ?? "—")</td>
+                                        <td>@(i.Up == true ? "up" : i.Up == false ? "down" : "—")</td>
+                                        <td>@(i.SpeedBps.HasValue ? ViewFormat.Bytes(i.SpeedBps) + "/s" : "—")</td>
+                                        <td>@(i.Type ?? "—")</td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+            </div>
+
+            <div class="tabpanel" role="tabpanel" data-panel="disks" hidden>
+                <partial name="_SectionError" model="Model.Disks.Error"/>
+                @if (Model.Disks.Error is null)
+                {
+                    @if (Model.Disks.Data.Count == 0)
+                    {
+                        <div class="empty">No disks for this device.</div>
+                    }
+                    else
+                    {
+                        <div class="detail-table-scroll">
+                            <table class="data">
+                                <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Model</th>
+                                    <th>Size</th>
+                                    <th>Type</th>
+                                    <th>SMART</th>
+                                    <th>Temp</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @foreach (DiskRow d in Model.Disks.Data)
+                                {
+                                    <tr>
+                                        <td>@(d.Name ?? d.Disk)</td>
+                                        <td>@(d.Model ?? "—")</td>
+                                        <td>@ViewFormat.Bytes(d.SizeBytes)</td>
+                                        <td>@(d.Type ?? "—")</td>
+                                        <td>@(d.SmartHealth ?? "—")</td>
+                                        <td>@(d.SmartTempC.HasValue ? d.SmartTempC.Value.ToString("0.#") + " °C" : "—")</td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+            </div>
+
+            <div class="tabpanel" role="tabpanel" data-panel="filesystems" hidden>
+                <partial name="_SectionError" model="Model.Filesystems.Error"/>
+                @if (Model.Filesystems.Error is null)
+                {
+                    @if (Model.Filesystems.Data.Count == 0)
+                    {
+                        <div class="empty">No filesystems for this device.</div>
+                    }
+                    else
+                    {
+                        <div class="detail-table-scroll">
+                            <table class="data">
+                                <thead>
+                                <tr>
+                                    <th>Mount</th>
+                                    <th>Type</th>
+                                    <th>Total</th>
+                                    <th>Used</th>
+                                    <th>Free</th>
+                                    <th>Used %</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @foreach (FilesystemRow f in Model.Filesystems.Data)
+                                {
+                                    <tr>
+                                        <td class="mono">@f.Filesystem</td>
+                                        <td>@(f.FsType ?? "—")</td>
+                                        <td>@ViewFormat.Bytes(f.TotalBytes)</td>
+                                        <td>@ViewFormat.Bytes(f.UsedBytes)</td>
+                                        <td>@ViewFormat.Bytes(f.FreeBytes)</td>
+                                        <td>@(f.UsedPct.HasValue ? f.UsedPct.Value.ToString("0.#") + "%" : "—")</td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+            </div>
+
+            <div class="tabpanel" role="tabpanel" data-panel="containers" hidden>
+                <partial name="_SectionError" model="Model.Containers.Error"/>
+                @if (Model.Containers.Error is null)
+                {
+                    @if (Model.Containers.Data.Count == 0)
+                    {
+                        <div class="empty">No containers for this device.</div>
+                    }
+                    else
+                    {
+                        <div class="detail-table-scroll">
+                            <table class="data">
+                                <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Container ID</th>
+                                    <th>Image</th>
+                                    <th>State</th>
+                                    <th>Health</th>
+                                    <th>Restarts</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @foreach (ContainerRow c in Model.Containers.Data)
+                                {
+                                    <tr>
+                                        <td>@(c.Name ?? c.Container)</td>
+                                        <td class="mono">@c.Container</td>
+                                        <td class="mono">@(c.Image ?? "—")</td>
+                                        <td>@(c.State ?? "—")</td>
+                                        <td>@(c.Health ?? "—")</td>
+                                        <td>@(c.RestartCount?.ToString() ?? "—")</td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+            </div>
+
+            <div class="tabpanel" role="tabpanel" data-panel="ports" hidden>
+                <partial name="_SectionError" model="Model.Ports.Error"/>
+                @if (Model.Ports.Error is null)
+                {
+                    @if (Model.Ports.Data.Count == 0)
+                    {
+                        <div class="empty">No listening ports for this device.</div>
+                    }
+                    else
+                    {
+                        <div class="detail-table-scroll">
+                            <table class="data">
+                                <thead>
+                                <tr>
+                                    <th>Protocol</th>
+                                    <th>Address</th>
+                                    <th>Port</th>
+                                    <th>Process</th>
+                                    <th>PID</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @foreach (PortRow p in Model.Ports.Data)
+                                {
+                                    <tr>
+                                        <td>@(p.Protocol ?? "—")</td>
+                                        <td class="mono">@(p.Address ?? "—")</td>
+                                        <td>@(p.Port?.ToString() ?? "—")</td>
+                                        <td>@(p.ProcessName ?? "—")</td>
+                                        <td>@(p.Pid?.ToString() ?? "—")</td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+            </div>
+            <div class="tabpanel" role="tabpanel" data-panel="components" hidden>
+                <partial name="_SectionError" model="Model.Components.Error"/>
+                @if (Model.Components.Error is null)
+                {
+                    @if (Model.Components.Data.Count == 0)
+                    {
+                        <div class="empty">No hardware component inventory for this device.</div>
+                    }
+                    else
+                    {
+                        <div class="detail-table-scroll">
+                            <table class="data">
+                                <thead>
+                                <tr>
+                                    <th>Class</th>
+                                    <th>Slot</th>
+                                    <th>Description</th>
+                                    <th>Vendor</th>
+                                    <th>Model</th>
+                                    <th>Serial</th>
+                                    <th>Firmware</th>
+                                    <th>Status</th>
+                                    <th>FRU</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @foreach (ComponentRow r in Model.Components.Data)
+                                {
+                                    <tr>
+                                        <td>@(r.Class ?? "—")</td>
+                                        <td>@(r.Slot ?? "—")</td>
+                                        <td>@(r.Description ?? "—")</td>
+                                        <td>@(r.Vendor ?? "—")</td>
+                                        <td>@(r.Model ?? "—")</td>
+                                        <td class="mono">@(r.Serial ?? "—")</td>
+                                        <td class="mono">@(r.Firmware ?? "—")</td>
+                                        <td>@(r.Status ?? "—")</td>
+                                        <td>@(r.IsFru == true ? "yes" : r.IsFru == false ? "no" : "—")</td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+            </div>
+            <div class="tabpanel" role="tabpanel" data-panel="sightings" hidden>
+                <partial name="_SectionError" model="Model.Sightings.Error"/>
+                @if (Model.Sightings.Error is null)
+                {
+                    @if (Model.Sightings.Data.Count == 0)
+                    {
+                        <div class="empty">No observers have reported seeing this device.</div>
+                    }
+                    else
+                    {
+                        <p class="prose text-dim" style="margin-bottom:var(--space-3)">
+                            How other devices observed this one. Each row is one observer's view.
+                            Per-observation link metrics (signal, rate, band) are under "Sighting
+                            Telemetry" in the Discovery section.
+                        </p>
+                        <div class="detail-table-scroll">
+                            <table class="data">
+                                <thead>
+                                <tr>
+                                    <th>Observer</th>
+                                    <th>Seen at IP</th>
+                                    <th>Via</th>
+                                    <th>OUI</th>
+                                    <th>Services</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @foreach (SightingRow s in Model.Sightings.Data)
+                                {
+                                    <tr>
+                                        <td>
+                                            <a href="/devices/@s.ObserverId">@(s.ObserverHostname ?? s.ObserverId)</a>
+                                        </td>
+                                        <td class="mono">@(s.Ip ?? "—")</td>
+                                        <td>@(s.Sources ?? "—")</td>
+                                        <td class="mono">@ViewFormat.FormatOui(s.Oui, s.OuiCountry)</td>
+                                        <td>@(s.Services ?? "—")</td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+            </div>
+            <div class="tabpanel" role="tabpanel" data-panel="advertised" hidden>
+                <partial name="_SectionError" model="Model.AdvertisedServices.Error"/>
+                @if (Model.AdvertisedServices.Error is null)
+                {
+                    @if (Model.AdvertisedServices.Data.Count == 0)
+                    {
+                        <div class="empty">No advertised (mDNS / Bonjour) services seen for this device.</div>
+                    }
+                    else
+                    {
+                        <p class="prose text-dim" style="margin-bottom:var(--space-3)">
+                            Services this device advertises over mDNS / Bonjour, observed on the network.
+                        </p>
+                        <div class="detail-table-scroll">
+                            <table class="data">
+                                <thead>
+                                <tr>
+                                    <th>Service Type</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @foreach (string svc in Model.AdvertisedServices.Data)
+                                {
+                                    <tr>
+                                        <td class="mono">@svc</td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+            </div>
+            @* Each fact view is its own section/panel (id = fv-<slug>, matching the nav). A section-load
+       error is shown once, attached to the first fact-view panel. *@
+            @foreach (RenderedFactView view in Model.FactViews.Data)
+            {
+                <div class="tabpanel" role="tabpanel" data-panel="@DeviceDetailModel.FactViewSectionId(view.Title)"
+                     hidden>
+                    <partial name="_SectionError" model="Model.FactViews.Error"/>
+                    <div class="detail-table-scroll">
+                        <table class="data">
+                            <thead>
+                            <tr>
+                                @foreach (string header in view.Headers)
+                                {
+                                    <th>@header</th>
+                                }
+                            </tr>
+                            </thead>
+                            <tbody>
+                            @foreach (IReadOnlyList<string?> row in view.Rows)
+                            {
+                                <tr>
+                                    @foreach (string? cell in row)
+                                    {
+                                        <td>@(cell ?? "—")</td>
+                                    }
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+
+            @if (User.IsInRole("admin"))
+            {
+                <div class="tabpanel" role="tabpanel" data-panel="manual-overrides" hidden>
+                    <p class="prose text-dim" style="margin-bottom:var(--space-3)">
+                        Operator-entered data. A manual value wins over whatever a collector reports until a
+                        collector reports something different for the same field.
+                    </p>
+
+                    <h3>Set an existing field</h3>
+                    <div style="display:flex;gap:var(--space-2);align-items:flex-end;margin-bottom:var(--space-4)">
+                        <div class="field">
+                            <label for="manualFactPath">Field</label>
+                            <select class="input" id="manualFactPath">
+                                @foreach (string path in Model.EditablePaths)
+                                {
+                                    <option value="@path">@path</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label for="manualFactValue">Value</label>
+                            <input class="input" id="manualFactValue" type="text"/>
+                        </div>
+                        <button class="btn btn-primary btn-sm" onclick="setManualFact()">Set</button>
+                    </div>
+
+                    @if (Model.ManualOverrides.Count > 0)
+                    {
+                        <table class="data" style="margin-bottom:var(--space-4)">
+                            <thead>
+                            <tr>
+                                <th>Field</th>
+                                <th>Value</th>
+                                <th></th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            @foreach ((string path, string? value) in Model.ManualOverrides)
+                            {
+                                <tr>
+                                    <td class="mono">@path</td>
+                                    <td>@(value ?? "—")</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-danger" onclick="revertManualFact('@path')">
+                                            Revert
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    }
+
+                    <h3>Custom field values</h3>
+                    @if (Model.CustomFieldDefinitions.Count == 0)
+                    {
+                        <div class="empty">
+                            No custom fields defined yet. <a href="/admin/custom-fields">Define one →</a>
+                        </div>
+                    }
+                    else
+                    {
+                        <table class="data">
+                            <thead>
+                            <tr>
+                                <th>Field</th>
+                                <th>Value</th>
+                                <th></th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            @foreach (CustomFieldDefinition def in Model.CustomFieldDefinitions)
+                            {
+                                string? current = Model.CustomFieldValues.TryGetValue(def.Slug, out string? v)
+                                    ? v
+                                    : null;
+                                <tr>
+                                    <td>@def.Label</td>
+                                    <td>
+                                        <input class="input" id="customFieldValue-@def.Slug" type="text"
+                                               value="@current"/>
+                                    </td>
+                                    <td style="display:flex;gap:var(--space-2)">
+                                        <button class="btn btn-sm btn-primary"
+                                                onclick="setCustomFieldValue('@def.Slug')">Save
+                                        </button>
+                                        <button class="btn btn-sm btn-danger"
+                                                onclick="clearCustomFieldValue('@def.Slug')">Clear
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                        <p class="prose text-dim" style="margin-top:var(--space-2)">
+                            <a href="/admin/custom-fields">Manage custom field definitions →</a>
+                        </p>
+                    }
+                </div>
+            }
+
+            <div class="tabpanel" role="tabpanel" data-panel="allfacts" hidden>
+                <partial name="_SectionError" model="Model.AllFacts.Error"/>
+                @if (Model.AllFacts.Error is null)
+                {
+                    @if (Model.AllFacts.Data.Count == 0)
+                    {
+                        <div class="empty">No facts recorded for this device.</div>
+                    }
+                    else
+                    {
+                        <p class="prose text-dim" style="margin-bottom:var(--space-3)">
+                            Every current fact known about this device — its own facts plus what other
+                            observers reported. This is the raw view, including data not shown elsewhere.
+                        </p>
+                        // A row's SourceName is comma-joined when the same fact was merged across
+                        // multiple observers/collectors (GetDeviceAllFacts.sql) — split before
+                        // listing distinct collectors so the dropdown offers each one individually.
+                        List<string> factSources = Model.AllFacts.Data
+                            .SelectMany(f => (f.SourceName ?? "").Split(", ", StringSplitOptions.RemoveEmptyEntries))
+                            .Distinct()
+                            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+                            .ToList();
+                        @if (factSources.Count > 0)
+                        {
+                            <div class="field" style="max-width:260px;margin-bottom:var(--space-3)">
+                                <label for="factSourceFilter">Collector</label>
+                                <select class="input" id="factSourceFilter" onchange="filterFactsBySource(this.value)">
+                                    <option value="">All collectors</option>
+                                    @foreach (string src in factSources)
+                                    {
+                                        <option value="@src">@src</option>
+                                    }
+                                </select>
+                            </div>
+                        }
+                        <div class="detail-table-scroll">
+                            <table class="data">
+                                <thead>
+                                <tr>
+                                    <th>Attribute</th>
+                                    <th>Key</th>
+                                    <th>Value</th>
+                                    <th>Observer</th>
+                                    <th>Collector</th>
+                                    <th>Collected</th>
+                                </tr>
+                                </thead>
+                                <tbody id="allfacts-tbody">
+                                @foreach (FactRow fct in Model.AllFacts.Data)
+                                {
+                                    <tr data-source="@fct.SourceName">
+                                        <td class="mono">@fct.AttributePath</td>
+                                        <td class="mono">@(string.IsNullOrEmpty(fct.Key) ? "—" : fct.Key)</td>
+                                        <td>@(fct.Value ?? "—")</td>
+                                        <td>@(string.IsNullOrEmpty(fct.Origin) ? "—" : fct.Origin)</td>
+                                        <td>@(string.IsNullOrEmpty(fct.SourceName) ? "—" : fct.SourceName)</td>
+                                        <td><time data-utc="@ViewFormat.IsoUtc(fct.CollectedAt)">@fct.CollectedAt.ToString("yyyy-MM-dd HH:mm") UTC</time></td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+            </div>
+        </div><!-- /.section-panels -->
+    </div><!-- /.detail-body -->
+</main>
+
+@if (User.IsInRole("admin"))
+{
+    <!-- Merge-into-another-device drawer -->
+    <div class="modal-scrim" id="mergeDeviceModal" hidden role="dialog" aria-modal="true" aria-labelledby="mergeDeviceTitle">
+        <div class="modal">
+            <header>
+                <h3 id="mergeDeviceTitle">Merge Into Another Device</h3>
+                <button class="btn btn-sm" onclick="closeMergeDevice()" aria-label="Close">✕</button>
+            </header>
+            <div class="body">
+                <p class="prose text-dim">
+                    This device (@displayName) will become an alias of the device you pick below and will disappear
+                    from lists and dashboards. This cannot be undone from the UI.
+                </p>
+                <label>
+                    Search for the other device (hostname, IP, or MAC)
+                    <input type="text" id="mergeDeviceSearch" class="input" style="width:100%;margin-top:var(--space-2)"
+                           autocomplete="off" oninput="onMergeDeviceSearchInput()"/>
+                </label>
+                <div id="mergeDeviceResults" style="margin-top:var(--space-2)"></div>
+            </div>
+            <footer>
+                <button class="btn" onclick="closeMergeDevice()">Cancel</button>
+                <button class="btn btn-primary" id="mergeDeviceConfirm" onclick="doMergeDevice()" disabled>Merge</button>
+            </footer>
+        </div>
+    </div>
+}
+
+@section Scripts {
+    <script>
+        // Only sections with data are rendered, so derive the valid set from the nav.
+        var NAV = document.querySelector('.section-nav');
+        var TABS = Array.prototype.map.call(
+            document.querySelectorAll('.section-nav-item'), function (t) {
+                return t.getAttribute('data-tab');
+            });
+
+        function switchTab(target) {
+            if (TABS.indexOf(target) < 0) target = TABS[0];
+            document.querySelectorAll('.section-nav-item').forEach(function (t) {
+                var active = t.getAttribute('data-tab') === target;
+                t.classList.toggle('active', active);
+                t.setAttribute('aria-selected', active ? 'true' : 'false');
+            });
+            document.querySelectorAll('.tabpanel').forEach(function (panel) {
+                panel.hidden = panel.getAttribute('data-panel') !== target;
+            });
+            var url = new URL(location.href);
+            url.searchParams.set('tab', target);
+            history.replaceState(null, '', url);
+        }
+
+        document.querySelectorAll('.section-nav-item').forEach(function (tab) {
+            tab.addEventListener('click', function () {
+                switchTab(tab.getAttribute('data-tab'));
+            });
+        });
+
+        // All Facts tab's Collector filter — client-side, since every fact is already
+        // loaded (this tab has no pagination) rather than a server round-trip. A row's
+        // data-source is comma-joined when the fact was merged across multiple observers/
+        // collectors, so match against the split list rather than the raw attribute.
+        function filterFactsBySource(source) {
+            document.querySelectorAll('#allfacts-tbody tr').forEach(function (row) {
+                var rowSources = row.getAttribute('data-source').split(', ');
+                row.hidden = source !== '' && rowSources.indexOf(source) === -1;
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            if (TABS.length === 0) return;
+            // Server picks the landing section by management status; ?tab= overrides it.
+            var fallback = (NAV && NAV.getAttribute('data-default')) || TABS[0];
+            var tab = new URLSearchParams(location.search).get('tab');
+            switchTab(TABS.indexOf(tab) >= 0 ? tab : fallback);
+        });
+
+        // Client-side column sorting for the device-detail tables. Scoped to
+        // .tabpanel tables so it never interferes with the server-sorted,
+        // paginated grids elsewhere in the app.
+        document.querySelectorAll('.tabpanel table.data').forEach(function (table) {
+            var headers = table.tHead ? Array.prototype.slice.call(table.tHead.rows[0].cells) : [];
+            headers.forEach(function (th, col) {
+                th.addEventListener('click', function () {
+                    var ascending = th.getAttribute('aria-sort') !== 'ascending';
+                    headers.forEach(function (h) {
+                        h.removeAttribute('aria-sort');
+                    });
+                    th.setAttribute('aria-sort', ascending ? 'ascending' : 'descending');
+
+                    var body = table.tBodies[0];
+                    var rows = Array.prototype.slice.call(body.rows);
+                    var numeric = /^-?\d+(\.\d+)?%?$/;
+                    rows.sort(function (a, b) {
+                        var x = (a.cells[col] ? a.cells[col].textContent : '').trim();
+                        var y = (b.cells[col] ? b.cells[col].textContent : '').trim();
+                        var xEmpty = x === '' || x === '—';
+                        var yEmpty = y === '' || y === '—';
+                        if (xEmpty || yEmpty) {
+                            return xEmpty === yEmpty ? 0 : (xEmpty ? 1 : -1);
+                        }
+                        var cmp;
+                        if (numeric.test(x) && numeric.test(y)) {
+                            cmp = parseFloat(x) - parseFloat(y);
+                        } else {
+                            cmp = x.localeCompare(y, undefined, {numeric: true, sensitivity: 'base'});
+                        }
+                        return ascending ? cmp : -cmp;
+                    });
+                    rows.forEach(function (r) {
+                        body.appendChild(r);
+                    });
+                });
+            });
+        });
+
+        // ── Manual facts / custom fields ────────────────────────────────────
+        async function manualFactRequest(url, opts) {
+            var resp = await fetch(url, opts);
+            if (resp.ok || resp.status === 204) {
+                location.reload();
+                return;
+            }
+            var body = await resp.json().catch(function () { return null; });
+            alert('Error: ' + (body && body.detail ? body.detail : resp.status));
+        }
+
+        function setManualFact() {
+            var path = document.getElementById('manualFactPath').value;
+            var value = document.getElementById('manualFactValue').value;
+            if (!value) {
+                alert('Value is required.');
+                return;
+            }
+
+            manualFactRequest('/api/v1/admin/devices/' + mergeCurrentDeviceId + '/facts', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': mergeCsrfToken},
+                body: JSON.stringify({path: path, value: value}),
+            });
+        }
+
+        function revertManualFact(path) {
+            if (!confirm('Revert "' + path + '" to whatever a collector last reported?')) {
+                return;
+            }
+
+            manualFactRequest(
+                '/api/v1/admin/devices/' + mergeCurrentDeviceId + '/facts?path=' + encodeURIComponent(path),
+                {method: 'DELETE', headers: {'X-CSRF-TOKEN': mergeCsrfToken}}
+            );
+        }
+
+        function setCustomFieldValue(slug) {
+            var value = document.getElementById('customFieldValue-' + slug).value;
+            if (!value) {
+                alert('Value is required.');
+                return;
+            }
+
+            manualFactRequest(
+                '/api/v1/admin/devices/' + mergeCurrentDeviceId + '/custom-fields/' + encodeURIComponent(slug),
+                {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': mergeCsrfToken},
+                    body: JSON.stringify({value: value}),
+                }
+            );
+        }
+
+        function clearCustomFieldValue(slug) {
+            if (!confirm('Clear this device\'s value for this custom field?')) {
+                return;
+            }
+
+            manualFactRequest(
+                '/api/v1/admin/devices/' + mergeCurrentDeviceId + '/custom-fields/' + encodeURIComponent(slug),
+                {method: 'DELETE', headers: {'X-CSRF-TOKEN': mergeCsrfToken}}
+            );
+        }
+
+        // ── Merge into another device ──────────────────────────────────────
+        var mergeCsrfToken = '@Model.AntiforgeryToken';
+        var mergeCurrentDeviceId = '@Model.DeviceId';
+        var mergeSelectedDeviceId = null;
+        var mergeSearchDebounce = null;
+
+        function openMergeDevice() {
+            document.getElementById('mergeDeviceSearch').value = '';
+            document.getElementById('mergeDeviceResults').innerHTML = '';
+            mergeSelectedDeviceId = null;
+            document.getElementById('mergeDeviceConfirm').disabled = true;
+            document.getElementById('mergeDeviceModal').hidden = false;
+            document.getElementById('mergeDeviceSearch').focus();
+        }
+
+        function closeMergeDevice() {
+            document.getElementById('mergeDeviceModal').hidden = true;
+        }
+
+        function onMergeDeviceSearchInput() {
+            clearTimeout(mergeSearchDebounce);
+            var q = document.getElementById('mergeDeviceSearch').value.trim();
+            mergeSelectedDeviceId = null;
+            document.getElementById('mergeDeviceConfirm').disabled = true;
+            if (q.length < 2) {
+                document.getElementById('mergeDeviceResults').innerHTML = '';
+                return;
+            }
+            mergeSearchDebounce = setTimeout(function () { runMergeDeviceSearch(q); }, 250);
+        }
+
+        async function runMergeDeviceSearch(q) {
+            var resp = await fetch('/api/v1/report/hosts?limit=10&q=' + encodeURIComponent(q));
+            var results = document.getElementById('mergeDeviceResults');
+            if (!resp.ok) {
+                results.innerHTML = '<p class="text-dim">Search failed.</p>';
+                return;
+            }
+            var body = await resp.json();
+            var items = (body.items || []).filter(function (h) { return h.device_id !== mergeCurrentDeviceId; });
+            if (items.length === 0) {
+                results.innerHTML = '<p class="text-dim">No matching devices.</p>';
+                return;
+            }
+            results.innerHTML = items.map(function (h) {
+                var label = (h.hostname || h.device_id) + ' — ' + [h.ip, h.mac, h.vendor].filter(Boolean).join(' · ');
+                return '<div class="js-merge-device-pick" data-device-id="' + h.device_id
+                    + '" style="padding:var(--space-2);cursor:pointer;border-bottom:1px solid var(--border)">'
+                    + label + '</div>';
+            }).join('');
+        }
+
+        document.addEventListener('click', function (e) {
+            var pick = e.target.closest('.js-merge-device-pick');
+            if (!pick) return;
+            mergeSelectedDeviceId = pick.dataset.deviceId;
+            document.querySelectorAll('.js-merge-device-pick').forEach(function (el) {
+                el.style.background = el === pick ? 'var(--surface-hover)' : '';
+            });
+            document.getElementById('mergeDeviceConfirm').disabled = false;
+        });
+
+        async function doMergeDevice() {
+            if (!mergeSelectedDeviceId) return;
+            if (!confirm('Merge this device into ' + mergeSelectedDeviceId + '? This cannot be undone from the UI.')) return;
+            var resp = await fetch('/api/v1/devices/' + encodeURIComponent(mergeCurrentDeviceId) + '/merge', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': mergeCsrfToken},
+                body: JSON.stringify({into_device_id: mergeSelectedDeviceId}),
+            });
+            if (resp.ok) {
+                var result = await resp.json();
+                location.href = '/devices/' + result.survivor_device_id;
+            } else {
+                var errBody = await resp.json();
+                alert('Error: ' + (errBody.detail || resp.status));
+            }
+        }
+    </script>
+}

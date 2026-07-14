@@ -1,0 +1,21 @@
+<Project>
+    <!-- Import the root Directory.Build.props -->
+    <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))"/>
+
+    <!-- Exclude analyzers that don't work well with source generators (netstandard2.0) -->
+    <PropertyGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+        <EnableNETAnalyzers>false</EnableNETAnalyzers>
+        <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+        <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    </PropertyGroup>
+
+    <!--
+      Suppress warnings in lib projects that are inherited code and not worth rewriting:
+        CA1304/CA1309/CA1311 - string comparison culture: generator emits code, not locale-sensitive
+        CA2201 - don't throw NullReferenceException: generator uses it as a sentinel
+        CA1859 - concrete return types: changing IReadOnlyList signatures would be a breaking change
+    -->
+    <PropertyGroup>
+        <NoWarn>$(NoWarn);CA1304;CA1309;CA1311;CA2201;CA1859</NoWarn>
+    </PropertyGroup>
+</Project>

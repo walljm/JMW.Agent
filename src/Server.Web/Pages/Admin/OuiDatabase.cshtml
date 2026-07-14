@@ -1,0 +1,118 @@
+@page "/admin/oui-database"
+@model JMW.Discovery.Server.Pages.Admin.OuiDatabaseModel
+@{
+    ViewData["Title"] = "OUI Database — JMW Discovery";
+    ViewData["ActiveNav"] = "data";
+}
+<main class="main">
+    <div class="page-head">
+        <h1>OUI Database</h1>
+        <button class="btn btn-primary" id="updateBtn" onclick="triggerUpdate()">Update from IEEE</button>
+    </div>
+
+    <partial name="_HubTabs" model="@(new HubTabsModel(HubTabSets.Data, "/admin/oui-database", "Data views"))"/>
+
+    <p class="prose text-dim">
+        The OUI (Organizationally Unique Identifier) database maps MAC address prefixes to
+        manufacturer names. It is used during network discovery to identify device vendors.
+        Data is sourced from the four IEEE OUI registries (MA-L, MA-M, MA-S, IAB).
+        After updating, connected agents will reload the new data on their next heartbeat.
+    </p>
+
+    <div id="statusCard" style="margin-top:var(--space-5)">
+        @if (Model.HasData)
+        {
+            <table class="data" style="width:auto">
+                <tbody>
+                <tr>
+                    <th style="text-align:left;padding-right:var(--space-6)">Last updated</th>
+                    <td><time data-utc="@ViewFormat.IsoUtc(Model.UpdatedAt!.Value.UtcDateTime)">@Model.UpdatedAt!.Value.ToString("yyyy-MM-dd HH:mm:ss") UTC</time></td>
+                </tr>
+                <tr>
+                    <th style="text-align:left;padding-right:var(--space-6)">Records</th>
+                    <td>@Model.RecordCount!.Value.ToString("N0")</td>
+                </tr>
+                <tr>
+                    <th style="text-align:left;padding-right:var(--space-6)">Version</th>
+                    <td style="font-family:monospace">@Model.VersionHash</td>
+                </tr>
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <p class="prose text-dim">No OUI data loaded yet. Click <strong>Update from IEEE</strong> to download.</p>
+        }
+    </div>
+
+    <div id="progressMsg" hidden style="margin-top:var(--space-4)">
+        <p class="prose text-dim">Downloading OUI data from IEEE&hellip; this may take up to 30 seconds.</p>
+    </div>
+
+    <div id="errorMsg" hidden style="margin-top:var(--space-4)">
+        <p class="prose" style="color:var(--crit)" id="errorText"></p>
+    </div>
+</main>
+
+@section Scripts {
+    <script>
+        const CSRF = '@Model.AntiforgeryToken';
+
+        function toast(msg) {
+            // Reuse the design-system toast if available; fall back to alert.
+            if (typeof showToast === 'function') {
+                showToast(msg);
+            } else {
+                alert(msg);
+            }
+        }
+
+        async function triggerUpdate() {
+            const btn = document.getElementById('updateBtn');
+            const progress = document.getElementById('progressMsg');
+            const errDiv = document.getElementById('errorMsg');
+            const errText = document.getElementById('errorText');
+
+            btn.disabled = true;
+            progress.hidden = false;
+            errDiv.hidden = true;
+
+            try {
+                const resp = await fetch('/api/v1/admin/oui/update', {
+                    method: 'POST',
+                    headers: {'X-CSRF-TOKEN': CSRF},
+                });
+
+                if (resp.status === 409) {
+                    progress.hidden = true;
+                    errText.textContent = 'An OUI update is already running. Please wait and try again.';
+                    errDiv.hidden = false;
+                    btn.disabled = false;
+                    return;
+                }
+
+                if (!resp.ok) {
+                    progress.hidden = true;
+                    let msg = 'Update failed (' + resp.status + ').';
+                    try {
+                        const payload = await resp.json();
+                        if (payload?.detail) msg = 'Update failed: ' + payload.detail;
+                    } catch {
+                    }
+                    errText.textContent = msg;
+                    errDiv.hidden = false;
+                    btn.disabled = false;
+                    return;
+                }
+
+                // Success — reload the page to show the new status.
+                location.reload();
+            } catch (ex) {
+                progress.hidden = true;
+                errText.textContent = 'Update failed: ' + ex.message;
+                errDiv.hidden = false;
+                btn.disabled = false;
+            }
+        }
+    </script>
+}

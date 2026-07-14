@@ -1,20 +1,42 @@
 [Unit]
-Description=JMW Agent Server
-After=network.target
+Description=JMW Discovery Server
+Documentation=https://github.com/walljm/JMW.Agent
+After=network-online.target postgresql.service
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=jmw
 Group=jmw
+
 WorkingDirectory=/var/lib/jmw
-ExecStart=/opt/jmw/bin/jmw-server -config /etc/jmw/server.toml
+
+# Configuration from environment file — copy /etc/jmw/server.env.example and fill in.
+EnvironmentFile=/etc/jmw/server.env
+
+# Defaults; override in server.env as needed.
+Environment="ASPNETCORE_URLS=http://+:8080"
+Environment="JMW_KEY_RING_PATH=/var/lib/jmw/keyring"
+
+ExecStart=/opt/jmw/bin/JMW.Discovery.Server
+
 Restart=on-failure
-RestartSec=5
+RestartSec=5s
+
+# ── Hardening ─────────────────────────────────────────────────────────────────
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/jmw
 ProtectHome=true
 PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+# Allow writes only to the data directory (key ring + logs).
+ReadWritePaths=/var/lib/jmw
 
 [Install]
 WantedBy=multi-user.target

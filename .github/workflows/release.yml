@@ -23,58 +23,77 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
 
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9  # v5
         with:
-          go-version-file: go.mod
-          # Self-hosted runner already has a persistent GOMODCACHE; the cache
-          # action otherwise fails noisily trying to overwrite read-only files.
-          cache: false
+          dotnet-version: "10.0.x"
 
       - id: version
         run: echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
 
-      - id: pubkey
-        env:
-          AGENT_UPDATE_SIGNING_KEY: ${{ secrets.AGENT_UPDATE_SIGNING_KEY }}
-        run: |
-          pk=$(go run ./cmd/updatesign -key "$AGENT_UPDATE_SIGNING_KEY" -print-public-key)
-          echo "key=$pk" >> "$GITHUB_OUTPUT"
-
-      - name: Build all binaries
+      - name: Publish server (linux-x64, linux-arm64)
         env:
           VERSION: ${{ steps.version.outputs.version }}
-          UPDATE_PUBLIC_KEY: ${{ steps.pubkey.outputs.key }}
         run: |
           set -euo pipefail
           mkdir -p dist
-          LDFLAGS="-s -w -X github.com/walljm/jmwagent/internal/shared/version.Version=${VERSION} -X github.com/walljm/jmwagent/internal/shared/version.UpdatePublicKey=${UPDATE_PUBLIC_KEY}"
-
-          # Agent: all platforms.
-          for combo in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
-            os=${combo%/*}; arch=${combo#*/}
-            out="dist/jmw-agent-${os}-${arch}"
-            [ "$os" = "windows" ] && out="${out}.exe"
-            echo "==> building $out"
-            CGO_ENABLED=0 GOOS=$os GOARCH=$arch \
-              go build -ldflags "$LDFLAGS" -o "$out" ./cmd/agent
+          for rid in linux-x64 linux-arm64; do
+            echo "==> publishing server $rid"
+            dotnet publish src/Server.Web/JMW.Discovery.Server.csproj \
+              -c Release -r "$rid" --self-contained true \
+              -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
+              -p:Version="${VERSION#v}" \
+              -o "dist/server-${rid}"
+            mv "dist/server-${rid}/JMW.Discovery.Server" "dist/jmw-server-${rid}"
+            # wwwroot is content, not bundled into the single file — ships alongside it.
+            tar -czf "dist/jmw-server-${rid}-wwwroot.tar.gz" -C "dist/server-${rid}" wwwroot
+            rm -rf "dist/server-${rid}"
           done
 
-          # Server: linux only.
-          for arch in amd64 arm64; do
-            out="dist/jmw-server-linux-${arch}"
-            echo "==> building $out"
-            CGO_ENABLED=0 GOOS=linux GOARCH=$arch \
-              go build -ldflags "$LDFLAGS" -o "$out" ./cmd/server
+      - name: Publish agent (all platforms)
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          # jmw-agent-<os>-<arch>[.exe] — os/arch strings MUST match what the agent
+          # self-reports (Agent.cs DetectOs/DetectArch: linux/macos/windows), which is
+          # NOT the same as .NET's own RID vocabulary (osx, not macos) or Go's (darwin/amd64).
+          declare -A targets=(
+            [linux-x64]=linux-x64
+            [linux-arm64]=linux-arm64
+            [osx-x64]=macos-x64
+            [osx-arm64]=macos-arm64
+            [win-x64]=windows-x64
+          )
+          for rid in "${!targets[@]}"; do
+            name="${targets[$rid]}"
+            out="dist/jmw-agent-${name}"
+            [ "$rid" = "win-x64" ] && out="${out}.exe"
+            echo "==> publishing agent $rid -> $out"
+            dotnet publish src/Agent/JMW.Discovery.Agent.csproj \
+              -c Release -r "$rid" --self-contained true \
+              -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
+              -p:Version="${VERSION#v}" \
+              -o "dist/agent-${rid}"
+            if [ "$rid" = "win-x64" ]; then
+              mv "dist/agent-${rid}/JMW.Discovery.Agent.exe" "$out"
+            else
+              mv "dist/agent-${rid}/JMW.Discovery.Agent" "$out"
+            fi
+            rm -rf "dist/agent-${rid}"
           done
           ls -la dist/
 
       - name: Sign agent update binaries
         env:
-          VERSION: ${{ steps.version.outputs.version }}
           AGENT_UPDATE_SIGNING_KEY: ${{ secrets.AGENT_UPDATE_SIGNING_KEY }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          go run ./cmd/updatesign -version "$VERSION" dist/jmw-agent-*
+          keyfile="$(mktemp)"
+          trap 'rm -f "$keyfile"' EXIT
+          printf '%s' "$AGENT_UPDATE_SIGNING_KEY" > "$keyfile"
+          dotnet run --project src/Tools/UpdateSign -c Release -- \
+            sign --key "$keyfile" --version "$VERSION" dist/jmw-agent-*
 
       - name: Write release checksums
         run: |
@@ -139,26 +158,9 @@ jobs:
         run: |
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
-            --build-arg "VERSION=${VERSION}" \
             -f deploy/docker/Dockerfile.agent \
             -t "walljm/jmw-agent:${VERSION}" \
             -t "walljm/jmw-agent:latest" \
-            --push \
-            .
-
-      - name: Build & push Home Assistant add-on image
-        env:
-          VERSION: ${{ needs.build.outputs.version }}
-        run: |
-          set -euo pipefail
-          ver="${VERSION#v}"
-          sed -i "s/^version: \".*\"/version: \"${ver}\"/" jmw-agent/config.yaml
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --build-arg "VERSION=${ver}" \
-            -f jmw-agent/Dockerfile \
-            -t "walljm/jmw-agent-ha:${VERSION}" \
-            -t "walljm/jmw-agent-ha:latest" \
             --push \
             .
 
@@ -171,8 +173,6 @@ jobs:
         run: |
           cosign sign --yes "walljm/jmw-agent:${VERSION}"
           cosign sign --yes "walljm/jmw-agent:latest"
-          cosign sign --yes "walljm/jmw-agent-ha:${VERSION}"
-          cosign sign --yes "walljm/jmw-agent-ha:latest"
 
   deploy-server:
     needs: build
@@ -188,8 +188,10 @@ jobs:
       - name: Install + restart jmw-server
         run: |
           set -euo pipefail
-          chmod 0755 dist/jmw-server-linux-amd64
-          sudo /opt/jmw/bin/gha-deploy-server "$PWD/dist/jmw-server-linux-amd64"
+          chmod 0755 dist/jmw-server-linux-x64
+          mkdir -p dist/wwwroot
+          tar -xzf dist/jmw-server-linux-x64-wwwroot.tar.gz -C dist/
+          sudo /opt/jmw/bin/gha-deploy-server "$PWD/dist/jmw-server-linux-x64" "$PWD/dist/wwwroot"
 
   publish-agent-releases:
     needs: build

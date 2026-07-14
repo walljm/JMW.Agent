@@ -1,0 +1,77 @@
+@using JMW.Discovery.Server.Reporting
+@model JMW.Discovery.Server.Pages.Reports.TerrainDnsModel
+
+<div id="dns-table" class="grid-panel">
+    <partial name="_SectionError" model="Model.LoadError"/>
+
+    @if (Model.LoadError is null)
+    {
+        @if (Model.Services.Count > 0)
+        {
+            <h2 class="section-title">DNS Services</h2>
+            <div class="grid-scroll">
+                <table class="data" aria-label="DNS service stats">
+                    <thead>
+                    <tr>
+                        <th>Service</th>
+                        <th class="num">Total Queries</th>
+                        <th class="num">Blocked</th>
+                        <th class="num">Blocked %</th>
+                        <th>Last Updated</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (JMW.Discovery.Server.Pages.Reports.TerrainDnsService ds in Model.Services)
+                    {
+                        <tr>
+                            <td><a href="/services/@ds.Service">@ds.Service</a></td>
+                            <td class="num mono">@(ds.TotalQueries?.ToString("N0") ?? "—")</td>
+                            <td class="num mono">@(ds.TotalBlocked?.ToString("N0") ?? "—")</td>
+                            <td class="num mono">@(ds.BlockedPct.HasValue ? ds.BlockedPct.Value.ToString("0.#") + "%" : "—")</td>
+                            <td class="text-dim"><time data-utc="@ViewFormat.IsoUtc(ds.UpdatedAt)">@ds.UpdatedAt.ToString("yyyy-MM-dd HH:mm") UTC</time></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        @if (Model.Records.Count == 0)
+        {
+            <div class="empty">No DNS records match the current filters.</div>
+        }
+        else
+        {
+            <h2 class="section-title">DNS Records</h2>
+            <div class="grid-scroll">
+                <table class="data" aria-label="DNS records">
+                    <thead>
+                    <tr>
+                        <th>Service</th>
+                        <th>Zone</th>
+                        <th>Record</th>
+                        <th>Type</th>
+                        <th>Value</th>
+                        <th class="num">TTL</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (DnsRecordItem r in Model.Records)
+                    {
+                        <tr>
+                            <td><a href="/services/@r.Service">@r.Service</a></td>
+                            <td class="mono">@r.Zone</td>
+                            <td class="mono">@r.Record</td>
+                            <td>@r.Type</td>
+                            <td class="mono">@(r.Value ?? "—")</td>
+                            <td class="num mono">@(r.Ttl?.ToString() ?? "—")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+
+            <partial name="_Pagination" model="Model.Pagination"/>
+        }
+    }
+</div>

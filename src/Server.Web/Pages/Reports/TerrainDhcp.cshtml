@@ -1,0 +1,17 @@
+@page "/terrain/dhcp"
+@model JMW.Discovery.Server.Pages.Reports.TerrainDhcpModel
+@{
+    ViewData["Title"] = "DHCP Leases — JMW Discovery";
+    ViewData["ActiveNav"] = "network";
+}
+<main class="main">
+    <div class="page-head">
+        <h1>DHCP Leases</h1>
+    </div>
+
+    <partial name="_HubTabs" model="@(new HubTabsModel(HubTabSets.Network, "/terrain/dhcp", "Network views"))"/>
+
+    <partial name="_FilterBar" model="Model.FilterBar"/>
+
+    <partial name="_TerrainDhcpTable" model="Model"/>
+</main>

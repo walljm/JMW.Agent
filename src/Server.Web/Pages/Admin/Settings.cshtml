@@ -1,0 +1,201 @@
+@page "/admin/settings"
+@using JMW.Discovery.Server.Pages.Admin
+@model JMW.Discovery.Server.Pages.Admin.SettingsModel
+@{
+    ViewData["Title"] = "Settings — JMW Discovery";
+    ViewData["ActiveNav"] = "system";
+}
+
+<main class="main">
+    <div class="page-head">
+        <h1>Settings</h1>
+    </div>
+
+    <partial name="_HubTabs" model="@(new HubTabsModel(HubTabSets.System, "/admin/settings", "System views"))"/>
+
+    <div class="section">
+        <h3 style="margin-top:0">Agent Liveness Thresholds</h3>
+        <p class="prose text-dim" style="margin-bottom:var(--space-3)">
+            Controls when an agent is shown as online, stale, or offline across the Dashboard,
+            Fleet list, and Agent Detail pages — one definition, used everywhere.
+        </p>
+        <div style="display:flex;gap:var(--space-4);align-items:flex-end">
+            <div class="field">
+                <label for="onlineMultiplier">Online multiplier</label>
+                <input class="input" type="number" min="1" id="onlineMultiplier" style="width:100px"
+                       value="@Model.OnlineMultiplier">
+                <span class="help">× the agent's own heartbeat interval</span>
+            </div>
+            <div class="field">
+                <label for="offlineCeilingSecs">Offline ceiling</label>
+                <input class="input" type="text" id="offlineCeilingSecs" style="width:110px"
+                       value="@ViewFormat.Duration(Model.OfflineCeilingSecs)" placeholder="1h">
+                <span class="help">past this, always offline regardless of interval</span>
+            </div>
+            <button class="btn btn-primary" onclick="saveLivenessSettings()">Save</button>
+        </div>
+    </div>
+
+    <div class="section">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3)">
+            <h3 style="margin:0">Data Retention</h3>
+            <button class="btn" onclick="runSweep()">Run Sweep Now</button>
+        </div>
+        <p class="prose text-dim" style="margin-bottom:var(--space-3)">
+            Configure how long each table's data is kept. The retention sweep runs nightly and deletes rows
+            older than the configured interval. Set a table to disabled to pause pruning without losing the interval.
+            Duration format: <code>90d</code>, <code>1d 12h</code>, or seconds like <code>86400</code>.
+        </p>
+        <table class="data">
+            <thead>
+            <tr>
+                <th>Table</th>
+                <th>Category</th>
+                <th>Time Column</th>
+                <th>Retain For</th>
+                <th>Enabled</th>
+                <th></th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (SettingsModel.RetentionPolicyRow p in Model.RetentionPolicies)
+            {
+                <tr id="row-@p.TableName">
+                    <td class="mono" style="font-size:var(--fs-sm)">@p.TableName</td>
+                    <td>@p.Category</td>
+                    <td class="mono" style="font-size:var(--fs-sm)">@p.TimeColumn</td>
+                    <td>
+                        <input class="input" type="text" style="width:110px"
+                               id="dur-@p.TableName"
+                               value="@ViewFormat.Duration(p.StaleAfterSecs)"
+                               placeholder="never">
+                    </td>
+                    <td>
+                        <label class="switch">
+                            <input type="checkbox" id="ena-@p.TableName" @(p.Enabled ? "checked" : "")>
+                            <span class="slider"></span>
+                        </label>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-primary" onclick="savePolicy('@p.TableName')">Save</button>
+                    </td>
+                </tr>
+                @if (p.Notes is not null)
+                {
+                    <tr>
+                        <td></td>
+                        <td colspan="5" class="text-dim" style="font-size:var(--fs-sm);padding-top:0">@p.Notes</td>
+                    </tr>
+                }
+            }
+            </tbody>
+        </table>
+    </div>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+
+@section Scripts {
+    <script>
+        const CSRF = '@Model.AntiforgeryToken';
+
+        function toast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.hidden = false;
+            setTimeout(() => t.hidden = true, 3000);
+        }
+
+        function parseDurationToSeconds(raw) {
+            const text = raw.trim().toLowerCase();
+            if (!text) return null;
+            if (/^\d+$/.test(text)) {
+                const n = parseInt(text, 10);
+                return n > 0 ? n : null;
+            }
+            const compact = text.replace(/\s+/g, '');
+            const tokenRe = /(\d+)(d|h|m|s)/g;
+            let idx = 0, total = 0, seen = false, m;
+            while ((m = tokenRe.exec(compact)) !== null) {
+                if (m.index !== idx) return null;
+                idx = tokenRe.lastIndex;
+                seen = true;
+                const n = parseInt(m[1], 10);
+                if (m[2] === 'd') total += n * 86400;
+                else if (m[2] === 'h') total += n * 3600;
+                else if (m[2] === 'm') total += n * 60;
+                else total += n;
+            }
+            return (!seen || idx !== compact.length || total <= 0) ? null : total;
+        }
+
+        async function savePolicy(tableName) {
+            const durInput = document.getElementById('dur-' + tableName);
+            const enaInput = document.getElementById('ena-' + tableName);
+            const raw = durInput.value.trim();
+            const staleAfterSecs = raw ? parseDurationToSeconds(raw) : null;
+
+            if (raw && staleAfterSecs === null) {
+                toast('Invalid duration — use formats like 90d or 1d 12h or leave blank for never');
+                return;
+            }
+
+            const resp = await fetch('/api/v1/admin/retention/' + encodeURIComponent(tableName), {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF},
+                body: JSON.stringify({stale_after_secs: staleAfterSecs, enabled: enaInput.checked}),
+            });
+
+            if (resp.ok) {
+                toast(tableName + ' saved');
+            } else {
+                const j = await resp.json().catch(() => null);
+                toast('Error: ' + (j?.detail ?? resp.status));
+            }
+        }
+
+        async function saveLivenessSettings() {
+            const onlineMultiplier = parseInt(document.getElementById('onlineMultiplier').value, 10);
+            const raw = document.getElementById('offlineCeilingSecs').value.trim();
+            const offlineCeilingSecs = parseDurationToSeconds(raw);
+
+            if (!Number.isFinite(onlineMultiplier) || onlineMultiplier < 1) {
+                toast('Online multiplier must be a positive number.');
+                return;
+            }
+            if (offlineCeilingSecs === null) {
+                toast('Offline ceiling must be a duration like 1h or 3600.');
+                return;
+            }
+
+            const resp = await fetch('/api/v1/admin/agent-liveness-settings', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF},
+                body: JSON.stringify({online_multiplier: onlineMultiplier, offline_ceiling_secs: offlineCeilingSecs}),
+            });
+
+            if (resp.ok) {
+                toast('Liveness thresholds saved');
+            } else {
+                const j = await resp.json().catch(() => null);
+                toast('Error: ' + (j?.detail ?? resp.status));
+            }
+        }
+
+        async function runSweep() {
+            const resp = await fetch('/api/v1/admin/retention/run', {
+                method: 'POST',
+                headers: {'X-CSRF-TOKEN': CSRF},
+            });
+            if (resp.ok) {
+                const j = await resp.json().catch(() => null);
+                const count = j?.tables_pruned ?? '?';
+                toast('Sweep complete — ' + count + ' table(s) pruned');
+            } else if (resp.status === 409) {
+                toast('A sweep is already running');
+            } else {
+                toast('Sweep failed: ' + resp.status);
+            }
+        }
+    </script>
+}

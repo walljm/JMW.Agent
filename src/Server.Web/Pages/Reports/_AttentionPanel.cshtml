@@ -1,0 +1,101 @@
+@using JMW.Discovery.Server.Pages.Reports
+@model JMW.Discovery.Server.Pages.Reports.DashboardModel
+@{
+    string? err = Model.PanelError("attention");
+    PostureVm? p = Model.Posture;
+    bool isAdmin = User.IsInRole("admin");
+
+    static int SeverityRank(string severity) => severity switch { "crit" => 0, "warn" => 1, _ => 2 };
+
+    List<(IncidentCountRow Row, IncidentDisplayInfo Info)> visibleRows = [];
+    if (p is not null)
+    {
+        foreach (IncidentCountRow row in p.IncidentCounts)
+        {
+            if (!IncidentDisplay.Types.TryGetValue(row.IncidentType, out IncidentDisplayInfo? info))
+            {
+                continue;
+            }
+
+            if (info.AdminOnly && !isAdmin)
+            {
+                continue;
+            }
+
+            visibleRows.Add((row, info));
+        }
+
+        // "sorted most-urgent first" — severity first (GetOpenIncidentCounts.sql's count-desc
+        // order becomes the stable secondary sort within a severity tier).
+        visibleRows = visibleRows.OrderBy(r => SeverityRank(r.Info.Severity)).ToList();
+    }
+
+    int rowCount = visibleRows.Count + (p is not null && p.CertsExpiring > 0 ? 1 : 0);
+
+    // When the fleet is all-clear (loaded OK, zero attention items) the panel is hidden entirely
+    // — no "all clear" card. But the root element still polls, so the panel silently reappears the
+    // moment an item shows up, with no full-page reload. The root IS the .dash-section so `hidden`
+    // collapses its box (and its bottom margin) rather than leaving a gap at the top of the page.
+    bool hasContent = err is not null || p is null || rowCount > 0;
+}
+<section class="dash-section" hx-get="/dashboard?fragment=attention" hx-trigger="every 60s" hx-swap="outerHTML"
+         hidden="@(!hasContent)">
+    @if (hasContent)
+    {
+        <div class="dash-panel hero">
+            <div class="panel-head">
+                <h2>Needs attention</h2>
+                @if (err is null && p is not null)
+                {
+                    <span class="meta">@rowCount item@(rowCount == 1 ? "" : "s") · sorted most-urgent first</span>
+                }
+            </div>
+
+            @if (err is not null)
+            {
+                <partial name="_SectionError" model="err"/>
+            }
+            else if (p is null)
+            {
+                <div class="empty">Loading…</div>
+            }
+            else
+            {
+                <div class="attn-list">
+                    @foreach ((IncidentCountRow row, IncidentDisplayInfo info) in visibleRows)
+                    {
+                        string statusWord = info.Severity switch { "crit" => "Critical", "warn" => "Warning", _ => "Info" };
+                        if (info.Href is not null)
+                        {
+                            <a class="attn-item sev-@info.Severity" href="@info.Href"
+                               aria-label="@statusWord: @row.OpenCount @info.Label">
+                                <span class="status @info.Severity">@statusWord</span>
+                                <span class="attn-count">@row.OpenCount</span>
+                                <span class="attn-label">@info.Label · @row.DistinctEntities hosts</span>
+                                <span class="attn-go" aria-hidden="true">→</span>
+                            </a>
+                        }
+                        else
+                        {
+                            <div class="attn-item" title="Detailed view coming soon"
+                                 aria-label="@statusWord: @row.OpenCount @info.Label">
+                                <span class="status @info.Severity">@statusWord</span>
+                                <span class="attn-count text-faint">@row.OpenCount</span>
+                                <span class="attn-label text-faint">@info.Label · @row.DistinctEntities hosts</span>
+                            </div>
+                        }
+                    }
+                    @if (p.CertsExpiring > 0)
+                    {
+                        <div class="attn-item" title="Detailed view coming soon"
+                             aria-label="Info: @p.CertsExpiring service CA certificates expiring soon">
+                            <span class="status info">Info</span>
+                            <span class="attn-count text-faint">@p.CertsExpiring</span>
+                            <span class="attn-label text-faint">service CA certificates expiring soon</span>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</section>

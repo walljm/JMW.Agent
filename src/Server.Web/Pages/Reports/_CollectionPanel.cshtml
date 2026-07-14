@@ -1,0 +1,47 @@
+@using JMW.Discovery.Server.Pages.Reports
+@model JMW.Discovery.Server.Pages.Reports.DashboardModel
+@{
+    string? err = Model.PanelError("collection");
+    CollectionVm? c = Model.Collection;
+}
+<dash-panel panel-name="collection" title="Collection" refresh-seconds="60" meta-text="last cycle per agent">
+    @if (err is not null)
+    {
+        <partial name="_SectionError" model="err"/>
+    }
+    else if (c is null)
+    {
+        <div class="empty">Loading…</div>
+    }
+    else
+    {
+        <div class="coll-stats">
+            <div>
+                <div class="label">Facts sent</div>
+                <div class="value">@c.FactsSent.ToString("N0")</div>
+            </div>
+            <div>
+                <div class="label">Agents w/ errors</div>
+                <div class="value @(c.AgentsWithErrors > 0 ? "warn" : "")">@c.AgentsWithErrors</div>
+            </div>
+            <div>
+                <div class="label">Avg cycle</div>
+                <div class="value">@c.AvgDurationMs ms</div>
+            </div>
+        </div>
+        <p class="dash-eyebrow" style="margin-bottom:var(--space-2)">Collection errors — last 24h</p>
+        @if (c.HasErrors)
+        {
+            <svg class="spark warn" viewBox="0 0 100 36" preserveAspectRatio="none" role="img"
+                 aria-label="Collection error count over the last 24 hours, peak @c.ErrorPeak.">
+                <polyline points="@c.SparkPoints"/>
+            </svg>
+            <p class="meta" style="margin-top:var(--space-2)">Peak @c.ErrorPeak error@(c.ErrorPeak == 1 ? "" : "s") in
+                the last 24h.</p>
+        }
+        else
+        {
+            <p class="meta text-faint">No collection errors in the last 24h.</p>
+        }
+    }
+</dash-panel>

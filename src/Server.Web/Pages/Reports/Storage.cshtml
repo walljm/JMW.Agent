@@ -1,0 +1,185 @@
+@page "/storage"
+@using System.Globalization
+@using JMW.Discovery.Server.Reporting
+@model JMW.Discovery.Server.Pages.Reports.StorageModel
+@{
+    ViewData["Title"] = "Storage Health — JMW Discovery";
+    ViewData["ActiveNav"] = "inventory";
+
+    static string SmartClass(string? health) =>
+        string.IsNullOrEmpty(health) ? "status info"
+        : string.Equals(health, "PASSED", StringComparison.OrdinalIgnoreCase) ? "status ok"
+        : "status crit";
+
+    static string BarClass(double? pct) =>
+        pct is null ? "bar"
+        : pct > 90 ? "bar crit"
+        : pct > 75 ? "bar warn"
+        : "bar";
+
+    static string DiskRowClass(string? smartHealth) =>
+        !string.IsNullOrEmpty(smartHealth) && !string.Equals(smartHealth, "PASSED", StringComparison.OrdinalIgnoreCase)
+            ? "row-crit"
+            : "";
+
+    static string FsRowClass(double? usedPct) =>
+        usedPct switch
+        {
+            > 90 => "row-crit",
+            > 75 => "row-warn",
+            _ => "",
+        };
+
+    // Each section's links preserve the *other* section's current cursor so paging
+    // one section does not reset the other to page 1, and pin the tab so a full-page
+    // pagination reload lands back on the section being paged.
+    string FsParam() => string.IsNullOrEmpty(Model.AfterFs) ? "" : "afterFs=" + Uri.EscapeDataString(Model.AfterFs);
+    string DiskParam() => string.IsNullOrEmpty(Model.AfterDisk) ? "" : "afterDisk=" + Uri.EscapeDataString(Model.AfterDisk);
+
+    // Build "/storage?..." from a list of "k=v" parts, dropping empties.
+    static string StorageUrl(params string[] parts)
+    {
+        var kept = parts.Where(p => !string.IsNullOrEmpty(p)).ToList();
+        return kept.Count == 0 ? "/storage" : "/storage?" + string.Join('&', kept);
+    }
+}
+<main class="main">
+    <div class="page-head">
+        <h1>Storage Health</h1>
+        <span class="meta">@Model.Disks.Count disks · @Model.Filesystems.Count filesystems</span>
+    </div>
+
+    <partial name="_HubTabs" model="@(new HubTabsModel(HubTabSets.Inventory, "/storage", "Inventory views"))"/>
+
+    <div class="tabs" role="tablist" aria-label="Storage views">
+        <button class="tab @(Model.ActiveTab == "disks" ? "active" : "")" role="tab" id="tab-btn-disks"
+                aria-controls="tab-disks" aria-selected="@(Model.ActiveTab == "disks" ? "true" : "false")"
+                onclick="switchTab('disks')">Disks
+        </button>
+        <button class="tab @(Model.ActiveTab == "filesystems" ? "active" : "")" role="tab" id="tab-btn-filesystems"
+                aria-controls="tab-filesystems" aria-selected="@(Model.ActiveTab == "filesystems" ? "true" : "false")"
+                onclick="switchTab('filesystems')">Filesystems
+        </button>
+    </div>
+
+    <div class="tabpanel" id="tab-disks" role="tabpanel" aria-labelledby="tab-btn-disks" @(Model.ActiveTab == "disks" ? "" : "hidden")>
+        <partial name="_SectionError" model="Model.DisksError"/>
+        @if (Model.DisksError is null && Model.Disks.Count == 0)
+        {
+            <div class="empty">No disks recorded.</div>
+        }
+        else if (Model.DisksError is null)
+        {
+            <div class="grid-scroll">
+                <table class="data" aria-label="Disks">
+                    <thead>
+                    <tr>
+                        <th>Hostname</th>
+                        <th>Disk</th>
+                        <th>Model</th>
+                        <th>Type</th>
+                        <th>Size</th>
+                        <th>SMART</th>
+                        <th>Temp</th>
+                        <th>Wear %</th>
+                        <th>Power-On Hours</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (DiskListItem d in Model.Disks)
+                    {
+                        <tr class="@DiskRowClass(d.SmartHealth)" data-href="/devices/@d.Device" style="cursor:pointer">
+                            <td>@(string.IsNullOrEmpty(d.Hostname) ? d.Device : d.Hostname)</td>
+                            <td>@(d.Name ?? d.Disk)</td>
+                            <td>@(d.Model ?? "—")</td>
+                            <td>@(d.Type ?? "—")</td>
+                            <td>@ViewFormat.Bytes(d.SizeBytes)</td>
+                            <td><span class="@SmartClass(d.SmartHealth)">@(d.SmartHealth ?? "—")</span></td>
+                            <td>@(d.SmartTempC.HasValue ? d.SmartTempC.Value.ToString("0.#") + " °C" : "—")</td>
+                            <td>@(d.SmartWearPct.HasValue ? d.SmartWearPct.Value.ToString("0.#") + "%" : "—")</td>
+                            <td>@(d.SmartPowerOnHours?.ToString() ?? "—")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+            <partial name="_Pagination" model="@(new PaginationLinks(
+                                                      string.IsNullOrEmpty(Model.AfterDisk) ? null : StorageUrl(FsParam(), "tab=disks"),
+                                                      string.IsNullOrEmpty(Model.DisksNextCursor) ? null : StorageUrl("afterDisk=" + Uri.EscapeDataString(Model.DisksNextCursor), FsParam(), "tab=disks")
+                                                  ))"/>
+        }
+    </div>
+
+    <div class="tabpanel" id="tab-filesystems" role="tabpanel" aria-labelledby="tab-btn-filesystems" @(Model.ActiveTab == "filesystems" ? "" : "hidden")>
+        <partial name="_SectionError" model="Model.FilesystemsError"/>
+        @if (Model.FilesystemsError is null && Model.Filesystems.Count == 0)
+        {
+            <div class="empty">No filesystems recorded.</div>
+        }
+        else if (Model.FilesystemsError is null)
+        {
+            <div class="grid-scroll">
+                <table class="data" aria-label="Filesystems">
+                    <thead>
+                    <tr>
+                        <th>Hostname</th>
+                        <th>Mount</th>
+                        <th>Type</th>
+                        <th>Total</th>
+                        <th>Used</th>
+                        <th>Free</th>
+                        <th>Used %</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (FilesystemListItem f in Model.Filesystems)
+                    {
+                        <tr class="@FsRowClass(f.UsedPct)" data-href="/devices/@f.Device" style="cursor:pointer">
+                            <td>@(string.IsNullOrEmpty(f.Hostname) ? f.Device : f.Hostname)</td>
+                            <td class="mono">@f.Filesystem</td>
+                            <td>@(f.FsType ?? "—")</td>
+                            <td>@ViewFormat.Bytes(f.TotalBytes)</td>
+                            <td>@ViewFormat.Bytes(f.UsedBytes)</td>
+                            <td>@ViewFormat.Bytes(f.FreeBytes)</td>
+                            <td>
+                                @if (f.UsedPct.HasValue)
+                                {
+                                    <span class="@BarClass(f.UsedPct)"><span
+                                            style="width:@(Math.Clamp(f.UsedPct.Value, 0, 100).ToString("0.#", CultureInfo.InvariantCulture))%"></span></span>
+                                    <span class="text-dim">@f.UsedPct.Value.ToString("0.#")%</span>
+                                }
+                                else
+                                {
+                                    <span>—</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+            <partial name="_Pagination" model="@(new PaginationLinks(
+                                                      string.IsNullOrEmpty(Model.AfterFs) ? null : StorageUrl(DiskParam(), "tab=filesystems"),
+                                                      string.IsNullOrEmpty(Model.FilesystemsNextCursor) ? null : StorageUrl("afterFs=" + Uri.EscapeDataString(Model.FilesystemsNextCursor), DiskParam(), "tab=filesystems")
+                                                  ))"/>
+        }
+    </div>
+</main>
+
+@section Scripts {
+    <script>
+        function switchTab(name) {
+            const isFs = name === 'filesystems';
+            document.getElementById('tab-disks').hidden = isFs;
+            document.getElementById('tab-filesystems').hidden = !isFs;
+            [['disks', 'tab-btn-disks'], ['filesystems', 'tab-btn-filesystems']].forEach(([t, id]) => {
+                const btn = document.getElementById(id);
+                btn.classList.toggle('active', t === name);
+                btn.setAttribute('aria-selected', t === name ? 'true' : 'false');
+            });
+            const url = new URL(location.href);
+            url.searchParams.set('tab', name);
+            history.replaceState(null, '', url);
+        }
+    </script>
+}

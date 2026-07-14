@@ -1,0 +1,91 @@
+@using JMW.Discovery.Server.Reporting
+@model JMW.Discovery.Server.Pages.Reports.InterfacesModel
+
+<div id="interfaces-table" class="grid-panel">
+    <partial name="_SectionError" model="Model.LoadError"/>
+
+    @if (Model.LoadError is null && Model.Interfaces.Count == 0)
+    {
+        <div class="empty">No interfaces match the current filters.</div>
+    }
+    else if (Model.LoadError is null)
+    {
+        <div class="grid-scroll">
+            <table class="data" aria-label="Network interfaces">
+                <thead>
+                <tr>
+                    <th sort-key="hostname" sort-grid="Model.Grid" sort-target="#interfaces-table">Hostname</th>
+                    <th sort-key="name" sort-grid="Model.Grid" sort-target="#interfaces-table">Interface</th>
+                    <th style="cursor:default">MAC</th>
+                    <th style="cursor:default">OUI</th>
+                    <th style="cursor:default">MAC Type</th>
+                    <th style="cursor:default">IPv4</th>
+                    <th style="cursor:default">IPv6</th>
+                    <th style="cursor:default">Status</th>
+                    <th sort-key="speed" sort-grid="Model.Grid" sort-target="#interfaces-table">Speed</th>
+                    <th style="cursor:default">Duplex</th>
+                    <th style="cursor:default">Type</th>
+                    <th style="cursor:default">MTU</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (InterfaceListItem i in Model.Interfaces)
+                {
+                    (string Label, string Title, string Css) flag = ViewFormat.MacFlag(i.MacAddress ?? i.ObscuredMac);
+                    <tr data-href="/devices/@i.Device?from=interfaces" style="cursor:pointer">
+                        <td>@(string.IsNullOrEmpty(i.Hostname) ? i.Device : i.Hostname)</td>
+                        <td>@(i.Name ?? "—")</td>
+                        <td class="mono">
+                            @if (!string.IsNullOrEmpty(i.MacAddress))
+                            {
+                                @ViewFormat.FormatMac(i.MacAddress)
+                            }
+                            else if (!string.IsNullOrEmpty(i.ObscuredMac))
+                            {
+                                <span class="text-dim" title="Obscured MAC">@i.ObscuredMac</span>
+                            }
+                            else
+                            {
+                                @:—
+                            }
+                        </td>
+                        <td class="text-dim">@ViewFormat.FormatOui(i.Oui, i.OuiCountry)</td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(flag.Label) && flag.Label != "—")
+                            {
+                                <span class="mac-flag @flag.Css" title="@flag.Title">@flag.Label</span>
+                            }
+                            else
+                            {
+                                @:—
+                            }
+                        </td>
+                        <td class="mono">@(i.Ipv4 ?? "—")</td>
+                        <td class="mono">@(i.Ipv6 ?? "—")</td>
+                        <td>
+                            @if (i.Loopback == true)
+                            {
+                                <span class="tag">loopback</span>
+                            }
+                            else if (i.Up is { } up)
+                            {
+                                <span class="status @(up ? "ok" : "crit")">@(up ? "Up" : "Down")</span>
+                            }
+                            else
+                            {
+                                @:—
+                            }
+                        </td>
+                        <td>@(i.SpeedBps is { } bps ? $"{bps / 1_000_000} Mbps" : "—")</td>
+                        <td>@(i.Duplex ?? "—")</td>
+                        <td>@(i.Type ?? "—")</td>
+                        <td>@(i.Mtu?.ToString() ?? "—")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+
+        <partial name="_Pagination" model="Model.Pagination"/>
+    }
+</div>

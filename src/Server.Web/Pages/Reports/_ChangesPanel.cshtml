@@ -1,0 +1,50 @@
+@using JMW.Discovery.Server.Pages.Reports
+@model JMW.Discovery.Server.Pages.Reports.DashboardModel
+@{
+    string? err = Model.PanelError("changes");
+    ActivityCountsVm? counts = Model.ActivityCounts;
+
+    static string StatusClass(string kind) => kind switch { "open" => "crit", "resolved" => "ok", _ => "info" };
+}
+<dash-panel panel-name="changes" title="Recent activity" refresh-seconds="30" action-href="/changes"
+            action-text="Full change log →">
+    @if (err is not null)
+    {
+        <partial name="_SectionError" model="err"/>
+    }
+    else
+    {
+        @if (counts is not null)
+        {
+            <p class="meta" style="margin-top:calc(-1 * var(--space-2));margin-bottom:var(--space-3)">
+                @counts.Changes24h event@(counts.Changes24h == 1 ? "" : "s") in the last 24h
+            </p>
+        }
+
+        @if (Model.Changes.Count == 0)
+        {
+            <div class="empty">No activity in the last 24h.</div>
+        }
+        else
+        {
+            <div class="act-list">
+                @foreach (ActivityRow a in Model.Changes)
+                {
+                    string entityName = a.EntityDisplay ?? (a.EntityId.Length > 8 ? a.EntityId[..8] : a.EntityId);
+                    string label = IncidentDisplay.Label(a.Kind, a.TypeName);
+                    <div class="act-item">
+                        <span class="act-main">
+                            <span class="status @StatusClass(a.Kind)">@a.Kind</span>
+                            @entityName · @label@(a.Detail is null ? "" : $" ({a.Detail})")
+                            @if (a.Duration is { } d)
+                            {
+                                <span class="act-dur">(@ViewFormat.Duration((long)d.TotalSeconds))</span>
+                            }
+                        </span>
+                        <span class="act-when">@ViewFormat.RelativeTime(a.At.UtcDateTime)</span>
+                    </div>
+                }
+            </div>
+        }
+    }
+</dash-panel>

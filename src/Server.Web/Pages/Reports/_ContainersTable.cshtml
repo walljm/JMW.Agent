@@ -1,0 +1,78 @@
+@using JMW.Discovery.Server.Reporting
+@model JMW.Discovery.Server.Pages.Reports.ContainersModel
+
+<div id="containers-table" class="grid-panel">
+    <partial name="_SectionError" model="Model.LoadError"/>
+
+    @if (Model.LoadError is null && Model.Containers.Count == 0)
+    {
+        <div class="empty">No containers match the current filters.</div>
+    }
+    else if (Model.LoadError is null)
+    {
+        <div class="grid-scroll">
+            <table class="data" aria-label="Containers">
+                <thead>
+                <tr>
+                    <th sort-key="device" sort-grid="Model.Grid" sort-target="#containers-table">Hostname</th>
+                    <th style="cursor:default">Name</th>
+                    <th style="cursor:default">Container ID</th>
+                    <th style="cursor:default">Image</th>
+                    <th sort-key="state" sort-grid="Model.Grid" sort-target="#containers-table">State</th>
+                    <th style="cursor:default">Health</th>
+                    <th style="cursor:default">CPU %</th>
+                    <th style="cursor:default">Memory</th>
+                    <th style="cursor:default">Restarts</th>
+                    <th style="cursor:default">Compose Project</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (ContainerListItem c in Model.Containers)
+                {
+                    <tr class="@RowClass(c)" data-href="/devices/@c.Device?from=containers" style="cursor:pointer">
+                        <td>@(string.IsNullOrEmpty(c.Hostname) ? c.Device : c.Hostname)</td>
+                        <td>@(c.Name ?? c.Container)</td>
+                        <td class="mono">@c.Container</td>
+                        <td class="mono">@(c.Image ?? "—")</td>
+                        <td><span class="@StateClass(c.State)">@(c.State ?? "—")</span></td>
+                        <td>@(c.Health ?? "—")</td>
+                        <td>@(c.CpuPct.HasValue ? c.CpuPct.Value.ToString("0.#") + "%" : "—")</td>
+                        <td>@ViewFormat.Bytes(c.MemUsageBytes)</td>
+                        <td>@(c.RestartCount?.ToString() ?? "—")</td>
+                        <td>@(c.ComposeProject ?? "—")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+
+        <partial name="_Pagination" model="Model.Pagination"/>
+    }
+</div>
+
+@functions {
+
+    private static string StateClass(string? state) => state switch
+    {
+        "running" => "status ok",
+        "exited" or "dead" => "status crit",
+        "paused" or "restarting" => "status warn",
+        _ => "status info",
+    };
+
+    private static string RowClass(ContainerListItem c)
+    {
+        if (c.State is "exited" or "dead" || string.Equals(c.Health, "unhealthy", StringComparison.OrdinalIgnoreCase))
+        {
+            return "row-crit";
+        }
+
+        if (c.State is "paused" or "restarting")
+        {
+            return "row-warn";
+        }
+
+        return "";
+    }
+
+}

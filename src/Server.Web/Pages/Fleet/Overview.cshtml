@@ -1,0 +1,176 @@
+@page "/fleet"
+@using JMW.Discovery.Server.Admin
+@using JMW.Discovery.Server.Pages.Fleet
+@using JMW.Discovery.Server.Pages.Reports
+@model JMW.Discovery.Server.Pages.Fleet.OverviewModel
+@{
+    ViewData["Title"] = "Fleet Overview — JMW Discovery";
+    ViewData["ActiveNav"] = "fleet";
+}
+<main class="main">
+    <div class="page-head">
+        <h1>Fleet Overview</h1>
+        <a class="btn btn-sm" href="/fleet/agents">All agents →</a>
+    </div>
+
+    <partial name="_HubTabs" model="@(new HubTabsModel(HubTabSets.Fleet, "/fleet", "Fleet views"))"/>
+
+    <partial name="_SectionError" model="Model.LoadError"/>
+
+    @if (Model.LoadError is null && Model.Health is { } h)
+    {
+        <h2 class="section-title">Health</h2>
+        <div class="card-grid">
+            <div class="card">
+                <div class="label">Total Agents</div>
+                <div class="value">@h.Total</div>
+                <div class="meta">@h.Approved approved</div>
+            </div>
+            <div class="card">
+                <div class="label">Online</div>
+                <div class="value">@h.Online</div>
+            </div>
+            <div class="card">
+                <div class="label">Stale</div>
+                <div class="value warn">@h.Stale</div>
+            </div>
+            <div class="card">
+                <div class="label">Offline</div>
+                <div class="value crit">@h.Offline</div>
+            </div>
+        </div>
+
+        @if (h.Agents.Count > 0)
+        {
+            <h2 class="section-title">Needs Attention</h2>
+            <div class="grid-scroll">
+                <table class="data" aria-label="Agents needing attention">
+                    <thead>
+                    <tr>
+                        <th>Agent</th>
+                        <th>Liveness</th>
+                        <th>Zone</th>
+                        <th>Version</th>
+                        <th class="num">Last seen</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (AgentRow a in h.Agents)
+                    {
+                        (string liveCls, string liveLabel) = a.Liveness switch
+                        {
+                            "online" => ("ok", "Online"),
+                            "stale" => ("warn", "Stale"),
+                            _ => ("crit", "Offline"),
+                        };
+                        <tr class="@(a.Liveness == "offline" ? "row-crit" : a.Liveness == "stale" ? "row-warn" : "")">
+                            <td><a href="/fleet/agents/@a.AgentId">@a.Hostname</a></td>
+                            <td><span class="status @liveCls">@liveLabel</span></td>
+                            <td>@(a.Zone ?? "—")</td>
+                            <td class="mono">@(a.Version ?? "—")</td>
+                            <td class="num">
+                                @(a.LastHeartbeat.HasValue ? ViewFormat.RelativeTime(a.LastHeartbeat.Value.UtcDateTime) : "never")
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+            <p class="meta" style="margin-top:calc(-1 * var(--space-4));margin-bottom:var(--space-5)">
+                <a href="/fleet/agents?liveness=offline">View all offline agents →</a>
+            </p>
+        }
+
+        @if (Model.Pending.Count > 0)
+        {
+            <h2 class="section-title">Pending Approval</h2>
+            <div class="grid-scroll">
+                <table class="data" aria-label="Pending agents">
+                    <thead>
+                    <tr>
+                        <th>Hostname</th>
+                        <th>IP</th>
+                        <th>OS</th>
+                        <th>Zone</th>
+                        <th>Registered</th>
+                        <th></th>
+                    </tr>
+                    </thead>
+                    <tbody id="pending-tbody">
+                    @foreach (AgentListItem a in Model.Pending)
+                    {
+                        <tr id="pending-row-@a.AgentId">
+                            <td>@a.Hostname</td>
+                            <td class="mono">@(a.IpAddress ?? "—")</td>
+                            <td>@(a.Os ?? "—")</td>
+                            <td>@(a.Zone ?? "—")</td>
+                            <td><time data-utc="@ViewFormat.IsoUtc(a.CreatedAt)">@a.CreatedAt.ToString("yyyy-MM-dd HH:mm") UTC</time></td>
+                            <td>
+                                <button class="btn btn-sm btn-primary js-pending-approve-btn"
+                                        data-agent-id="@a.AgentId" data-hostname="@a.Hostname">
+                                    Approve
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        <h2 class="section-title">Versions</h2>
+        @if (Model.VersionHistogram.Count == 0)
+        {
+            <div class="empty">No agents registered yet.</div>
+        }
+        else
+        {
+            <div class="grid-scroll">
+                <table class="data" aria-label="Agent versions">
+                    <thead>
+                    <tr>
+                        <th>Version</th>
+                        <th class="num">Agents</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (VersionCount v in Model.VersionHistogram)
+                    {
+                        <tr>
+                            <td class="mono">@v.Version</td>
+                            <td class="num">@v.Count</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+</main>
+
+@section Scripts {
+    <script>
+        const CSRF = '@Model.AntiforgeryToken';
+
+        async function approvePendingAgent(id, hostname) {
+            const resp = await fetch(`/api/v1/admin/agents/${id}/approve`, {
+                method: 'PATCH',
+                headers: {'X-CSRF-TOKEN': CSRF},
+            });
+            if (!resp.ok) {
+                alert(`Failed to approve ${hostname} (${resp.status}). Check the console for details.`);
+                return;
+            }
+
+            const row = document.getElementById('pending-row-' + id);
+            if (row) row.remove();
+        }
+
+        document.addEventListener('click', function (e) {
+            const approveBtn = e.target.closest('.js-pending-approve-btn');
+            if (approveBtn) {
+                approvePendingAgent(approveBtn.dataset.agentId, approveBtn.dataset.hostname);
+            }
+        });
+    </script>
+}

@@ -23,30 +23,41 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
 
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9  # v5
+        with:
+          dotnet-version: "10.0.x"
+
       - uses: github/codeql-action/init@87557b9c84dde89fdd9b10e88954ac2f4248e463  # v4
         with:
-          languages: go
+          languages: csharp
 
-      - uses: github/codeql-action/autobuild@87557b9c84dde89fdd9b10e88954ac2f4248e463  # v4
+      - name: Build (for CodeQL analysis)
+        run: dotnet build JMW.Discovery.slnx -c Release
 
       - uses: github/codeql-action/analyze@87557b9c84dde89fdd9b10e88954ac2f4248e463  # v4
         with:
-          category: "/language:go"
+          category: "/language:csharp"
 
-  govulncheck:
+  dotnet-vulnerable-packages:
     runs-on: [self-hosted, core-services]
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
 
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9  # v5
         with:
-          go-version-file: go.mod
-          cache: false
+          dotnet-version: "10.0.x"
 
-      - name: govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...
+      - name: Check for vulnerable NuGet packages
+        run: |
+          set -euo pipefail
+          out=$(dotnet list JMW.Discovery.slnx package --vulnerable --include-transitive 2>&1)
+          echo "$out"
+          if echo "$out" | grep -q "has the following vulnerable packages"; then
+            echo "Vulnerable packages found — see output above." >&2
+            exit 1
+          fi
 
   trivy:
     runs-on: [self-hosted, core-services]

@@ -1,0 +1,60 @@
+@page "/terrain"
+@using JMW.Discovery.Server.Pages.Reports
+@model JMW.Discovery.Server.Pages.Reports.TerrainModel
+@{
+    ViewData["Title"] = "Network Terrain — JMW Discovery";
+    ViewData["ActiveNav"] = "terrain";
+    TerrainSummary s = Model.Summary;
+    // Cards show abbreviated counts ("1.2M"); the tooltip carries the exact figure.
+    string exactQueries = s.TotalQueries.ToString("N0") + " queries";
+    string exactBlocked = s.TotalBlocked.ToString("N0") + " queries";
+
+    static string Fmt(long n) => n >= 1_000_000 ? (n / 1_000_000.0).ToString("0.#") + "M"
+        : n >= 1_000 ? (n / 1_000.0).ToString("0.#") + "K"
+        : n.ToString();
+}
+<main class="main">
+    <div class="page-head">
+        <h1>Network Terrain</h1>
+    </div>
+
+    <partial name="_SectionError" model="Model.SummaryLoadError"/>
+    @if (Model.SummaryLoadError is null)
+    {
+        <div class="card-grid">
+            <div class="card">
+                <div class="label">DNS Servers</div>
+                <div class="value">@s.DnsServerCount</div>
+            </div>
+            <div class="card">
+                <div class="label">Total Queries</div>
+                <div class="value" title="@exactQueries">@Fmt(s.TotalQueries)</div>
+            </div>
+            <div class="card">
+                <div class="label">Blocked</div>
+                <div class="value" title="@exactBlocked">@Fmt(s.TotalBlocked)</div>
+                @if (s.TotalQueries > 0)
+                {
+                    <div class="meta">@((s.TotalBlocked * 100.0 / s.TotalQueries).ToString("0.#"))% of all queries</div>
+                }
+            </div>
+            <div class="card">
+                <div class="label">DHCP Scopes</div>
+                <div class="value">@s.ActiveScopeCount</div>
+                <div class="meta">active</div>
+            </div>
+            <div class="card">
+                <div class="label">Local Leases</div>
+                <div class="value">@s.LocalLeaseCount</div>
+            </div>
+            <div class="card @(s.CaExpiringCount > 0 ? "warn" : "")">
+                <div class="label">CAs Observed</div>
+                <div class="value">@s.CaCount</div>
+                @if (s.CaExpiringCount > 0)
+                {
+                    <div class="meta">@s.CaExpiringCount expiring within 30 days</div>
+                }
+            </div>
+        </div>
+    }
+</main>

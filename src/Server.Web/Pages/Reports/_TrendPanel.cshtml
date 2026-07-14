@@ -1,0 +1,41 @@
+@using JMW.Discovery.Server.Pages.Reports
+@model JMW.Discovery.Server.Pages.Reports.DashboardModel
+@{
+    string? err = Model.PanelError("trend");
+    TrendVm? t = Model.Trend;
+    int days = DashboardModel.ChangeTrendDays;
+}
+<dash-panel panel-name="trend" title="Change trend" refresh-seconds="300" action-href="/changes"
+            action-text="Change feed →">
+    @if (err is not null)
+    {
+        <partial name="_SectionError" model="err"/>
+    }
+    else if (t is null)
+    {
+        <div class="empty">Loading…</div>
+    }
+    else
+    {
+        <p class="dash-eyebrow" style="margin-bottom:var(--space-2)">Fact changes per day — last @days days</p>
+        <svg class="spark" viewBox="0 0 100 36" preserveAspectRatio="none" role="img"
+             aria-label="Fact changes per day over the last @days days; today @t.Today, average @t.Average, peak @t.Peak.">
+            <path class="area" d="@t.AreaPath"/>
+            <polyline points="@t.SparkPoints"/>
+        </svg>
+        <div class="coll-stats" style="margin-top:var(--space-4);margin-bottom:0">
+            <div>
+                <div class="label">Today</div>
+                <div class="value">@t.Today</div>
+            </div>
+            <div>
+                <div class="label">@days-day avg</div>
+                <div class="value">@t.Average</div>
+            </div>
+            <div>
+                <div class="label">Peak</div>
+                <div class="value">@t.Peak</div>
+            </div>
+        </div>
+    }
+</dash-panel>

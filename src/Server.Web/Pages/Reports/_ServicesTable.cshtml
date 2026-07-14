@@ -1,0 +1,69 @@
+@using JMW.Discovery.Server.Reporting
+@model JMW.Discovery.Server.Pages.Reports.ServicesModel
+@{
+    // Every service type gets its own one-line glance value here instead of forcing every
+    // row through the same fixed DNS-shaped columns (CA status/expiry/query count), which
+    // left non-DNS services (e.g. Home Assistant) with dashes in most columns.
+    static string Highlights(ServiceListItem s)
+    {
+        List<string> parts = [];
+        if (s.TotalQueries.HasValue)
+        {
+            string blocked = s.BlockedPct.HasValue ? $" ({s.BlockedPct.Value:0.#}% blocked)" : "";
+            parts.Add($"{s.TotalQueries.Value:N0} queries{blocked}");
+        }
+
+        if (!string.IsNullOrEmpty(s.CaStatus))
+        {
+            parts.Add($"CA {s.CaStatus}");
+        }
+
+        return parts.Count > 0 ? string.Join(" · ", parts) : "—";
+    }
+}
+
+<div id="services-table" class="grid-panel">
+    <partial name="_SectionError" model="Model.LoadError"/>
+
+    @if (Model.LoadError is null && Model.Services.Count == 0)
+    {
+        <div class="empty">No services match the current filters.</div>
+    }
+    else if (Model.LoadError is null)
+    {
+        <div class="grid-scroll">
+            <table class="data" aria-label="Services">
+                <thead>
+                <tr>
+                    <th style="cursor:default">Service ID</th>
+                    <th style="cursor:default">Type</th>
+                    <th style="cursor:default">Device</th>
+                    <th style="cursor:default">Highlights</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (ServiceListItem s in Model.Services)
+                {
+                    <tr data-href="/services/@Uri.EscapeDataString(s.Service)" style="cursor:pointer">
+                        <td class="mono" title="@s.Service">@ViewFormat.Truncate(s.Service, 24)</td>
+                        <td>@(s.Type ?? "—")</td>
+                        <td class="mono text-dim">
+                            @if (!string.IsNullOrEmpty(s.DeviceId))
+                            {
+                                <a href="/devices/@s.DeviceId?from=services" onclick="event.stopPropagation()">@s.DeviceId</a>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </td>
+                        <td>@Highlights(s)</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+
+        <partial name="_Pagination" model="Model.Pagination"/>
+    }
+</div>

@@ -1,0 +1,43 @@
+@using JMW.Discovery.Server.Reporting
+@model JMW.Discovery.Server.Pages.Reports.PortsModel
+
+<div id="ports-table" class="grid-panel">
+    <partial name="_SectionError" model="Model.LoadError"/>
+
+    @if (Model.LoadError is null && Model.Ports.Count == 0)
+    {
+        <div class="empty">No listening ports match the current filters.</div>
+    }
+    else if (Model.LoadError is null)
+    {
+        <div class="grid-scroll">
+            <table class="data" aria-label="Open ports">
+                <thead>
+                <tr>
+                    <th sort-key="device" sort-grid="Model.Grid" sort-target="#ports-table">Hostname</th>
+                    <th style="cursor:default">Protocol</th>
+                    <th style="cursor:default">Address</th>
+                    <th sort-key="port" sort-grid="Model.Grid" sort-target="#ports-table">Port</th>
+                    <th style="cursor:default">Process</th>
+                    <th style="cursor:default">PID</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (PortListItem p in Model.Ports)
+                {
+                    <tr data-href="/devices/@p.Device?from=ports" style="cursor:pointer">
+                        <td>@(string.IsNullOrEmpty(p.Hostname) ? p.Device : p.Hostname)</td>
+                        <td>@(p.Protocol ?? "—")</td>
+                        <td class="mono">@(p.Address ?? "—")</td>
+                        <td>@(p.Port?.ToString() ?? "—")</td>
+                        <td>@(p.ProcessName ?? "—")</td>
+                        <td>@(p.Pid?.ToString() ?? "—")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+
+        <partial name="_Pagination" model="Model.Pagination"/>
+    }
+</div>

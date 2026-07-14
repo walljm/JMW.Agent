@@ -1,0 +1,163 @@
+@page "/subnets/{network}/{prefix:int}"
+@using JMW.Discovery.Server.Pages.Reports
+@using JMW.Discovery.Server.Reporting
+@model JMW.Discovery.Server.Pages.Reports.SubnetDetailModel
+@{
+    ViewData["Title"] = (Model.Subnet?.Cidr ?? "Subnet") + " — JMW Discovery";
+    ViewData["ActiveNav"] = "network";
+}
+<main class="main">
+    <div class="page-head">
+        <h1>@(Model.Subnet?.Cidr ?? "Subnet")</h1>
+        <a class="btn btn-sm" href="/subnets">‹ All subnets</a>
+    </div>
+
+    <partial name="_SectionError" model="Model.LoadError"/>
+
+    @if (Model.LoadError is null && Model.SubnetNotFound)
+    {
+        <div class="empty">No subnet matches this CIDR. It may no longer be observed by any agent or DHCP scope.</div>
+    }
+    else if (Model.LoadError is null && Model.Subnet is { } s)
+    {
+        <div class="card-grid">
+            <div class="card">
+                <div class="label">Name</div>
+                <div class="value">@(s.Name ?? "—")</div>
+            </div>
+            <div class="card">
+                <div class="label">Gateway</div>
+                <div class="value mono">
+                    @if (!string.IsNullOrEmpty(s.Gateway) && !string.IsNullOrEmpty(s.GatewayDeviceId))
+                    {
+                        <a href="/devices/@s.GatewayDeviceId?from=subnets">@s.Gateway</a>
+                    }
+                    else
+                    {
+                        @(s.Gateway ?? "—")
+                    }
+                </div>
+                @if (!string.IsNullOrEmpty(s.GatewayHostname))
+                {
+                    <div class="meta">@s.GatewayHostname</div>
+                }
+            </div>
+            <div class="card">
+                <div class="label">Hosts seen</div>
+                <div class="value">@s.HostCount</div>
+            </div>
+            <div class="card">
+                <div class="label">Source</div>
+                <div class="value">@string.Join(" + ", s.Sources)</div>
+                <div class="meta">D = DHCP scope · I = interface CIDR</div>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(s.DhcpStart))
+        {
+            <h2 class="section-title">DHCP Scope</h2>
+            <div class="grid-scroll">
+                <table class="data" aria-label="DHCP scope">
+                    <thead>
+                    <tr>
+                        <th>Service</th>
+                        <th>Range</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr>
+                        <td>
+                            @if (!string.IsNullOrEmpty(s.DhcpService))
+                            {
+                                <a href="/services/@s.DhcpService">@s.DhcpService</a>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </td>
+                        <td class="mono">@s.DhcpStart – @(s.DhcpEnd ?? "?")</td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        <h2 class="section-title">ARP Neighbors</h2>
+        @if (Model.ArpNeighbors.Count == 0)
+        {
+            <div class="empty">No ARP neighbors observed on this subnet.</div>
+        }
+        else
+        {
+            <div class="grid-scroll">
+                <table class="data" aria-label="ARP neighbors">
+                    <thead>
+                    <tr>
+                        <th>Observer</th>
+                        <th>IP</th>
+                        <th>MAC</th>
+                        <th>Interface</th>
+                        <th>State</th>
+                        <th>Resolved Device</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (SubnetArpNeighbor a in Model.ArpNeighbors)
+                    {
+                        <tr>
+                            <td>@(string.IsNullOrEmpty(a.ObserverHostname) ? a.Device : a.ObserverHostname)</td>
+                            <td class="mono">@a.Ip</td>
+                            <td class="mono">@ViewFormat.FormatMac(a.Mac)</td>
+                            <td>@(a.Iface ?? "—")</td>
+                            <td>@(a.State ?? "—")</td>
+                            <td>
+                                @if (!string.IsNullOrEmpty(a.ResolvedDeviceId))
+                                {
+                                    <a href="/devices/@a.ResolvedDeviceId?from=subnets">
+                                        @(string.IsNullOrEmpty(a.ResolvedHostname) ? a.ResolvedDeviceId : a.ResolvedHostname)
+                                    </a>
+                                }
+                                else
+                                {
+                                    <span class="text-dim">—</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        <h2 class="section-title">Attached Interfaces</h2>
+        @if (s.Interfaces.Count == 0)
+        {
+            <div class="empty">No agent-observed interfaces on this subnet — it was derived from a DHCP scope only.</div>
+        }
+        else
+        {
+            <div class="grid-scroll">
+                <table class="data" aria-label="Attached interfaces">
+                    <thead>
+                    <tr>
+                        <th>Device</th>
+                        <th>Interface</th>
+                        <th>IP</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (SubnetInterface i in s.Interfaces)
+                    {
+                        <tr>
+                            <td>@(i.Hostname ?? i.Device)</td>
+                            <td>@(i.InterfaceName ?? "—")</td>
+                            <td class="mono">@i.Ip</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+</main>

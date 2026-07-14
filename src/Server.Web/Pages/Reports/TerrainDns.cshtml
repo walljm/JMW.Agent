@@ -1,0 +1,17 @@
+@page "/terrain/dns"
+@model JMW.Discovery.Server.Pages.Reports.TerrainDnsModel
+@{
+    ViewData["Title"] = "DNS Records — JMW Discovery";
+    ViewData["ActiveNav"] = "network";
+}
+<main class="main">
+    <div class="page-head">
+        <h1>DNS Records</h1>
+    </div>
+
+    <partial name="_HubTabs" model="@(new HubTabsModel(HubTabSets.Network, "/terrain/dns", "Network views"))"/>
+
+    <partial name="_FilterBar" model="Model.FilterBar"/>
+
+    <partial name="_TerrainDnsTable" model="Model"/>
+</main>

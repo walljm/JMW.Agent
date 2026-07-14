@@ -1,0 +1,2229 @@
+/* ==========================================================================
+   JMW Agent Facts Server — Design System (FINALIZED)
+   Direction: "Consumer Tech" — friendly dashboard aesthetic in the spirit of
+   Linear, Vercel, Raycast, and Apple HIG. Warm charcoal/zinc surfaces (not
+   slate-cold), a violet accent, soft semantic status colors, a system
+   sans-serif type system with monospace reserved for fact values / IDs / IPs /
+   code, gently rounded corners, subtle card elevation, and comfortable
+   spacing. The left status rail on rows/cards is retained — it is an
+   information pattern (a problem host "lights up"), reskinned to the new
+   palette rather than removed.
+
+   CSS custom property names here are CANONICAL (PM-008) — component CSS in the
+   project must reference these exact names. Dark mode is the default; a
+   complete light-mode override block is provided (PM-004). Every token is
+   redefined in both modes.
+   ========================================================================== */
+
+:root {
+    /* ---- Typography ---- */
+    --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, "SF Mono", Menlo, Consolas, monospace; /* fact values, IDs, IPs, code */
+    --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+    --font-body: var(--font-sans);
+    --font-head: var(--font-sans);
+
+    --fs-xs: 11px;
+    --fs-sm: 12px;
+    --fs-base: 14px;
+    --fs-md: 15px;
+    --fs-lg: 18px;
+    --fs-xl: 22px;
+    --fs-2xl: 30px;
+    --fw-normal: 400;
+    --fw-med: 500;
+    --fw-bold: 600;
+    --lh-tight: 1.25;
+    --lh-base: 1.5;
+    --tracking-caps: 0.06em;
+
+    /* ---- Spacing (4px base; comfortable rhythm) ---- */
+    --space-1: 2px;
+    --space-2: 4px;
+    --space-3: 8px;
+    --space-4: 12px;
+    --space-5: 16px;
+    --space-6: 24px;
+    --space-7: 32px;
+    --space-8: 48px;
+
+    /* ---- Radius (gently rounded — consumer tech) ---- */
+    --radius-sm: 4px; /* badges, tags */
+    --radius-md: 6px; /* buttons, inputs */
+    --radius-lg: 8px; /* cards, modals, panels */
+
+    /* ---- Structure ---- */
+    --border-hair: 1px solid var(--border);
+    --rail: 3px; /* left status-rail width (retained signal pattern) */
+    --shadow-none: none;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+    --shadow-pop: 0 0 0 1px var(--accent), 0 6px 18px rgba(0, 0, 0, 0.40);
+    --sidebar-w: 220px;
+
+    /* ---- Motion ---- */
+    --t-fast: .1s ease;
+    --t-base: .15s ease;
+}
+
+/* ===== DARK MODE (default) — zinc, violet accent ===== */
+:root, .dark-mode {
+    --bg: #18181B; /* page background (zinc-900) */
+    --surface: #27272A; /* panel / sidebar / table body surface (zinc-800) */
+    --surface-2: #303034; /* elevated: table head, row stripe, modal */
+    --surface-hover: #3F3F46; /* hover fill — intentionally lighter than surface-2 (zinc-700) */
+    --border: rgba(255, 255, 255, 0.08); /* subtle hairline borders */
+    --border-strong: rgba(255, 255, 255, 0.16); /* heavier dividers, header underline */
+    --text: #F4F4F5; /* primary foreground (zinc-100) */
+    --text-dim: #A1A1AA; /* secondary text, labels (zinc-400) */
+    --text-faint: #8F8F99; /* tertiary, placeholders, eyebrows — tuned for 5.5:1 on --bg (was 3.75:1, failed AA) */
+    --accent: #8B5CF6; /* violet-500 — primary action, active nav, links */
+    --accent-dim: #6D28D9; /* violet-700 — hover/pressed state, darker than accent for contrast with --on-accent text */
+    --on-accent: #FFFFFF; /* text on accent fills */
+    --focus: #38BDF8; /* focus ring — sky-400, distinct from violet accent */
+    --ok: #10B981;
+    --ok-bg: rgba(16, 185, 129, 0.14); /* emerald-500 */
+    --warn: #F59E0B;
+    --warn-bg: rgba(245, 158, 11, 0.14); /* amber-500 */
+    --crit: #EF4444;
+    --crit-bg: rgba(239, 68, 68, 0.14); /* red-500 */
+    --info: #22D3EE;
+    --info-bg: rgba(34, 211, 238, 0.14); /* cyan-400 — no longer doubles up with --accent */
+}
+
+/* ===== LIGHT MODE (complete override — PM-004) ===== */
+.light-mode {
+    --bg: #FAFAF9; /* stone-50 */
+    --surface: #FFFFFF;
+    --surface-2: #F5F5F4; /* stone-100 */
+    --surface-hover: #E7E5E4; /* stone-200 — darker than surface-2 */
+    --border: rgba(28, 25, 23, 0.10);
+    --border-strong: rgba(28, 25, 23, 0.18);
+    --text: #1C1917; /* stone-900 */
+    --text-dim: #57534E; /* stone-600 */
+    --text-faint: #78716C; /* stone-500 — 4.8:1 on white, passes AA */
+    --accent: #7C3AED; /* violet-600 — stronger for light bg */
+    --accent-dim: #5B21B6; /* violet-800 — hover/pressed state, darker than accent (was lighter — that inversion caused the 1.99:1 failure) */
+    --on-accent: #FFFFFF;
+    --focus: #0284C7; /* sky-600 */
+    --ok: #059669;
+    --ok-bg: #D1FAE5; /* emerald-600 / emerald-100 */
+    --warn: #B45309;
+    --warn-bg: #FEF3C7; /* amber-700 / amber-100 */
+    --crit: #DC2626;
+    --crit-bg: #FEE2E2; /* red-600 / red-100 */
+    --info: #0891B2;
+    --info-bg: #CFFAFE; /* cyan-600 / cyan-100 */
+}
+
+/* ===== Base ===== */
+* {
+    box-sizing: border-box;
+}
+
+/* The native `hidden` attribute is display:none in the UA stylesheet, but any author
+   rule setting `display` on the same element (e.g. `.field { display: flex }`) wins at
+   equal specificity — so a JS `el.hidden = true` silently does nothing on flex/grid
+   elements unless something re-asserts display:none. This makes `hidden` always win,
+   everywhere, instead of requiring a one-off `.some-class[hidden] { display: none }`
+   override per component (several of which existed below before this rule subsumed them). */
+[hidden] {
+    display: none !important;
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    font-size: var(--fs-base);
+    line-height: var(--lh-base);
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ===== Scrollbars — themed to match surfaces instead of the OS default =====
+   Track is transparent (not a fixed surface color) because scrollable regions
+   sit on many different backgrounds (--bg, --surface, table stripes) — a
+   hardcoded track color mismatches most of them. Only the thumb is themed. */
+* {
+    scrollbar-color: var(--surface-hover) transparent;
+    scrollbar-width: thin;
+}
+
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--surface-hover);
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--border-strong);
+    background-clip: padding-box;
+}
+
+h1, h2, h3, h4 {
+    font-family: var(--font-head);
+    font-weight: var(--fw-bold);
+    line-height: var(--lh-tight);
+    margin: 0 0 var(--space-3);
+}
+
+h1 {
+    font-size: var(--fs-2xl);
+}
+
+h2 {
+    font-size: var(--fs-xl);
+}
+
+h3 {
+    font-size: var(--fs-lg);
+}
+
+h4 {
+    font-size: var(--fs-md);
+}
+
+p {
+    margin: 0 0 var(--space-3);
+}
+
+.prose {
+    font-family: var(--font-sans);
+}
+
+/* opt-in proportional for help text */
+.eyebrow, .group-label {
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-caps);
+    color: var(--text-faint);
+}
+
+.text-dim {
+    color: var(--text-dim);
+}
+
+.text-faint {
+    color: var(--text-faint);
+}
+
+.mono {
+    font-family: var(--font-mono);
+}
+
+a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+/* Visible focus everywhere (accessibility) */
+a:focus-visible, button:focus-visible, .input:focus-visible, .tab:focus-visible, .nav-item:focus-visible,
+.input:focus, button:focus, .nav-item:focus {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+}
+
+/* ===== App shell ===== */
+.app {
+    display: grid;
+    grid-template-columns: var(--sidebar-w) 1fr;
+    height: 100vh;
+    overflow: hidden;
+    transition: grid-template-columns var(--t-base);
+}
+
+.app.sidebar-collapsed {
+    grid-template-columns: 0 1fr;
+}
+
+.sidebar {
+    background: var(--surface);
+    border-right: var(--border-hair);
+    padding: var(--space-4) var(--space-3);
+    overflow-y: auto;
+}
+
+.app.sidebar-collapsed .sidebar {
+    padding: 0;
+    overflow: hidden;
+    border-right: none;
+}
+
+/* Fixed handle so it stays reachable regardless of collapsed state or scroll position. */
+.sidebar-toggle {
+    position: fixed;
+    top: var(--space-4);
+    left: calc(var(--sidebar-w) - 14px);
+    z-index: 41;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    line-height: 26px;
+    text-align: center;
+    transition: left var(--t-base);
+}
+
+.app.sidebar-collapsed .sidebar-toggle {
+    left: 6px;
+}
+
+/* Collapsed, the toggle handle sits over the top-left corner of page content
+   (x:6-34, y:12-40) since .main's own padding no longer clears it. Push content
+   down past the handle instead of shrinking/moving the handle itself. */
+.app.sidebar-collapsed .main {
+    padding-top: calc(var(--space-4) + 28px + var(--space-3));
+}
+
+.sidebar .brand {
+    font-size: var(--fs-md);
+    font-weight: var(--fw-bold);
+    color: var(--accent);
+    padding: var(--space-2) var(--space-3) var(--space-5);
+    letter-spacing: -0.01em;
+    display: block;
+}
+
+.nav-group {
+    margin-top: var(--space-5);
+}
+
+.nav-group > .group-label {
+    padding: 0 var(--space-3) var(--space-2);
+    display: block;
+}
+
+.nav-item {
+    display: block;
+    padding: var(--space-2) var(--space-3);
+    color: var(--text-dim);
+    border-radius: var(--radius-md);
+    margin-bottom: 1px;
+}
+
+.nav-item:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+    text-decoration: none;
+}
+
+.nav-item.active {
+    color: var(--accent);
+    background: var(--info-bg);
+    font-weight: var(--fw-med);
+}
+
+/* Deferred screens (DEC-006): visible so operators see where they'll land, but not yet built */
+.nav-item.deferred {
+    color: var(--text-faint);
+    cursor: default;
+    pointer-events: none;
+    opacity: 0.5;
+}
+
+.nav-item.deferred::after {
+    content: " ·";
+}
+
+/* User identity block at the foot of the sidebar */
+.nav-user {
+    margin-top: var(--space-6);
+    padding: var(--space-3);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--fs-sm);
+    color: var(--text-dim);
+    flex-wrap: wrap;
+}
+
+.nav-user .role-badge {
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-med);
+    padding: 1px var(--space-2);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    color: var(--text-dim);
+    border: 1px solid var(--border-strong);
+}
+
+.nav-user .role-badge.readonly {
+    color: var(--info);
+    background: var(--info-bg);
+    border-color: transparent;
+}
+
+.nav-user-btn {
+    margin-top: var(--space-2);
+    width: 100%;
+    text-align: center;
+}
+
+.main {
+    padding: var(--space-5) var(--space-6);
+    overflow: auto;
+}
+
+/* Pages with a full-height scrollable data grid opt in with this modifier */
+.main.data-grid-page {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    gap: var(--space-4);
+    padding-bottom: var(--space-4);
+}
+
+.main.data-grid-page .page-head {
+    flex-shrink: 0;
+    margin-bottom: 0;
+}
+
+.page-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-4);
+    border-bottom: 1px solid var(--border-strong);
+    padding-bottom: var(--space-3);
+    margin-bottom: var(--space-5);
+    flex-wrap: wrap;
+}
+
+.page-head .meta {
+    color: var(--text-faint);
+    font-size: var(--fs-sm);
+}
+
+.toolbar {
+    display: flex;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+/* Heading for a subordinate block inside a page (e.g. "DHCP Scopes") */
+.section-title {
+    margin: 0 0 var(--space-2);
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-bold);
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-caps);
+}
+
+/* ===== Dashboard cards ===== */
+.card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: var(--space-4);
+    margin-bottom: var(--space-5);
+}
+
+.card {
+    background: var(--surface);
+    border: var(--border-hair);
+    border-left: var(--rail) solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5);
+    display: block;
+    color: inherit;
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow var(--t-base), transform var(--t-fast);
+}
+
+.card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+    text-decoration: none;
+}
+
+.card .label {
+    color: var(--text-dim);
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-caps);
+}
+
+.card .value {
+    font-size: var(--fs-2xl);
+    font-weight: var(--fw-bold);
+    margin-top: var(--space-2);
+}
+
+.card .meta {
+    font-size: var(--fs-xs);
+    color: var(--text-faint);
+}
+
+.card.ok {
+    border-left-color: var(--ok);
+}
+
+.card.warn {
+    border-left-color: var(--warn);
+}
+
+.card.warn .value {
+    color: var(--warn);
+}
+
+.card.hot {
+    border-left-color: var(--crit);
+}
+
+.card.hot .value {
+    color: var(--crit);
+}
+
+/* ===== Static content section wrapper (non-interactive, unlike .card) ===== */
+.section {
+    background: var(--surface);
+    border: var(--border-hair);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    padding: var(--space-5);
+    margin-bottom: var(--space-5);
+}
+
+/* ===== Data tables ===== */
+table.data {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: var(--fs-sm);
+}
+
+table.data thead th {
+    text-align: left;
+    color: var(--text-dim);
+    font-weight: var(--fw-med);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: var(--fs-xs);
+    padding: var(--space-2) var(--space-3);
+    /* box-shadow instead of border-bottom so the border sticks with the header */
+    box-shadow: inset 0 -1px 0 var(--border-strong);
+    position: sticky;
+    top: 0;
+    background: var(--surface-2);
+    cursor: pointer;
+}
+
+/* CSS-drawn triangle instead of a Unicode glyph (▲/▼ render inconsistently — size,
+   baseline, even font-fallback tofu — across platforms/fonts); a border triangle
+   looks identical everywhere. */
+table.data thead th[aria-sort]:not([aria-sort=""])::after {
+    content: "";
+    display: inline-block;
+    margin-left: var(--space-1);
+    vertical-align: middle;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+}
+
+table.data thead th[aria-sort="ascending"]::after {
+    border-bottom: 5px solid var(--accent);
+}
+
+table.data thead th[aria-sort="descending"]::after {
+    border-top: 5px solid var(--accent);
+}
+
+table.data tbody td {
+    padding: var(--space-2) var(--space-3);
+    border-bottom: var(--border-hair);
+    white-space: nowrap;
+}
+
+/* Numeric columns right-align so magnitudes line up on the ones digit */
+table.data th.num,
+table.data td.num {
+    text-align: right;
+}
+
+table.data tbody tr:hover {
+    background: var(--surface-hover);
+    cursor: pointer;
+}
+
+/* Status rail lives on the first cell (border-left on tr is ignored in border-collapse:separate) */
+table.data tbody td:first-child {
+    border-left: var(--rail) solid transparent;
+    padding-left: calc(var(--space-3) - var(--rail));
+}
+
+table.data tbody tr.row-crit td:first-child {
+    border-left-color: var(--crit);
+}
+
+table.data tbody tr.row-warn td:first-child {
+    border-left-color: var(--warn);
+}
+
+/* Device-detail tables scroll within a capped region instead of growing the page.
+   Sticky thead (defined above) keeps headers visible while scrolling. */
+.detail-table-scroll {
+    max-height: 65vh;
+    overflow: auto;
+    border: var(--border-hair);
+    border-radius: var(--radius-lg);
+}
+
+/* MAC administration-scope flag (universal / randomized / multicast) */
+.mac-flag {
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-med);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.mac-flag-universal {
+    color: var(--text-faint);
+}
+
+.mac-flag-local {
+    color: var(--warn);
+}
+
+.mac-flag-multicast {
+    color: var(--accent);
+}
+
+/* ===== Status pills (icon shape + label + color; never color alone) ===== */
+.status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-med);
+    padding: 2px var(--space-2);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+}
+
+.status::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    flex: none;
+}
+
+.status.ok {
+    background: var(--ok-bg);
+    color: var(--ok);
+}
+
+.status.ok::before {
+    background: var(--ok);
+    border-radius: 2px;
+}
+
+/* rounded square */
+.status.warn {
+    background: var(--warn-bg);
+    color: var(--warn);
+}
+
+.status.warn::before {
+    background: var(--warn);
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+/* triangle */
+.status.crit {
+    background: var(--crit-bg);
+    color: var(--crit);
+}
+
+.status.crit::before {
+    background: var(--crit);
+    border-radius: 50%;
+}
+
+/* circle */
+.status.info {
+    background: var(--info-bg);
+    color: var(--info);
+}
+
+.status.info::before {
+    background: var(--info);
+    border-radius: 50%;
+}
+
+/* ===== Management badges (solid = managed, dashed-outline = discovered) ===== */
+.badge-managed {
+    color: var(--on-accent);
+    background: var(--accent);
+    padding: 2px var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-med);
+}
+
+.badge-discovered {
+    color: var(--text-dim);
+    background: transparent;
+    border: 1px dashed var(--text-faint);
+    border-radius: var(--radius-sm);
+    padding: 1px var(--space-2);
+    font-size: var(--fs-xs);
+}
+
+/* ===== Conflicts: grouped/expandable rows (fingerprint → devices) ===== */
+.conflict-groups {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.conflict-group {
+    border: var(--border-hair);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+}
+
+.conflict-group summary {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    cursor: pointer;
+    list-style: none;
+}
+
+.conflict-group summary::-webkit-details-marker {
+    display: none;
+}
+
+.conflict-group summary::before {
+    content: "▸";
+    color: var(--text-dim);
+}
+
+.conflict-group[open] summary::before {
+    content: "▾";
+}
+
+.conflict-summary-main {
+    display: flex;
+    gap: var(--space-3);
+    flex: 1;
+}
+
+.conflict-actions {
+    display: flex;
+    gap: var(--space-2);
+    margin-left: auto;
+}
+
+.conflict-devices {
+    list-style: none;
+    margin: 0;
+    padding: 0 var(--space-3) var(--space-3) calc(var(--space-3) + 1em);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+/* ===== Discovery / source tags ===== */
+.tags {
+    display: inline-flex;
+    gap: var(--space-2);
+    /* nowrap: table cells (e.g. All Hosts' Discovery Sources) must not grow tall when a
+       row has many sources — the row scrolls horizontally with the rest of the table instead. */
+    flex-wrap: nowrap;
+}
+
+.tag {
+    font-size: var(--fs-xs);
+    color: var(--info);
+    background: var(--info-bg);
+    border-radius: var(--radius-sm);
+    padding: 1px var(--space-2);
+    font-family: var(--font-mono);
+}
+
+/* ===== Buttons ===== */
+.btn {
+    font-family: var(--font-sans);
+    font-weight: var(--fw-med);
+    font-size: var(--fs-sm);
+    padding: var(--space-2) var(--space-4);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+    color: var(--text);
+    cursor: pointer;
+    transition: background var(--t-fast), border-color var(--t-fast);
+}
+
+.btn:hover {
+    background: var(--surface-hover);
+    border-color: var(--text-faint);
+}
+
+.btn:disabled {
+    color: var(--text-faint);
+    border-color: var(--border);
+    cursor: not-allowed;
+    background: var(--surface);
+}
+
+.btn-primary {
+    background: var(--accent);
+    color: var(--on-accent);
+    border-color: var(--accent);
+    box-shadow: var(--shadow-sm);
+}
+
+.btn-primary:hover {
+    background: var(--accent-dim);
+    border-color: var(--accent-dim);
+}
+
+.btn-danger {
+    color: var(--crit);
+    border-color: var(--crit);
+    background: transparent;
+}
+
+.btn-danger:hover {
+    background: var(--crit-bg);
+}
+
+.btn-sm {
+    padding: 2px var(--space-3);
+    font-size: var(--fs-xs);
+}
+
+/* ===== Inputs ===== */
+.input, select.input, textarea.input {
+    font-family: var(--font-sans);
+    background: var(--surface);
+    border: var(--border-hair);
+    border-radius: var(--radius-md);
+    color: var(--text);
+    padding: var(--space-3) var(--space-3);
+    font-size: var(--fs-sm);
+    transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+
+.input:focus, select.input:focus, textarea.input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--info-bg);
+}
+
+.input::placeholder {
+    color: var(--text-faint);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin-bottom: var(--space-4);
+}
+
+.field label {
+    font-size: var(--fs-xs);
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.field .help {
+    font-family: var(--font-sans);
+    font-size: var(--fs-xs);
+    color: var(--text-faint);
+}
+
+.field.invalid .input {
+    border-color: var(--crit);
+}
+
+.field .err {
+    color: var(--crit);
+    font-size: var(--fs-xs);
+}
+
+/* ===== Toggle switch ===== */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 34px;
+    height: 18px;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    inset: 0;
+    background: var(--border-strong);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: var(--t-fast);
+}
+
+.slider::before {
+    content: "";
+    position: absolute;
+    height: 14px;
+    width: 14px;
+    left: 2px;
+    top: 2px;
+    background: var(--on-accent);
+    border-radius: 50%;
+    transition: var(--t-fast);
+}
+
+.switch input:checked + .slider {
+    background: var(--accent);
+}
+
+.switch input:checked + .slider::before {
+    transform: translateX(16px);
+    background: var(--on-accent);
+}
+
+.switch input:focus-visible + .slider {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+}
+
+/* ===== Tabs (entity detail) ===== */
+
+.tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border-strong);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-4);
+}
+
+/* .main.data-grid-page already spaces all direct children via its flex `gap`
+   (see .main.data-grid-page .page-head below) — this margin would double up. */
+.main.data-grid-page .tabs {
+    margin-bottom: 0;
+}
+
+.tab {
+    padding: var(--space-3) var(--space-4);
+    color: var(--text-dim);
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-med);
+    background: none;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    font-family: var(--font-sans);
+}
+
+.tab:hover {
+    color: var(--text);
+}
+
+.tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+.tabpanel {
+    padding-top: var(--space-4);
+}
+
+
+/* ===== Entity detail: vertical section nav ===== */
+/* A grouped section rail beside the panel area. Scales to the ~40 device-detail sections
+   (built-in + fact-view) far better than a wrapping horizontal tab bar. Reuses the global
+   nav's visual language (eyebrow group labels + accent-tint active pill). */
+.detail-body {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: var(--space-5);
+    align-items: start;
+}
+
+.section-nav {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    max-height: calc(100vh - var(--space-6));
+    overflow-y: auto;
+}
+
+.section-nav-group {
+    margin-top: var(--space-4);
+}
+
+.section-nav-group:first-child {
+    margin-top: 0;
+}
+
+.section-nav-group > .group-label {
+    display: block;
+    padding: 0 var(--space-3) var(--space-2);
+}
+
+.section-nav-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    width: 100%;
+    text-align: left;
+    padding: var(--space-2) var(--space-3);
+    margin-bottom: 1px;
+    color: var(--text-dim);
+    background: none;
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    font-family: var(--font-sans);
+    font-size: var(--fs-sm);
+}
+
+.section-nav-item:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+}
+
+.section-nav-item.active {
+    color: var(--accent);
+    background: var(--info-bg);
+    font-weight: var(--fw-med);
+}
+
+.section-nav-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.section-nav-count {
+    flex: none;
+    font-size: var(--fs-xs);
+    color: var(--text-dim);
+    background: var(--surface-2);
+    border-radius: var(--radius-sm);
+    padding: 0 var(--space-2);
+}
+
+.section-nav-item.active .section-nav-count {
+    color: var(--accent);
+}
+
+/* The panel column must be allowed to shrink so wide tables scroll inside their own
+   .detail-table-scroll rather than stretching the grid track. */
+.section-panels {
+    min-width: 0;
+}
+
+.section-panels .tabpanel {
+    padding-top: 0;
+}
+
+@media (max-width: 960px) {
+    .detail-body {
+        grid-template-columns: 1fr;
+    }
+
+    .section-nav {
+        position: static;
+        max-height: none;
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+        border-bottom: 1px solid var(--border-strong);
+        padding-bottom: var(--space-3);
+    }
+
+    .section-nav-group {
+        margin-top: 0;
+    }
+
+    .section-nav-group > .group-label {
+        display: none;
+    }
+}
+
+/* ===== Key/value lists (single-instance sections) ===== */
+.kv {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--space-2) var(--space-5);
+    font-size: var(--fs-sm);
+}
+
+.kv dt {
+    color: var(--text-dim);
+}
+
+.kv dd {
+    margin: 0;
+}
+
+/* ===== Identity header (detail pages) ===== */
+
+.identity {
+    background: var(--surface);
+    border: var(--border-hair);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    padding: var(--space-5);
+    margin-bottom: var(--space-5);
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-5);
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
+.identity .title {
+    font-size: var(--fs-xl);
+    font-weight: var(--fw-bold);
+}
+
+.identity .confidence {
+    color: var(--info);
+    font-size: var(--fs-sm);
+}
+
+/* ===== Banners ===== */
+.banner {
+    padding: var(--space-3) var(--space-4);
+    border: var(--border-hair);
+    border-left: var(--rail) solid currentColor;
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-4);
+    font-size: var(--fs-sm);
+}
+
+.banner.stale {
+    color: var(--warn);
+    background: var(--warn-bg);
+}
+
+.banner.error {
+    color: var(--crit);
+    background: var(--crit-bg);
+}
+
+.banner.info {
+    color: var(--info);
+    background: var(--info-bg);
+}
+
+/* ===== Modal ===== */
+.modal-scrim {
+    position: fixed;
+    inset: 0;
+    background: rgba(2, 6, 23, .6);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 8vh;
+    z-index: 100;
+}
+
+.modal {
+    background: var(--surface);
+    border: var(--border-hair);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    width: min(560px, 92vw);
+}
+
+.modal header {
+    padding: var(--space-4);
+    border-bottom: var(--border-hair);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal .body {
+    padding: var(--space-4);
+}
+
+.modal footer {
+    padding: var(--space-4);
+    border-top: var(--border-hair);
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-3);
+}
+
+/* ===== Right drawer ===== */
+/* Use instead of modal when the user needs context from the page behind (e.g. promote while viewing host list) */
+.drawer-scrim {
+    position: fixed;
+    inset: 0;
+    background: rgba(2, 6, 23, .35);
+    z-index: 100;
+}
+
+.drawer {
+
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100vh;
+    width: min(480px, 90vw);
+    background: var(--surface);
+    border-left: var(--border-hair);
+    box-shadow: -6px 0 32px rgba(0, 0, 0, .45);
+    z-index: 101;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.drawer header {
+    padding: var(--space-4);
+    border-bottom: var(--border-hair);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.drawer .body {
+    padding: var(--space-4);
+    flex: 1;
+    overflow-y: auto;
+}
+
+.drawer footer {
+    padding: var(--space-4);
+    border-top: var(--border-hair);
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-3);
+    flex-shrink: 0;
+    background: var(--surface);
+}
+
+/* ===== Merge compare (device merge drawer — side-by-side winner pick) ===== */
+.merge-compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+}
+
+.merge-card {
+    border: var(--border-hair);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    background: var(--surface-2);
+    cursor: pointer;
+    transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+
+.merge-card:hover {
+    border-color: var(--text-faint);
+}
+
+.merge-card.winner {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+}
+
+.merge-card label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-med);
+    color: var(--accent);
+    cursor: pointer;
+    margin-bottom: var(--space-2);
+}
+
+.merge-card .kv {
+    grid-template-columns: max-content 1fr;
+    gap: var(--space-1) var(--space-3);
+    font-size: var(--fs-xs);
+}
+
+.merge-card .role-tag {
+    font-size: var(--fs-xs);
+    color: var(--text-faint);
+}
+
+.merge-card.winner .role-tag {
+    color: var(--accent);
+}
+
+/* Confirm-acknowledge checkbox row (irreversible actions) */
+.confirm-ack {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    font-size: var(--fs-sm);
+    margin-top: var(--space-4);
+}
+
+.confirm-ack input {
+    margin-top: 3px;
+}
+
+/* ===== Multi-select / checkbox table column ===== */
+table.data td.col-select, table.data th.col-select {
+    width: 32px;
+    text-align: center;
+    cursor: default;
+}
+
+table.data th.col-select {
+    padding-right: var(--space-2);
+}
+
+/* ===== Welcome banner (post-bootstrap first-run greeting) ===== */
+.welcome-banner {
+    color: var(--ok);
+    background: var(--ok-bg);
+    border: var(--border-hair);
+    border-left: var(--rail) solid var(--ok);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+    margin-bottom: var(--space-4);
+    font-size: var(--fs-sm);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-4);
+}
+
+.welcome-banner button {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: var(--fs-md);
+}
+
+/* ===== Table wrapper (wide tables) ===== */
+.table-wrap {
+    overflow-x: auto;
+    border: var(--border-hair);
+    border-radius: var(--radius-lg);
+}
+
+.table-wrap table.data {
+    border: none;
+    border-radius: 0;
+    min-width: 900px;
+}
+
+/* Sticky first column keeps the identifying column visible while scrolling wide tables */
+.table-wrap table.data th:first-child,
+.table-wrap table.data td:first-child,
+.grid-scroll table.data th:first-child,
+.grid-scroll table.data td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: inherit;
+}
+
+.table-wrap table.data thead th:first-child,
+.grid-scroll table.data thead th:first-child {
+    background: var(--surface-2);
+    z-index: 2;
+}
+
+.table-wrap table.data tbody tr:hover td:first-child,
+.grid-scroll table.data tbody tr:hover td:first-child {
+    background: var(--surface-hover);
+}
+
+/* When a checkbox select column leads, ALSO pin the identifier (2nd) column so
+   the hostname stays visible — the select cell is only 32px wide (left offset). */
+.table-wrap table.data th.col-select + th,
+.table-wrap table.data td.col-select + td,
+.grid-scroll table.data th.col-select + th,
+.grid-scroll table.data td.col-select + td {
+    position: sticky;
+    left: 32px;
+    z-index: 1;
+    background: inherit;
+}
+
+.table-wrap table.data thead th.col-select + th,
+.grid-scroll table.data thead th.col-select + th {
+    background: var(--surface-2);
+    z-index: 2;
+}
+
+.table-wrap table.data tbody tr:hover td.col-select + td,
+.grid-scroll table.data tbody tr:hover td.col-select + td {
+    background: var(--surface-hover);
+}
+
+/* ===== Grid panel — HTMX target wrapper inside .data-grid-page ===== */
+/* Bridges the flex chain so .grid-scroll can grow to fill remaining height */
+.grid-panel {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* ===== Grid scroll — full-height scrollable table container ===== */
+/* Used inside .data-grid-page to fill remaining height and scroll both axes */
+.grid-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    border: var(--border-hair);
+    border-radius: var(--radius-lg);
+}
+
+/* Outside .data-grid-page (dashboard-style pages stacking several tables), .grid-scroll's
+   flex:1 fill behavior doesn't apply — give it its own bottom margin instead. */
+.main:not(.data-grid-page) .grid-scroll {
+    margin-bottom: var(--space-5);
+}
+
+.grid-scroll table.data {
+    min-width: 900px;
+}
+
+/* ===== Bulk action bar (e.g. Fleet Agents batch-approve) ===== */
+.bulk-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    background: var(--surface-2);
+    border: var(--border-hair);
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-3);
+    margin-bottom: var(--space-3);
+}
+
+/* ===== Filter bar (GitLab-style token/chip search) ===== */
+.filter-bar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    background: var(--surface);
+    border: var(--border-hair);
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-3);
+    min-height: 40px;
+    flex-shrink: 0;
+    cursor: text;
+}
+
+.filter-bar:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--info-bg);
+}
+
+.filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    background: var(--info-bg);
+    border-radius: var(--radius-sm);
+    padding: 2px var(--space-2);
+    font-size: var(--fs-xs);
+    white-space: nowrap;
+}
+
+.filter-chip .chip-label {
+    color: var(--text-dim);
+    font-weight: var(--fw-med);
+}
+
+.filter-chip .chip-value {
+    color: var(--info);
+    font-weight: var(--fw-med);
+}
+
+.filter-chip.chip-q .chip-value {
+    color: var(--text);
+}
+
+.filter-chip button {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    font-size: var(--fs-sm);
+    display: flex;
+    align-items: center;
+    opacity: 0.6;
+}
+
+.filter-chip button:hover {
+    opacity: 1;
+    color: var(--crit);
+}
+
+.filter-input-wrap {
+    flex: 1;
+    min-width: 120px;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.filter-search-icon {
+    color: var(--text-faint);
+    font-size: var(--fs-md);
+    flex-shrink: 0;
+}
+
+.filter-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: var(--fs-sm);
+    padding: 0;
+    min-width: 80px;
+}
+
+.filter-input::placeholder {
+    color: var(--text-faint);
+}
+
+.filter-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background: var(--surface);
+    border: var(--border-hair);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    z-index: 50;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+
+.filter-dropdown-list {
+    list-style: none;
+    margin: 0;
+    padding: var(--space-2) 0;
+}
+
+.filter-dropdown-section {
+    padding: var(--space-1) var(--space-4);
+    font-size: var(--fs-xs);
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-caps);
+    border-bottom: var(--border-hair);
+    margin-bottom: var(--space-1);
+    pointer-events: none;
+}
+
+.filter-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-4);
+    cursor: pointer;
+    font-size: var(--fs-sm);
+    color: var(--text);
+}
+
+.filter-dropdown-item:hover,
+.filter-dropdown-item[aria-selected="true"] {
+    background: var(--surface-hover);
+}
+
+.filter-dropdown-item .item-label {
+    flex: 1;
+}
+
+.filter-dropdown-item .item-meta {
+    color: var(--text-faint);
+    font-size: var(--fs-xs);
+    font-family: var(--font-mono);
+}
+
+/* ===== Sortable table headers ===== */
+table.data th.sortable {
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+table.data th.sortable:hover {
+    color: var(--text);
+}
+
+table.data th.sortable::after {
+    content: " ⇅";
+    color: var(--text-faint);
+    font-size: .75em;
+}
+
+table.data th[aria-sort="ascending"]::after {
+    content: " ▲";
+    color: var(--accent);
+}
+
+table.data th[aria-sort="descending"]::after {
+    content: " ▼";
+    color: var(--accent);
+}
+
+/* ===== Keyset pagination ===== */
+.pagination {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    justify-content: flex-end;
+    margin-top: var(--space-3);
+    font-size: var(--fs-sm);
+    color: var(--text-dim);
+    flex-shrink: 0;
+}
+
+.pagination .page-info {
+    flex: 1;
+}
+
+.pagination select.input {
+    width: auto;
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--fs-sm);
+}
+
+/* ===== Toast ===== */
+.toast {
+    position: fixed;
+    bottom: var(--space-6);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--surface-2);
+    border: var(--border-hair);
+    border-left: var(--rail) solid var(--accent);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    color: var(--text);
+    padding: var(--space-3) var(--space-5);
+    font-size: var(--fs-sm);
+    z-index: 200;
+}
+
+/* ===== Skeleton (loading) ===== */
+.skeleton {
+    background: linear-gradient(90deg, var(--surface) 25%, var(--surface-hover) 50%, var(--surface) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.2s infinite;
+    height: 1em;
+}
+
+@keyframes shimmer {
+    to {
+        background-position: -200% 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .skeleton {
+        animation: none;
+    }
+
+    * {
+        transition: none !important;
+    }
+}
+
+/* ===== Empty / capacity bar ===== */
+.empty {
+    text-align: center;
+    color: var(--text-dim);
+    padding: var(--space-8) var(--space-5);
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-lg);
+}
+
+.bar {
+    display: inline-block;
+    width: 80px;
+    height: 8px;
+    background: var(--surface-2);
+    border: var(--border-hair);
+    border-radius: 999px;
+    vertical-align: middle;
+    overflow: hidden;
+}
+
+.bar > span {
+    display: block;
+    height: 100%;
+    background: var(--accent);
+    border-radius: 999px;
+}
+
+.bar.warn > span {
+    background: var(--warn);
+}
+
+.bar.crit > span {
+    background: var(--crit);
+}
+
+/* ===== Mode toggle (always-available) ===== */
+.mode-toggle {
+    position: fixed;
+    bottom: var(--space-5);
+    right: var(--space-5);
+    z-index: 50;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px) {
+    .app {
+        grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: var(--sidebar-w);
+        transform: translateX(-100%);
+        transition: transform var(--t-base);
+        z-index: 40;
+    }
+
+    .sidebar.open {
+        transform: translateX(0);
+    }
+
+    table.data td:nth-child(n+6), table.data th:nth-child(n+6) {
+        display: none;
+    }
+
+    /* collapse low-priority columns (header + body together); full set on detail */
+    /* On tables with a leading select column the checkbox shifts every column right by one,
+       so keep the first 6 data columns (Status survives) and the trailing action column visible. */
+    table.data.has-select td:nth-child(-n+7), table.data.has-select th:nth-child(-n+7),
+    table.data.has-select td:last-child, table.data.has-select th:last-child {
+        display: table-cell;
+    }
+}
+
+/* ==========================================================================
+   Fleet Dashboard (SCR-003 redesign) — panel & viz components.
+   Ported from planning/ux/mockups/dashboard.html. Reuses existing tokens only;
+   no new color tokens. Do NOT redeclare classes already defined above
+   (.section-title, table.data th.num/td.num, .status, .badge-discovered, .bar,
+   .card, .banner, .welcome-banner, etc.) — this block adds only the new
+   dashboard-specific classes.
+   ========================================================================== */
+
+/* ── Section stack + panel container ─────────────────────────────────── */
+.dash-section {
+    margin-bottom: var(--space-6);
+}
+
+.dash-eyebrow { /* small group label above a section */
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-caps);
+    color: var(--text-faint);
+    margin: 0 0 var(--space-3);
+}
+
+.dash-panel {
+    background: var(--surface);
+    border: var(--border-hair);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    padding: var(--space-5);
+}
+
+.dash-panel.hero {
+    border-left: var(--rail) solid var(--accent);
+}
+
+/* the attention hero */
+.panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-4);
+    margin: 0 0 var(--space-4);
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+
+.panel-head h2 {
+    font-size: var(--fs-lg);
+    margin: 0;
+}
+
+.panel-head .panel-action {
+    font-size: var(--fs-sm);
+    white-space: nowrap;
+}
+
+/* ── Multi-column section layouts (auto-reflow) ─────────────────────── */
+.dash-cols {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: var(--space-5);
+}
+
+/* ── Needs-Attention list (severity-marked, deep-linking rows) ──────── */
+.attn-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.attn-item {
+    display: grid;
+    grid-template-columns: auto auto 1fr auto;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    border: var(--border-hair);
+    border-left: var(--rail) solid var(--border-strong);
+    background: var(--surface);
+    color: inherit;
+}
+
+.attn-item:hover {
+    background: var(--surface-hover);
+    text-decoration: none;
+}
+
+.attn-item.sev-crit {
+    border-left-color: var(--crit);
+}
+
+.attn-item.sev-warn {
+    border-left-color: var(--warn);
+}
+
+.attn-count {
+    font-size: var(--fs-xl);
+    font-weight: var(--fw-bold);
+    font-variant-numeric: tabular-nums;
+    min-width: 2.5ch;
+    text-align: right;
+}
+
+.attn-item.sev-crit .attn-count {
+    color: var(--crit);
+}
+
+.attn-item.sev-warn .attn-count {
+    color: var(--warn);
+}
+
+.attn-label {
+    color: var(--text);
+}
+
+.attn-go {
+    color: var(--text-faint);
+}
+
+.attn-item:hover .attn-go {
+    color: var(--accent);
+}
+
+/* ── Compact totals tiles — deliberately subordinate to the hero counts ─ */
+.stat-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: var(--space-3);
+}
+
+/* .stat is a plain container (NOT an <a>) so caption deep-links can be real anchors without
+   nesting <a> inside <a> (which the browser would auto-close, spilling content out of the tile).
+   The tile's primary target is the .stat-head link wrapping label+value; caption parts are
+   sibling links. */
+.stat {
+    background: var(--surface-2);
+    border: var(--border-hair);
+    border-radius: var(--radius-md);
+    border-left: var(--rail) solid transparent; /* rail baseline */
+    padding: var(--space-3) var(--space-4);
+}
+
+.stat-head {
+    display: block;
+    color: inherit;
+}
+
+.stat-head:hover {
+    text-decoration: none;
+}
+
+.stat-head:hover .value {
+    color: var(--accent);
+}
+
+/* fs-lg (18px) — a real step DOWN from the hero .attn-count (fs-xl 22px) and the old
+   .card .value (fs-2xl 30px): vanity totals must not compete with the attention counts. */
+.stat .value {
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-bold);
+    margin-top: var(--space-1);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Part-to-whole device tiles: Total = Managed + Discovered ────────────
+   Subtle, two-shade violet (accent = managed, accent-dim = discovered) — reuses existing
+   tokens, no new palette. Colour is REINFORCEMENT only: the numbers, labels, and the caption
+   under Total carry the meaning; the bar and rails are aria-hidden decoration.
+   Segment colour rule: NEUTRAL categories (managed/discovered, service types) use the violet
+   family (seg-1 accent, seg-2 accent-dim, seg-3 faint-grey tail); HEALTH ratios (reporting vs
+   quiet) use the status tokens (seg-ok emerald, seg-quiet amber) per the design-system status
+   semantics. No new palette; every fill is an existing token. */
+.pw-bar {
+    display: flex;
+    height: 6px;
+    border-radius: 999px;
+    overflow: hidden;
+    margin-top: var(--space-2);
+    border: var(--border-hair);
+    background: var(--surface);
+}
+
+.pw-bar > span {
+    display: block;
+    height: 100%;
+}
+
+.pw-bar .seg-1 {
+    background: var(--accent);
+}
+
+.pw-bar .seg-2 {
+    background: var(--accent-dim);
+}
+
+.pw-bar .seg-3 {
+    background: var(--text-faint);
+}
+
+.pw-bar .seg-ok {
+    background: var(--ok);
+}
+
+.pw-bar .seg-quiet {
+    background: var(--warn);
+}
+
+.pw-cap {
+    font-size: var(--fs-xs);
+    color: var(--text-faint);
+    margin-top: var(--space-1);
+}
+
+.pw-cap a {
+    color: inherit;
+}
+
+.pw-cap a:hover {
+    color: var(--text);
+}
+
+.pw-cap .sw {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    margin-right: 3px;
+    vertical-align: baseline;
+}
+
+.pw-cap .sw-1 {
+    background: var(--accent);
+}
+
+.pw-cap .sw-2 {
+    background: var(--accent-dim);
+}
+
+.pw-cap .sw-3 {
+    background: var(--text-faint);
+}
+
+.pw-cap .sw-ok {
+    background: var(--ok);
+}
+
+.pw-cap .sw-quiet {
+    background: var(--warn);
+}
+
+/* ── Activity lists ─────────────────────────────────────────────────── */
+.act-list {
+    display: flex;
+    flex-direction: column;
+    font-size: var(--fs-sm);
+}
+
+.act-item {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--border);
+    color: inherit;
+}
+
+.act-item:last-child {
+    border-bottom: none;
+}
+
+.act-item:hover {
+    text-decoration: none;
+    color: var(--text);
+}
+
+.act-main {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.act-when {
+    color: var(--text-faint);
+    white-space: nowrap;
+}
+
+.act-dur {
+    color: var(--text-faint);
+    font-size: var(--fs-xs);
+    margin-left: var(--space-2);
+}
+
+/* ── Device Detail History tab: incident+event timeline ─────────────── */
+.tl {
+    display: flex;
+    flex-direction: column;
+}
+
+.tl-item {
+    display: grid;
+    grid-template-columns: 84px 14px 1fr;
+    gap: var(--space-3);
+}
+
+.tl-when {
+    color: var(--text-faint);
+    font-size: var(--fs-xs);
+    padding-top: 2px;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.tl-rail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.tl-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--text-faint);
+    margin-top: 4px;
+    flex: none;
+}
+
+.tl-dot.crit {
+    background: var(--crit);
+}
+
+.tl-dot.ok {
+    background: var(--ok);
+}
+
+.tl-dot.info {
+    background: var(--info);
+}
+
+.tl-line {
+    width: 1px;
+    flex: 1;
+    background: var(--border);
+    margin-top: 2px;
+}
+
+.tl-item:last-child .tl-line {
+    display: none;
+}
+
+.tl-body {
+    padding-bottom: var(--space-5);
+}
+
+.tl-title {
+    font-size: var(--fs-sm);
+    color: var(--text);
+    margin-bottom: 2px;
+}
+
+.tl-sub {
+    font-size: var(--fs-xs);
+    color: var(--text-faint);
+}
+
+/* ── Composition bars: reuse .bar but let it grow full width in a row ── */
+.compo {
+    display: grid;
+    grid-template-columns: 9rem 1fr 3rem;
+    gap: var(--space-2) var(--space-3);
+    align-items: center;
+    font-size: var(--fs-sm);
+}
+
+.compo .k {
+    color: var(--text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.compo .bar {
+    width: 100%;
+    display: block;
+}
+
+/* overrides the 80px fixed width for full-width composition rows */
+.compo .n {
+    text-align: right;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Inline-SVG sparkline (first-of-kind; no charting library) ──────── */
+.spark {
+    display: block;
+    width: 100%;
+    height: 36px;
+}
+
+.spark polyline {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+}
+
+.spark .area {
+    fill: var(--info-bg); /* fallback for browsers without color-mix() */
+    fill: color-mix(in srgb, var(--accent) 14%, transparent);
+    stroke: none;
+}
+
+.spark.warn polyline {
+    stroke: var(--warn);
+}
+
+.spark.warn .area {
+    fill: var(--warn-bg);
+    fill: color-mix(in srgb, var(--warn) 14%, transparent);
+}
+
+/* ── Collection / trend summary stat pair ───────────────────────────── */
+.coll-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+    gap: var(--space-4);
+    margin-bottom: var(--space-4);
+}
+
+.coll-stats .value {
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-bold);
+    font-variant-numeric: tabular-nums;
+}
+
+.coll-stats .value.warn {
+    color: var(--warn);
+}
+
+.coll-stats .value.crit {
+    color: var(--crit);
+}
+
+/* ===== Topology graphs (D3) — Subnets page Topology (L3) + Physical/L2 tabs ===== */
+/* See docs/plans/d3-l2-l3.md — one renderer (topology-graph.js), two data shapes. */
+
+.tgraph-container {
+    width: 100%;
+    min-height: 520px;
+}
+
+.topology-svg {
+    width: 100%;
+    display: block;
+    cursor: grab;
+}
+
+.topology-svg:active {
+    cursor: grabbing;
+}
+
+.tgraph-node {
+    cursor: pointer;
+    transition: opacity var(--t-base);
+}
+
+.tgraph-edge {
+    transition: opacity var(--t-base);
+}
+
+.tgraph-node.dimmed,
+.tgraph-edge.dimmed {
+    opacity: 0.15;
+}
+
+.tgraph-label {
+    font-family: var(--font-sans);
+    font-weight: var(--fw-med);
+}

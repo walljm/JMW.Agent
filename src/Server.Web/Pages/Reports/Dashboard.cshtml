@@ -1,0 +1,75 @@
+@page "/dashboard"
+@using JMW.Discovery.Server.Pages.Reports
+@model JMW.Discovery.Server.Pages.Reports.DashboardModel
+@{
+    ViewData["Title"] = "Fleet Dashboard — JMW Discovery";
+    ViewData["ActiveNav"] = "dashboard";
+
+    AgentHealthVm? health = Model.AgentHealth;
+    bool showTrustBanner = health is not null && (health.Offline > 0 || health.Stale > 0);
+}
+<main class="main">
+    <div class="page-head">
+        <h1>Fleet Dashboard</h1>
+    </div>
+
+    @if (showTrustBanner && health is not null)
+    {
+        string bannerClass = health.Offline > 0 ? "banner error" : "banner stale";
+        string? offlineName = health.Agents.FirstOrDefault(a => a.Liveness == "offline")?.Hostname;
+        string? staleName = health.Agents.FirstOrDefault(a => a.Liveness == "stale")?.Hostname;
+
+        List<string> parts = [];
+        if (health.Offline > 0)
+        {
+            string label = $"{health.Offline} agent{(health.Offline == 1 ? "" : "s")} offline";
+            parts.Add(offlineName is null ? label : $"{label} ({offlineName})");
+        }
+
+        if (health.Stale > 0)
+        {
+            string label = $"{health.Stale} agent{(health.Stale == 1 ? "" : "s")} stale";
+            parts.Add(staleName is null ? label : $"{label} ({staleName})");
+        }
+
+        string message = string.Join(" and ", parts) + " — collection from those zones may be incomplete.";
+
+        <div class="@bannerClass" role="status">
+            @message
+            @if (User.IsInRole("admin"))
+            {
+                <a href="/fleet/agents">Review agents →</a>
+            }
+        </div>
+    }
+
+    @* _AttentionPanel renders its own .dash-section root so it can hide (and collapse its box)
+       entirely when the fleet is all-clear, while still polling to reappear when an item arises. *@
+    <partial name="_AttentionPanel" model="Model"/>
+
+    <div class="dash-section">
+        <p class="dash-eyebrow">Fleet health</p>
+        <div class="dash-cols">
+            <partial name="_AgentsPanel" model="Model"/>
+            <partial name="_CollectionPanel" model="Model"/>
+        </div>
+    </div>
+
+    <div class="dash-section">
+        <p class="dash-eyebrow">Network</p>
+        <partial name="_TotalsPanel" model="Model"/>
+        <div class="dash-cols">
+            <partial name="_CompositionPanel" model="Model"/>
+            <partial name="_TrendPanel" model="Model"/>
+        </div>
+    </div>
+
+    <div class="dash-section">
+        <p class="dash-eyebrow">Recent activity</p>
+        <div class="dash-cols" style="margin-bottom:var(--space-5)">
+            <partial name="_NewDevicesPanel" model="Model"/>
+            <partial name="_NotSeenPanel" model="Model"/>
+        </div>
+        <partial name="_ChangesPanel" model="Model"/>
+    </div>
+</main>

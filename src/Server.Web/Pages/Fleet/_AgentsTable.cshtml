@@ -1,0 +1,133 @@
+@using JMW.Discovery.Server.Admin
+@model JMW.Discovery.Server.Pages.Fleet.AgentsModel
+
+<div id="agents-table" class="grid-panel">
+    @if (Model.Agents.Count == 0)
+    {
+        <div class="empty">No agents match the current filters.</div>
+    }
+    else
+    {
+        <div class="bulk-bar" id="bulkBar" hidden>
+            <span id="bulkCount"></span>
+            <button class="btn btn-sm btn-primary" onclick="openBulkApprove()">Approve selected</button>
+        </div>
+
+        <div class="grid-scroll">
+            <table class="data">
+                <thead>
+                <tr>
+                    <th style="cursor:default">
+                        <input type="checkbox" id="selectAllPending" aria-label="Select all pending agents"
+                               onchange="toggleSelectAllPending(this)"/>
+                    </th>
+                    <th style="cursor:default">Hostname</th>
+                    <th style="cursor:default">IP</th>
+                    <th style="cursor:default">OS</th>
+                    <th style="cursor:default">Arch</th>
+                    <th sort-key="status" sort-grid="Model.Grid" sort-target="#agents-table">Status</th>
+                    <th style="cursor:default">Liveness</th>
+                    <th style="cursor:default">Version</th>
+                    <th style="cursor:default">Zone</th>
+                    <th sort-key="created_at" sort-grid="Model.Grid" sort-target="#agents-table">Registered</th>
+                    <th></th>
+                </tr>
+                </thead>
+                <tbody id="agents-tbody">
+                @foreach (AgentListItem agent in Model.Agents)
+                {
+                    string rowCls = agent.Liveness switch
+                    {
+                        "offline" => "row-crit",
+                        "stale" => "row-warn",
+                        _ => "",
+                    };
+                    <tr id="agent-row-@agent.AgentId" class="@rowCls">
+                        <td>
+                            @if (agent.Status == "pending")
+                            {
+                                <input type="checkbox" class="js-pending-check" value="@agent.AgentId"
+                                       data-hostname="@agent.Hostname"
+                                       aria-label="Select @agent.Hostname" onchange="updateBulkBar()"/>
+                            }
+                        </td>
+                        <td>
+                            @if (agent.DeviceId.HasValue)
+                            {
+                                <a href="/devices/@agent.DeviceId?from=agents">@agent.Hostname</a>
+                            }
+                            else
+                            {
+                                @agent.Hostname
+                            }
+                        </td>
+                        <td class="mono">@(agent.IpAddress ?? "—")</td>
+                        <td>@(agent.Os ?? "—")</td>
+                        <td class="mono">@(agent.Arch ?? "—")</td>
+                        <td>
+                            @{
+                                (string cls, string label) = agent.Status switch
+                                {
+                                    "approved" => ("ok", "approved"),
+                                    "disabled" => ("crit", "disabled"),
+                                    _ => ("warn", "pending"),
+                                };
+                            }
+                            <span class="status approval-status @cls">@label</span>
+                        </td>
+                        <td>
+                            @{
+                                (string liveCls, string liveLabel) = agent.Liveness switch
+                                {
+                                    "online" => ("ok", "Online"),
+                                    "stale" => ("warn", "Stale"),
+                                    _ => ("crit", "Offline"),
+                                };
+                            }
+                            <span class="status liveness-status @liveCls">@liveLabel</span>
+                            @if (agent.LastHeartbeat.HasValue)
+                            {
+                                <span class="text-dim"> · @ViewFormat.RelativeTime(agent.LastHeartbeat.Value)</span>
+                            }
+                        </td>
+                        <td>@(agent.Version ?? "—")</td>
+                        <td>@(agent.Zone ?? "—")</td>
+                        <td><time data-utc="@ViewFormat.IsoUtc(agent.CreatedAt)">@agent.CreatedAt.ToString("yyyy-MM-dd HH:mm") UTC</time></td>
+                        <td style="display:flex;gap:var(--space-2)">
+                            <a class="btn btn-sm" href="/fleet/agents/@agent.AgentId">Configure</a>
+                            @if (agent.Status == "pending")
+                            {
+                                <button class="btn btn-sm btn-primary js-approve-btn"
+                                        data-agent-id="@agent.AgentId" data-hostname="@agent.Hostname">
+                                    Approve
+                                </button>
+                            }
+                            @if (agent.Status == "approved")
+                            {
+                                <button class="btn btn-sm js-disable-btn"
+                                        data-agent-id="@agent.AgentId" data-hostname="@agent.Hostname">
+                                    Disable
+                                </button>
+                            }
+                            else if (agent.Status == "disabled")
+                            {
+                                <button class="btn btn-sm js-enable-btn"
+                                        data-agent-id="@agent.AgentId" data-hostname="@agent.Hostname">
+                                    Enable
+                                </button>
+                            }
+                            <button class="btn btn-sm js-delete-btn"
+                                    style="color:var(--crit)"
+                                    data-agent-id="@agent.AgentId" data-hostname="@agent.Hostname">
+                                Deregister
+                            </button>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+
+        <partial name="_Pagination" model="Model.Pagination"/>
+    }
+</div>

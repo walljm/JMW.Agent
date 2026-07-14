@@ -1,0 +1,48 @@
+@page "/changes"
+@model JMW.Discovery.Server.Pages.Reports.ChangesModel
+@{
+    ViewData["Title"] = "Change Feed — JMW Discovery";
+    ViewData["ActiveNav"] = "changes";
+
+    var activeFilters = new Dictionary<string, string>(StringComparer.Ordinal);
+    if (!string.IsNullOrEmpty(Model.Since)) activeFilters["since"] = Model.Since;
+
+    // deviceId is a context param (set programmatically from device detail page),
+    // not a user-facing filter — pass it as a hidden context through the fragment URL.
+    string fragmentUrl = string.IsNullOrEmpty(Model.DeviceId)
+        ? "/changes?fragment=1"
+        : "/changes?fragment=1&deviceId=" + Uri.EscapeDataString(Model.DeviceId);
+
+    var gridModel = new DataGridModel
+    {
+        Filters =
+        [
+            new FilterSpec(
+                "since",
+                "Time range",
+                [
+                    new FilterValue("1h", "Last hour"),
+                    new FilterValue("6h", "Last 6 hours"),
+                    new FilterValue("24h", "Last 24 hours"),
+                    new FilterValue("7d", "Last 7 days"),
+                ]
+            ),
+        ],
+        ActiveFilters = activeFilters,
+        Q = "",
+        NextCursor = Model.NextCursor,
+        FragmentUrl = fragmentUrl,
+        HtmxTarget = "#changes-table",
+        PageUrl = "/changes",
+    };
+}
+<main class="main data-grid-page">
+    <div class="page-head">
+        <h1>Change Feed</h1>
+        <span class="meta">@Model.Changes.Count changes shown</span>
+    </div>
+
+    <partial name="_FilterBar" model="gridModel"/>
+
+    <partial name="_ChangesTable" model="Model"/>
+</main>

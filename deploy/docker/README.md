@@ -1,139 +1,133 @@
-# Deploying jmw-agent to an ASUSTOR NAS (Docker)
+# Deploying the agent via Docker
 
-Tested on ADM 4.x, x86_64 models (AS6810T, AS5304T). For ARM Lockerstor/Drivestor
-models, swap `linux/amd64` for `linux/arm64` in the build command and image tag.
+For devices where a native binary install isn't practical (NAS appliances,
+anything without a package manager or systemd) — run the agent as a
+container instead. Native installs (systemd service running the
+self-contained binary from a GitHub release) remain the default for
+regular Linux/macOS/Windows hosts; see `AGENTS.md` → "Agent".
 
-The agent uses the `JMW_HOST_ROOT` environment variable so a single binary works
-both natively (env unset) and inside a container observing the host (env set
-to the bind-mount point — `/host` in this image). Without this prefix the agent
-would report container internals (overlayfs, container hostname, etc.) instead
-of the actual NAS.
+## Why this looks different from a typical container
 
-## 1. Install Docker on the NAS
+The agent's job is to *observe the host it's running on* — hostname, OS,
+disks, processes, listening ports. Docker isolates all of those by default,
+so a naively-run container reports its own internal identity instead of the
+host's. The flags below undo that isolation deliberately, on purpose, for
+this one container. There is no code-level "host root" override in the
+agent — every flag here is a standard Docker mechanism.
 
-ADM → App Central → install **Portainer** (pulls in the Docker engine
-dependency). Enable SSH under Settings → Services if you want to manage from
-the command line.
+| What | Why it's wrong by default | Fix |
+|---|---|---|
+| Hostname | Container gets its own UTS namespace | `--uts=host` |
+| Listening ports / processes | Container gets its own network + PID namespace | `--network=host --pid=host` |
+| `/etc/os-release` | Baked into the base image, not the host's | bind-mount over the same path |
+| Docker container inventory | Agent looks for `/var/run/docker.sock` | bind-mount over the same path |
+| SMART disk data | `smartctl` needs raw device access | `--privileged`, or one `--device=/dev/sdX` per disk |
+| CPU / memory / uptime / `/sys` hardware facts | Already work correctly, no flag needed | procfs counters and sysfs aren't mount-namespaced by Docker |
 
-## 2. Build the image
+**Filesystem capacity is the one real limitation.** Mount namespaces
+*are* isolated (unlike UTS/PID/network, Docker has no `--mount=host`),
+so the agent's filesystem collector (`DriveInfo.GetDrives()`) only sees
+mounts that exist inside the container. To report capacity for a NAS
+volume, bind-mount it at the same path it has on the host, e.g.
+`-v /volume1:/volume1:ro`. Any mount you don't bind-mount this way simply
+won't show up — there's no way around that with a container.
 
-From the repo root on your dev machine:
+## 1. Get the image
+
+CI publishes a multi-arch (`linux/amd64` + `linux/arm64`) image to Docker Hub
+on every tagged release:
+
+```
+walljm/jmw-agent:latest
+walljm/jmw-agent:vX.Y.Z
+```
+
+`docker pull walljm/jmw-agent:latest` on the device is normally all you need.
+To build it yourself instead:
 
 ```sh
 docker buildx build \
-  --platform=linux/amd64 \
+  --platform linux/amd64,linux/arm64 \
   -f deploy/docker/Dockerfile.agent \
-  --build-arg VERSION="$(git describe --tags --always --dirty)" \
   -t walljm/jmw-agent:latest \
-  --push .
+  --push \
+  .
 ```
 
-(Substitute your own registry. For ARM NAS units use `--platform=linux/arm64`.)
-The `VERSION` build-arg is stamped into the binary and shown in the server UI;
-omitting it makes the agent report `dev`. The `scripts/deploy-agent.sh --publish`
-helper wraps this command, builds multi-arch (amd64 + arm64), tags both
-`latest` and the current git-describe (e.g. `v1.3.0`), and pushes to Docker
-Hub. Override the repo with `DOCKER_HUB_REPO=...`.
+(Drop `--push` and use `--load` with a single `--platform` to build locally
+without a registry.)
 
-## 3. Stage the agent config on the NAS
-
-SSH into the NAS and create a config directory:
+## 2. Stage the agent config
 
 ```sh
-sudo mkdir -p /volume1/jmw-agent/etc /volume1/jmw-agent/data
-sudo chown -R 65532:65532 /volume1/jmw-agent
-sudo tee /volume1/jmw-agent/etc/agent.toml <<'EOF'
-server_url    = "https://192.168.1.54:8443"
-psk           = "<your PSK>"
-pinned_sha    = "<server cert SHA-256>"
-id_file       = "/data/agent.id"
-interval_secs = 30
+sudo mkdir -p /opt/jmw-agent/etc /opt/jmw-agent/data
+sudo tee /opt/jmw-agent/etc/agent.json >/dev/null <<'EOF'
+{
+  "server_url": "https://monitor.example.com",
+  "name": "nas-01",
+  "zone": "10.0.0.0/8",
+  "interval": 30
+}
 EOF
 ```
 
-The container runs as the `nonroot` user (UID 65532), hence the `chown`.
+`server_url` must be `https://` (see `AGENTS.md` → "Agent"). `/opt/jmw-agent/data`
+is where `agent.json`'s implicit state directory (`/var/lib/jmw-agent` inside
+the container, see step 3) persists the generated agent ID and API key —
+losing it means the agent re-registers as a brand-new agent on next start.
 
-## 4. Run the container
+## 3. Run the container
 
 ```sh
 docker run -d \
   --name jmw-agent \
   --restart=always \
+  --uts=host \
   --network=host \
   --pid=host \
   --privileged \
-  -v /:/host:ro \
-  -v /volume1/jmw-agent/data:/data \
-  -v /volume1/jmw-agent/etc:/etc/jmw-agent:ro \
+  -v /etc/os-release:/etc/os-release:ro \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  -v /opt/jmw-agent/etc/agent.json:/etc/jmw-agent/agent.json:ro \
+  -v /opt/jmw-agent/data:/var/lib/jmw-agent \
   walljm/jmw-agent:latest
 ```
 
-Flag rationale:
+Add one `-v /volumeN:/volumeN:ro` per host mount point you want capacity
+reported for (see the limitation above). If you'd rather not grant
+`--privileged`, drop it and add one `--device=/dev/sdX` per disk instead —
+`smartctl` needs raw access to the specific device nodes, nothing broader.
 
-- `--network=host` — agent sees the NAS's real interfaces and hostname (used
-  by REQ-038 ICMP probes and by network inventory). Without it the agent's
-  socket-table scan falls back to parsing `/host/proc/1/net/{tcp,tcp6,udp,udp6}`,
-  which still surfaces host listening ports but without process names/PIDs.
-- `--pid=host` — needed for `who`, `ps`, and the listening-port collector to
-  see host processes. Drop this if you only care about the metrics under
-  `--network=host` + `JMW_HOST_ROOT`.
-- `--privileged` — required for `smartctl` to open raw disk devices
-  (`/dev/sda`, etc.) and read SMART data. If you prefer a tighter grant, omit
-  `--privileged` and instead pass one `--device=/dev/sdX` flag per disk.
-- `-v /:/host:ro` — host filesystem mounted read-only; the agent reads `/proc`,
-  `/sys`, `/etc/os-release`, `/etc/hostname`, and `statfs`'s mountpoints
-  through this prefix.
-- `-v /volume1/jmw-agent/data:/data` — persists the agent's identity file so
-  re-creating the container does not register a new agent.
+## 4. Verify
 
-## 5. Verify
+The agent should appear as **pending** in the server UI. Approve it, then confirm:
 
-The new agent should appear as **pending** in the server UI at
-`https://192.168.1.54:8443`. Approve it. Confirm:
-
-- `Hostname` is the NAS's name (set under Settings → General → Server Name in
-  ADM), not a container ID.
-- `OS / Distro` reads "ADM" or the underlying Linux distro string from the
-  NAS's `/etc/os-release`.
-- Disks show `/volume1`, `/volume2`, etc. with the NAS's actual capacity.
-- `Virtualization` is `none` (the dockerenv check is bypassed when
-  `JMW_HOST_ROOT` is set).
-
-Reboot the NAS once and confirm the container restarts automatically and
-keeps the same agent ID.
-
-## What this deployment does NOT give you
-
-- **Survival across major ADM upgrades**: ADM 4 → 5 has historically required
-  Docker reinstalls. You'll need to redo step 1 if that happens.
-- **Docker container inventory**: the agent's Docker collector reads
-  `/var/run/docker.sock` from inside its own filesystem. To inventory the
-  containers running on the NAS, also bind-mount the socket:
-  `-v /var/run/docker.sock:/var/run/docker.sock:ro`.
+- Hostname matches the device's real hostname, not a container ID.
+- OS/distro reads the device's real `/etc/os-release`, not the image's Debian base.
+- Disks/mounts show the device's real capacity for anything you bind-mounted in step 3.
+- `docker restart jmw-agent` keeps the same agent ID (state volume persisted).
 
 ## Auto-updating the agent
 
-The native agent has a built-in self-update mechanism (downloads a signed new
-binary from the server, verifies SHA-256 plus Ed25519 signature, and re-execs in
-place). Inside Docker, however, the binary lives on the container's read-only
-image layer, so containerized agents skip native self-update. Two options:
+The native binary has a built-in self-update (server offers a signed newer
+build over the heartbeat, agent verifies SHA-256 + signature and re-execs in
+place — see `AGENTS.md` → "Agent self-update"). That mechanism replaces a
+file on disk; inside a container the binary lives in the image's read-only
+layers, so it doesn't apply here, and containerized agents will not offer
+themselves an update.
 
-1. **Watchtower (recommended for Docker)**: run
-   [`containrrr/watchtower`](https://containrrr.dev/watchtower/) on the NAS
-  to pull `walljm/jmw-agent:latest` on a schedule. Watchtower handles the
-  actual swap by recreating the container.
+Use [Watchtower](https://containrrr.dev/watchtower/) instead — it polls the
+registry and recreates the container when a newer `walljm/jmw-agent:latest`
+is pushed:
 
-   ```sh
-   docker run -d --name watchtower --restart=always \
-     -v /var/run/docker.sock:/var/run/docker.sock \
-     containrrr/watchtower --interval 3600 jmw-agent
-   ```
+```sh
+docker run -d \
+  --name watchtower \
+  --restart=always \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  containrrr/watchtower --interval 3600 jmw-agent
+```
 
-2. **Rebuild + redeploy manually**: re-run `scripts/deploy-agent.sh --publish`
-   on your dev machine to push a new image tag, then `docker pull
-   walljm/jmw-agent:latest && docker rm -f jmw-agent` on the NAS and re-run
-   the `docker run` command from step 4.
-
-For Linux/macOS bare-metal installs and Windows installs, configure
-`update_public_key` in `agent.toml`; the agent updates itself when the server
-publishes a signed new release.
+Watchtower recreates the container from the new image using the same
+`docker run` flags Docker remembers from the original run — no need to
+reissue the command above after an update.

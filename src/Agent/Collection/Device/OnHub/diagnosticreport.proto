@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package diagnosticreport;
+
+option csharp_namespace = "JMW.Discovery.Agent.Collection.Device.OnHub.Proto";
+
+// Google Wifi / Nest Wifi (OnHub) local diagnostic-report protobuf. Ported from
+// ../googlewifionhub with the field corrections verified against a live Gen1
+// capture (fw 14150.376.32): field 15 is bytes (a gzipped nested report), not a
+// repeated string; fields 19 and 21 were missing. We consume fields 2, 5 (indirectly
+// — see below), 8, 9, 12, 16, and 21; the full shape is kept so the report unpacks
+// cleanly and completely.
+//
+// Verified against a live capture (2026-07-13) that fields 5 and 8 are NOT unused —
+// both carry real structured router config as text-format-in-a-string, same as
+// field 16:
+//   - field 5 (networkConfig): local_network/wireless_network/wan/guest_network/
+//     mesh_network/qos_policy/measured_wan_speed/portal_network, and a `group{id,
+//     root{ip_address}, child{station_id,ip_address}}` block — mesh-point membership,
+//     DUPLICATED in field 16 under the different name `mesh_group{id,node_info{id,
+//     ip_address}}` (same group id/station_ids/IPs verified live). We consume the
+//     field-16 form (OnHubStations.MeshNodeStationIds) since it's already parsed
+//     there; field 5 itself is not otherwise consumed.
+//   - field 8 (wanInfo): mostly WAN/mesh-radio config, plus `mesh_node_info{bssid,
+//     shmac}` — shmac is a station_id, bssid is the ONLY genuinely unobscured MAC
+//     anywhere in the report. Consumed by OnHubStations.MeshApBssidByStationId.
+// Field 2 (files) carries /proc/net/arp as a raw File — NOT field 9's commandOutputs
+// (a live capture had it only here) — consumed by OnHubStations.ArpByIp.
+// Field 12 (stationIdMappings) maps each obscured MAC (same obscuring scheme as
+// field 9's mac_address) directly to the unmasked station_id used in field 16,
+// bypassing the IP+OUI reconstruction join — consumed by
+// OnHubStations.StationIdByObscuredMac.
+
+message File {
+    string path = 1;
+    bytes content = 2;
+}
+
+message FileLength {
+    string path = 1;
+    int32 length = 2;
+}
+
+message CommandOutput {
+    string command = 1;
+    string output = 2;
+    int32 statusCode = 3;
+}
+
+// Maps an unmasked station_id (matches field 16's station_state_update.station_info.station_id)
+// to its obscured MAC (matches field 9's mac_address obscuring scheme: real OUI + masked suffix + '*').
+message StationIdMapping {
+    string stationId = 1;
+    string obscuredMac = 2;
+}
+
+message DiagnosticReport {
+    string version = 1;
+    repeated File files = 2;
+    string stormVersion = 3;
+    string whirlwindVersion = 4;   // platform string, identical across units of a model
+    string networkConfig = 5;      // router config text-format-in-a-string: local_network,
+                                    // wireless_network, wan, guest_network, mesh_network,
+                                    // qos_policy, group{...} (mesh membership, see file header)
+    repeated FileLength fileLengths = 7;
+    string wanInfo = 8;             // WAN/mesh-radio config + mesh_node_info{bssid,shmac} (see file header)
+    repeated CommandOutput commandOutputs = 9;   // carries ap-show --network_runtime_state, mpp/mpath dump
+    string infoJSON = 10;
+    int32 unknown1 = 11;
+    repeated StationIdMapping stationIdMappings = 12;
+    int32 unixTime = 13;
+    bytes nestedReport = 15;       // gzipped; ~3KB in one capture, decompresses to another
+                                    // file-listing-shaped blob (its own /etc/lsb-release,
+                                    // /etc/resolv.conf, /proc/net/arp) — not yet fully understood
+                                    // or consumed
+    string networkState = 16;      // text-format-in-a-string: station_state_updates,
+                                    // mesh_group, dhcp_reservations, upnp_attribute (see OnHubStations)
+    string state = 17;
+    string unknownString2 = 18;
+    bytes unknown19 = 19;          // empty in the sample
+    string deviceId = 21;          // clean 128-bit hex per-unit id — our fingerprint
+}

@@ -1,0 +1,18 @@
+@page "/interfaces"
+@model JMW.Discovery.Server.Pages.Reports.InterfacesModel
+@{
+    ViewData["Title"] = "Interfaces — JMW Discovery";
+    ViewData["ActiveNav"] = "inventory";
+}
+<main class="main data-grid-page">
+    <div class="page-head">
+        <h1>Interfaces</h1>
+        <span class="meta">@Model.Interfaces.Count interfaces shown</span>
+    </div>
+
+    <partial name="_HubTabs" model="@(new HubTabsModel(HubTabSets.Inventory, "/interfaces", "Inventory views"))"/>
+
+    <partial name="_FilterBar" model="Model.FilterBar"/>
+
+    <partial name="_InterfacesTable" model="Model"/>
+</main>

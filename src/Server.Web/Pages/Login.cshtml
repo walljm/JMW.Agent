@@ -1,0 +1,130 @@
+@page
+@model LoginModel
+@{
+    Layout = null;
+    ViewData["Title"] = "Sign in — JMW Discovery";
+    bool showPasswordFormOpen = Model.ErrorMessage is not null && !Model.IsOidcError;
+
+    async Task RenderCredentialsFormAsync()
+    {
+        <div class="field">
+            <label for="u">Username</label>
+            <input class="input" id="u" name="username" asp-for="Username" autofocus>
+        </div>
+        <div class="field">
+            <label for="p">Password</label>
+            <input class="input" id="p" name="password" asp-for="Password" type="password">
+        </div>
+        @if (Model.ErrorMessage is not null && !Model.IsOidcError)
+        {
+            <div class="banner error" role="alert">@Model.ErrorMessage</div>
+        }
+        <button class="btn btn-primary" type="submit" style="width:100%">Sign in</button>
+    }
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@ViewData["Title"]</title>
+    <link rel="stylesheet" href="/css/design-system.css">
+    <style>
+        .login-panel {
+            background: var(--surface);
+            border: var(--border-hair);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-md);
+            padding: var(--space-6);
+        }
+
+        .login-divider {
+            display: flex;
+            align-items: center;
+            gap: var(--space-4);
+            margin: var(--space-5) 0;
+            color: var(--text-faint);
+            font-size: var(--fs-xs);
+            text-transform: uppercase;
+            letter-spacing: var(--tracking-caps);
+        }
+
+        .login-divider::before, .login-divider::after {
+            content: "";
+            flex: 1;
+            height: 1px;
+            background: var(--border);
+        }
+
+        .password-fallback summary {
+            list-style: none;
+            text-align: center;
+            font-size: var(--fs-sm);
+            color: var(--text-dim);
+            cursor: pointer;
+        }
+
+        .password-fallback summary:hover {
+            color: var(--accent);
+        }
+
+        .password-fallback summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .password-fallback[open] summary {
+            margin-bottom: var(--space-5);
+        }
+
+        .password-fallback-form {
+            padding-top: var(--space-5);
+            border-top: var(--border-hair);
+        }
+    </style>
+</head>
+<body class="dark-mode">
+<main style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:var(--space-6)">
+    <div style="width:360px">
+        <div style="text-align:center;margin-bottom:var(--space-6)">
+            <div style="font-size:var(--fs-xl);color:var(--accent);font-weight:var(--fw-bold)">◆ JMW Facts</div>
+            <div class="text-dim" style="font-size:var(--fs-sm);margin-top:var(--space-2)">Sign in to continue</div>
+        </div>
+
+        <div class="login-panel">
+            @if (Model.OidcEnabled)
+            {
+                @if (Model.ErrorMessage is not null && Model.IsOidcError)
+                {
+                    <div class="banner error" role="alert" style="margin-bottom:var(--space-5)">@Model.ErrorMessage</div>
+                }
+                <a class="btn btn-primary" style="width:100%;text-align:center;box-sizing:border-box;display:block" href="/auth/oidc/login">
+                    Sign in with SSO
+                </a>
+
+                <div class="login-divider">or</div>
+
+                <details class="password-fallback" open="@(showPasswordFormOpen ? "open" : null)">
+                    <summary>Sign in with a password instead</summary>
+                    <form method="post" class="password-fallback-form">
+                        @Html.AntiForgeryToken()
+                        @{ await RenderCredentialsFormAsync(); }
+                    </form>
+                </details>
+            }
+            else
+            {
+                <form method="post">
+                    @Html.AntiForgeryToken()
+                    @{ await RenderCredentialsFormAsync(); }
+                </form>
+            }
+        </div>
+
+        <p class="meta prose text-faint" style="text-align:center;margin-top:var(--space-5);font-size:var(--fs-xs)">Server-side session · single admin + read-only viewer</p>
+    </div>
+</main>
+<button class="btn mode-toggle" aria-label="Toggle light/dark mode"
+        onclick="document.body.classList.toggle('dark-mode');document.body.classList.toggle('light-mode')">◐ Mode
+</button>
+</body>
+</html>

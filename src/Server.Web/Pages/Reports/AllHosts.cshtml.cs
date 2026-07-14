@@ -1,0 +1,165 @@
+using JMW.Discovery.Server.Auth;
+using JMW.Discovery.Server.Reporting;
+using JMW.Discovery.Server.UI;
+
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
+using Npgsql;
+
+namespace JMW.Discovery.Server.Pages.Reports;
+
+[Authorize(Policy = RbacPolicies.Authenticated)]
+public sealed class AllHostsModel : ReportPageModel
+{
+    private readonly ILogger<AllHostsModel> _logger;
+    private readonly NpgsqlDataSource _db;
+
+    public AllHostsModel(NpgsqlDataSource db, ILogger<AllHostsModel> logger)
+    {
+        _db = db;
+        _logger = logger;
+    }
+
+    public IReadOnlyList<HostListItem> Hosts { get; private set; } = [];
+    public string? NextCursor { get; private set; }
+    public string? PrevCursor { get; private set; }
+    public GridState Grid { get; private set; } = null!;
+    public DataGridModel FilterBar { get; private set; } = null!;
+    public PaginationLinks Pagination { get; private set; } = null!;
+
+    [BindProperty(SupportsGet = true)]
+    public string? After { get; set; }
+
+    [BindProperty(SupportsGet = true)]
+    public string? Status { get; set; }
+
+    [BindProperty(SupportsGet = true)]
+    public string? Source { get; set; }
+
+    [BindProperty(SupportsGet = true)]
+    public string? Os { get; set; }
+
+    [BindProperty(SupportsGet = true)]
+    public string? Vendor { get; set; }
+
+    [BindProperty(SupportsGet = true)]
+    public string? Q { get; set; }
+
+    [BindProperty(SupportsGet = true)]
+    public string? Sort { get; set; }
+
+    [BindProperty(SupportsGet = true)]
+    public string? Dir { get; set; }
+
+    /// <summary>The active sort column, resolved to the default when unset/invalid.</summary>
+    public string ActiveSort => HostsApi.IsSortable(Sort) ? Sort! : HostsApi.DefaultSort;
+
+    /// <summary>The active direction ("asc"/"desc"), defaulting to ascending.</summary>
+    public string ActiveDir => string.Equals(Dir, "desc", StringComparison.OrdinalIgnoreCase) ? "desc" : "asc";
+
+    public async Task<IActionResult> OnGetAsync(CancellationToken ct)
+    {
+        PrevCursor = string.IsNullOrEmpty(After) ? null : string.Empty;
+
+        string? afterSortKey = null;
+        string? afterDeviceId = null;
+        if (!string.IsNullOrEmpty(After)
+         && KeysetCursor.TryDecode(After, out string sortKey, out string deviceId))
+        {
+            afterSortKey = sortKey;
+            afterDeviceId = deviceId;
+        }
+
+        IActionResult result = await RunReportLoadAsync(
+            async () =>
+            {
+                (IReadOnlyList<HostListItem> items, string? next) = await HostsApi.QueryAsync(
+                    _db,
+                    Status,
+                    Source,
+                    Os,
+                    Vendor,
+                    Q,
+                    afterSortKey,
+                    afterDeviceId,
+                    HostsApi.DefaultLimit,
+                    ct,
+                    ActiveSort,
+                    ActiveDir
+                );
+
+                Hosts = items;
+                NextCursor = next;
+            },
+            ex => AllHostsModelLog.LoadFailed(_logger, ex),
+            "_HostsTable"
+        );
+
+        Dictionary<string, string> activeFilters = new(StringComparer.Ordinal);
+        if (!string.IsNullOrEmpty(Status))
+        {
+            activeFilters["status"] = Status;
+        }
+
+        if (!string.IsNullOrEmpty(Source))
+        {
+            activeFilters["source"] = Source;
+        }
+
+        if (!string.IsNullOrEmpty(Os))
+        {
+            activeFilters["os"] = Os;
+        }
+
+        if (!string.IsNullOrEmpty(Vendor))
+        {
+            activeFilters["vendor"] = Vendor;
+        }
+
+        GridModel grid = GridModelBuilder.Build(
+            "/all-hosts",
+            [
+                new FilterSpec(
+                    "status",
+                    "Status",
+                    [
+                        new FilterValue("managed", "Managed"),
+                        new FilterValue("discovered", "Discovered"),
+                    ]
+                ),
+                new FilterSpec(
+                    "source",
+                    "Source",
+                    [
+                        new FilterValue("agent", "Agent"),
+                        new FilterValue("arp", "ARP"),
+                        new FilterValue("mdns", "mDNS"),
+                        new FilterValue("lldp", "LLDP"),
+                        new FilterValue("snmp", "SNMP"),
+                    ]
+                ),
+            ],
+            activeFilters,
+            Q,
+            HostsApi.DefaultSort,
+            Sort,
+            Dir,
+            HostsApi.SortableColumns,
+            After,
+            NextCursor,
+            "#hosts-table"
+        );
+        Grid = grid.Grid;
+        FilterBar = grid.FilterBar;
+        Pagination = grid.Pagination;
+
+        return result;
+    }
+}
+
+internal static partial class AllHostsModelLog
+{
+    [LoggerMessage(Level = LogLevel.Error, Message = "AllHosts page load failed.")]
+    public static partial void LoadFailed(ILogger logger, Exception ex);
+}

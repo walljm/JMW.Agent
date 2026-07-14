@@ -1,0 +1,1435 @@
+@page "/fleet/agents/{id:guid}"
+@using System.Text.Json
+@using JMW.Discovery.Server.Pages.Fleet
+@model JMW.Discovery.Server.Pages.Fleet.AgentDetailModel
+@{
+    ViewData["Title"] = (Model.Found ? Model.Hostname : "Agent") + " — JMW Discovery";
+    ViewData["ActiveNav"] = "agents";
+}
+<style>
+    .tab-panel[hidden] {
+        display: none
+    }
+
+    /* Dense identity strip (replaces the tall key/value list) */
+    .idstrip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2) var(--space-6);
+        align-items: baseline;
+        margin-bottom: var(--space-5)
+    }
+
+    .idstrip .item {
+        display: flex;
+        gap: var(--space-2);
+        align-items: baseline;
+        font-size: var(--fs-sm)
+    }
+
+    .idstrip .lbl {
+        color: var(--text-dim);
+        font-size: var(--fs-xs);
+        text-transform: uppercase;
+        letter-spacing: var(--tracking-caps)
+    }
+
+    /* Overview health tiles */
+    .tiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: var(--space-4);
+        margin-bottom: var(--space-5)
+    }
+
+    .tile {
+        background: var(--surface);
+        border: var(--border-hair);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-sm);
+        padding: var(--space-4) var(--space-5)
+    }
+
+    .tile h4 {
+        margin: 0 0 var(--space-2);
+        font-size: var(--fs-xs);
+        text-transform: uppercase;
+        letter-spacing: var(--tracking-caps);
+        color: var(--text-dim)
+    }
+
+    .tile .headline {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        font-size: var(--fs-md);
+        margin-bottom: var(--space-2)
+    }
+
+    .tile .sub {
+        color: var(--text-dim);
+        font-size: var(--fs-sm);
+        line-height: var(--lh-base)
+    }
+
+    /* Facts-per-cycle sparkline. Bars are a fixed width and right-aligned with overflow
+       clipped, so however many cycles were fetched, the tile shows however many bars fit
+       its actual rendered width — anchored to the newest, oldest clipped off the left —
+       instead of stretching a fixed bar count to fill the space. */
+    .cycle-spark {
+        display: flex;
+        align-items: flex-end;
+        justify-content: flex-end;
+        overflow: hidden;
+        gap: 2px;
+        height: 34px;
+        margin-top: var(--space-3)
+    }
+
+    .cycle-spark .bar {
+        flex: 0 0 4px;
+        width: 4px;
+        background: var(--accent);
+        border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+        opacity: .7
+    }
+
+    .cycle-spark .bar.err {
+        background: var(--crit);
+        opacity: 1
+    }
+
+    /* Primary Overview / Configuration segmented control */
+    .mode-bar {
+        display: inline-flex;
+        border: var(--border-hair);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+        margin-bottom: var(--space-4)
+    }
+
+    .mode-btn {
+        padding: var(--space-2) var(--space-5);
+        background: none;
+        border: none;
+        border-right: var(--border-hair);
+        cursor: pointer;
+        color: var(--text-dim);
+        font: inherit;
+        font-size: var(--fs-sm)
+    }
+
+    .mode-btn:last-child {
+        border-right: none
+    }
+
+    .mode-btn:hover {
+        color: var(--text)
+    }
+
+    .mode-btn.active {
+        background: var(--accent);
+        color: var(--on-accent);
+        font-weight: var(--fw-med)
+    }
+
+    .mode-btn:focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: -2px
+    }
+
+    .mode-panel[hidden] {
+        display: none
+    }
+
+    /* Inline per-collector health cue on Configuration rows */
+    .hcue {
+        display: inline-flex;
+        align-items: baseline;
+        gap: var(--space-2);
+        font-size: var(--fs-xs);
+        color: var(--text-dim)
+    }
+
+    .hcue .rate.ok {
+        color: var(--ok)
+    }
+
+    .hcue .rate.warn {
+        color: var(--warn)
+    }
+
+    .hcue .rate.crit {
+        color: var(--crit)
+    }
+</style>
+
+<main class="main">
+    @if (!Model.Found)
+    {
+        <div class="page-head"><h1><a href="/fleet/agents" style="color:var(--text-dim)">Agents</a> / Not found</h1>
+        </div>
+        <p class="prose text-dim">No agent with that id.</p>
+    }
+    else
+    {
+        <div class="page-head">
+            <h1><a href="/fleet/agents" style="color:var(--text-dim)">Agents</a> / @Model.Hostname</h1>
+            @{
+                (string cls, string label) = Model.Status switch
+                {
+                    "approved" => ("ok", "approved"),
+                    "disabled" => ("crit", "disabled"),
+                    _ => ("warn", "pending"),
+                };
+            }
+            <span class="meta"><span class="status @cls">@label</span></span>
+            @if (Model.Status == "disabled")
+            {
+                <button class="btn" onclick="enableAgent()">Enable</button>
+            }
+            else if (Model.Status == "approved")
+            {
+                <button class="btn" onclick="disableAgent()" title="Stop accepting data from this agent; reversible">Disable</button>
+            }
+        </div>
+
+        <!-- Dense identity strip -->
+        <div class="idstrip">
+            <div class="item"><span class="lbl">UUID</span><span class="mono">@Model.AgentId</span></div>
+            <div class="item"><span class="lbl">OS</span><span>@(Model.Os ?? "—") @(Model.Arch ?? "")</span></div>
+            <div class="item"><span class="lbl">IP</span><span class="mono">@(Model.IpAddress ?? "—")</span></div>
+            <div class="item">
+                <span class="lbl">Version</span>
+                <span>@(Model.Version ?? "—")</span>
+                @if (Model.AvailableUpdateVersion is not null)
+                {
+                    <span class="status warn" title="A newer signed release is available">update available: @Model.AvailableUpdateVersion</span>
+                }
+            </div>
+            <div class="item"><span class="lbl">Zone</span><span>@(string.IsNullOrEmpty(Model.Zone) ? "none" : Model.Zone)</span></div>
+        </div>
+
+        <!-- Primary Overview / Configuration mode switch -->
+        <div class="mode-bar" role="tablist" aria-label="View mode">
+            <button class="mode-btn" role="tab" id="mode-btn-overview" onclick="switchTab('overview')">Overview</button>
+            <button class="mode-btn" role="tab" id="mode-btn-config" onclick="switchConfig()">Configuration</button>
+        </div>
+
+        <!-- ══ Overview (monitoring) ══════════════════════════════════════════════ -->
+        <div class="mode-panel" id="mode-overview">
+            @{
+                string hbCls = Model.Liveness switch
+                {
+                    "online" => "ok",
+                    "stale" => "warn",
+                    _ => "crit",
+                };
+
+                bool anyCollectorErr = Model.InlineHealth.Values.Any(h => h.ErrorCount > 0);
+                bool hasCycles = Model.LastCycleAt is not null;
+                string colCls = !hasCycles ? "warn" : anyCollectorErr || Model.LastCycleErrors > 0 ? "warn" : "ok";
+                string colState = !hasCycles
+                    ? "no collection yet"
+                    : anyCollectorErr
+                        ? Model.InlineHealth.Values.Count(h => h.ErrorCount > 0) + " collector(s) erroring"
+                        : "healthy";
+            }
+            <div class="tiles">
+                <!-- Heartbeat: is the agent alive and checking in? -->
+                <div class="tile">
+                    <h4>Heartbeat</h4>
+                    <div class="headline"><span class="status @hbCls">@Model.Liveness</span></div>
+                    <div class="sub">@Model.LivenessExplanation</div>
+                </div>
+                <!-- Collection: is it actually collecting and reporting facts? -->
+                <div class="tile">
+                    <h4>Collection</h4>
+                    <div class="headline"><span class="status @colCls">@colState</span></div>
+                    <div class="sub">
+                        @if (hasCycles && Model.LastCycleAt is { } lastAt)
+                        {
+                            <span>Last cycle @AgentDetailModel.FormatAgeShort(lastAt) ago · @Model.LastCycleFacts facts · @Model.LastCycleErrors err</span>
+                            <br>
+                            <span>@Model.WindowCycleErrored of @Model.WindowCycleTotal cycles errored (last @AgentDetailModel.LookbackHours h)</span>
+                        }
+                        else
+                        {
+                            <span>No cycle history yet.</span>
+                        }
+                    </div>
+                    @if (Model.SparkFacts.Count > 0)
+                    {
+                        <div class="cycle-spark"
+                             title="Facts per cycle, real collection cycles only (oldest → newest); red = errored; scaled to the 90th percentile, so a rare full-resync burst clips at full height instead of flattening everything else">
+                            @for (int i = 0; i < Model.SparkFacts.Count; i++)
+                            {
+                                int pct = (int)Math.Round(100.0 * Model.SparkFacts[i] / Model.SparkMax);
+                                string barCls = Model.SparkErrored[i] ? "err" : "";
+                                <div class="bar @barCls" style="height:@(Math.Clamp(pct, 4, 100))%"></div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Recent activity + filter (full-page reload, as before) -->
+            <div class="section">
+                <h3 style="margin-bottom:var(--space-3)">Recent Activity</h3>
+                <div class="toolbar" style="margin-bottom:var(--space-3)">
+                    <div class="field"><label for="actSince">Since</label>
+                        <input class="input" type="date" id="actSince" value="@Model.ActivitySince"></div>
+                    <div class="field"><label for="actUntil">Until</label>
+                        <input class="input" type="date" id="actUntil" value="@Model.ActivityUntil"></div>
+                    <label style="display:flex;align-items:center;gap:var(--space-1);margin-top:var(--space-4)">
+                        <input type="checkbox" id="actErrorsOnly" @(Model.ActivityErrorsOnly ? "checked" : "")>
+                        Errors only
+                    </label>
+                    <button class="btn btn-sm" style="margin-top:var(--space-4)" onclick="applyActivityFilter()">
+                        Apply
+                    </button>
+                    <button class="btn btn-sm" style="margin-top:var(--space-4)" onclick="clearActivityFilter()">
+                        Clear
+                    </button>
+                </div>
+                <div id="atab-cycles" style="margin-top:var(--space-3)">
+                @if (Model.Cycles.Count == 0)
+                {
+                    <p class="prose text-dim">
+                        @(Model.ActivitySince is not null || Model.ActivityUntil is not null || Model.ActivityErrorsOnly
+                            ? "No cycles match the current filter."
+                            : "No cycle history yet. Activity appears after the agent completes its first heartbeat cycle.")
+                    </p>
+                }
+                else
+                {
+                    <table class="data" style="table-layout:fixed;width:100%">
+                        <colgroup>
+                            <col style="width:160px">
+                            <col style="width:90px">
+                            <col style="width:70px">
+                            <col style="width:70px">
+                            <col>
+                        </colgroup>
+                        <thead>
+                        <tr>
+                            <th>Cycle Time</th>
+                            <th>Duration</th>
+                            <th>Facts</th>
+                            <th>Errors</th>
+                            <th>Summary</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (AgentDetailModel.CycleRow cycle in Model.Cycles)
+                        {
+                            string rowId = "cycle-" + cycle.CycleId;
+                            string detailId = "detail-" + cycle.CycleId;
+                            string statusCls = cycle.ErrorCount > 0 ? "warn" : "ok";
+                            string durationStr = cycle.DurationMs >= 60000
+                                ? (cycle.DurationMs / 60000) + "m " + (cycle.DurationMs % 60000 / 1000) + "s"
+                                : cycle.DurationMs >= 1000
+                                    ? (cycle.DurationMs / 1000.0).ToString("F1") + "s"
+                                    : cycle.DurationMs + "ms";
+                            <tr id="@rowId" style="cursor:pointer" onclick="toggleCycleDetail('@detailId')">
+                                <td class="mono"><time data-utc="@ViewFormat.IsoUtc(cycle.CycleAt)">@cycle.CycleAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</time></td>
+                                <td>@durationStr</td>
+                                <td>@cycle.FactsSent</td>
+                                <td><span class="status @statusCls">@cycle.ErrorCount</span></td>
+                                <td class="text-dim"
+                                    style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                                    id="summary-@cycle.CycleId">
+                                    @{
+                                        // Errors surface first regardless of fact volume — that's the thing an
+                                        // operator scanning this column actually needs to notice.
+                                        List<(string Text, bool HasError, int Facts)> entries = [];
+                                        if (cycle.Collectors.ValueKind == JsonValueKind.Array)
+                                        {
+                                            foreach (JsonElement col in cycle.Collectors.EnumerateArray())
+                                            {
+                                                if (col.TryGetProperty("name", out JsonElement n) && col.TryGetProperty("facts", out JsonElement f))
+                                                {
+                                                    bool hasError = col.TryGetProperty("error", out JsonElement e) && e.ValueKind != JsonValueKind.Null;
+                                                    string marker = hasError ? "!" : "";
+                                                    entries.Add((n.GetString() + marker + ":" + f.GetInt32(), hasError, f.GetInt32()));
+                                                }
+                                            }
+                                        }
+                                        List<string> parts = entries
+                                            .OrderByDescending(e => e.HasError)
+                                            .ThenByDescending(e => e.Facts)
+                                            .Select(e => e.Text)
+                                            .ToList();
+                                    }
+                                    @string.Join("  ", parts.Take(4))@(parts.Count > 4 ? " …" : "")
+                                </td>
+                            </tr>
+                            <tr id="@detailId" hidden>
+                                <td colspan="5"
+                                    style="padding:0 var(--space-3) var(--space-3);background:var(--surface-2)">
+                                    <div
+                                        style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4);padding-top:var(--space-3)">
+                                        <div>
+                                            <p class="prose" style="font-weight:600;margin-bottom:var(--space-2)">Local
+                                                Collectors</p>
+                                            <table class="data">
+                                                <thead>
+                                                <tr>
+                                                    <th>Collector</th>
+                                                    <th>Facts</th>
+                                                    <th>Duration</th>
+                                                    <th>Error</th>
+                                                </tr>
+                                                </thead>
+                                                <tbody>
+                                                @if (cycle.Collectors.ValueKind == JsonValueKind.Array)
+                                                {
+                                                    foreach (JsonElement col in cycle.Collectors.EnumerateArray())
+                                                    {
+                                                        string cName = col.TryGetProperty("name", out JsonElement cn) ? cn.GetString() ?? "" : "";
+                                                        int cFacts = col.TryGetProperty("facts", out JsonElement cf) ? cf.GetInt32() : 0;
+                                                        int cMs = col.TryGetProperty("duration_ms", out JsonElement cd) ? cd.GetInt32() : 0;
+                                                        string? cErr = col.TryGetProperty("error", out JsonElement ce) && ce.ValueKind != JsonValueKind.Null ? ce.GetString() : null;
+                                                        <tr>
+                                                            <td>@cName</td>
+                                                            <td>@cFacts</td>
+                                                            <td>@(cMs >= 1000 ? (cMs / 1000.0).ToString("F1") + "s" : cMs + "ms")</td>
+                                                            <td>@(cErr ?? "—")</td>
+                                                        </tr>
+                                                    }
+                                                }
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <div>
+                                            <p class="prose" style="font-weight:600;margin-bottom:var(--space-2)">
+                                                Network Scanners</p>
+                                            @if (cycle.Scanners.ValueKind == JsonValueKind.Array && cycle.Scanners.GetArrayLength() > 0)
+                                            {
+                                                <table class="data">
+                                                    <thead>
+                                                    <tr>
+                                                        <th>Scanner</th>
+                                                        <th>Devices</th>
+                                                        <th>Duration</th>
+                                                        <th>Error</th>
+                                                    </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                    @foreach (JsonElement sc in cycle.Scanners.EnumerateArray())
+                                                    {
+                                                        string sName = sc.TryGetProperty("name", out JsonElement sn) ? sn.GetString() ?? "" : "";
+                                                        int sDevs = sc.TryGetProperty("devices_found", out JsonElement sd) ? sd.GetInt32() : 0;
+                                                        int sMs = sc.TryGetProperty("duration_ms", out JsonElement sdur) ? sdur.GetInt32() : 0;
+                                                        string? sErr = sc.TryGetProperty("error", out JsonElement se) && se.ValueKind != JsonValueKind.Null ? se.GetString() : null;
+                                                        <tr>
+                                                            <td>@sName</td>
+                                                            <td>@sDevs</td>
+                                                            <td>@(sMs >= 1000 ? (sMs / 1000.0).ToString("F1") + "s" : sMs + "ms")</td>
+                                                            <td>@(sErr ?? "—")</td>
+                                                        </tr>
+                                                    }
+                                                    </tbody>
+                                                </table>
+                                            }
+                                            else
+                                            {
+                                                <p class="prose text-dim" style="font-size:var(--fs-sm)">No scanner data for
+                                                    this cycle.</p>
+                                            }
+                                        </div>
+                                        <div>
+                                            <p class="prose" style="font-weight:600;margin-bottom:var(--space-2)">
+                                                Device Scanners</p>
+                                            @if (cycle.DeviceScanners.ValueKind == JsonValueKind.Array && cycle.DeviceScanners.GetArrayLength() > 0)
+                                            {
+                                                <table class="data">
+                                                    <thead>
+                                                    <tr>
+                                                        <th>Target</th>
+                                                        <th>Protocol</th>
+                                                        <th>Facts</th>
+                                                        <th>Duration</th>
+                                                        <th>Error</th>
+                                                    </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                    @foreach (JsonElement ds in cycle.DeviceScanners.EnumerateArray())
+                                                    {
+                                                        string dTarget = ds.TryGetProperty("target", out JsonElement dt) ? dt.GetString() ?? "" : "";
+                                                        string dProto = ds.TryGetProperty("protocol", out JsonElement dp) ? dp.GetString() ?? "" : "";
+                                                        int dFacts = ds.TryGetProperty("facts", out JsonElement df) ? df.GetInt32() : 0;
+                                                        int dMs = ds.TryGetProperty("duration_ms", out JsonElement dd) ? dd.GetInt32() : 0;
+                                                        string? dErr = ds.TryGetProperty("error", out JsonElement de) && de.ValueKind != JsonValueKind.Null ? de.GetString() : null;
+                                                        <tr>
+                                                            <td>@dTarget</td>
+                                                            <td>@dProto</td>
+                                                            <td>@dFacts</td>
+                                                            <td>@(dMs >= 1000 ? (dMs / 1000.0).ToString("F1") + "s" : dMs + "ms")</td>
+                                                            <td>@(dErr ?? "—")</td>
+                                                        </tr>
+                                                    }
+                                                    </tbody>
+                                                </table>
+                                            }
+                                            else
+                                            {
+                                                <p class="prose text-dim" style="font-size:var(--fs-sm)">No device-scanner
+                                                    data for this cycle.</p>
+                                            }
+                                        </div>
+                                        <div>
+                                            <p class="prose" style="font-weight:600;margin-bottom:var(--space-2)">
+                                                Service Collectors</p>
+                                            @{
+                                                // Grouped by target: several service-collector types can point at the
+                                                // same target (e.g. Home Assistant's Supervisor-facing collector and its
+                                                // device-registry collector both hit the same instance) — group so that
+                                                // reads as one target with multiple sub-collectors instead of repeating
+                                                // the target on every row.
+                                                List<(string Target, string Type, int Facts, int Ms, string? Err)> svcEntries = [];
+                                                if (cycle.Services.ValueKind == JsonValueKind.Array)
+                                                {
+                                                    foreach (JsonElement svc in cycle.Services.EnumerateArray())
+                                                    {
+                                                        string vTarget = svc.TryGetProperty("target", out JsonElement vt) ? vt.GetString() ?? "" : "";
+                                                        string vType = svc.TryGetProperty("type", out JsonElement vy) ? vy.GetString() ?? "" : "";
+                                                        int vFacts = svc.TryGetProperty("facts", out JsonElement vf) ? vf.GetInt32() : 0;
+                                                        int vMs = svc.TryGetProperty("duration_ms", out JsonElement vd) ? vd.GetInt32() : 0;
+                                                        string? vErr = svc.TryGetProperty("error", out JsonElement ve) && ve.ValueKind != JsonValueKind.Null ? ve.GetString() : null;
+                                                        svcEntries.Add((vTarget, vType, vFacts, vMs, vErr));
+                                                    }
+                                                }
+                                                List<List<(string Target, string Type, int Facts, int Ms, string? Err)>> svcGroups = svcEntries
+                                                    .GroupBy(e => e.Target)
+                                                    .Select(g => g.ToList())
+                                                    .ToList();
+                                            }
+                                            @if (svcGroups.Count > 0)
+                                            {
+                                                <table class="data">
+                                                    <thead>
+                                                    <tr>
+                                                        <th>Target</th>
+                                                        <th>Type</th>
+                                                        <th>Facts</th>
+                                                        <th>Duration</th>
+                                                        <th>Error</th>
+                                                    </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                    @foreach (List<(string Target, string Type, int Facts, int Ms, string? Err)> group in svcGroups)
+                                                    {
+                                                        for (int i = 0; i < group.Count; i++)
+                                                        {
+                                                            (string gTarget, string gType, int gFacts, int gMs, string? gErr) = group[i];
+                                                            <tr>
+                                                                @if (i == 0)
+                                                                {
+                                                                    <td rowspan="@group.Count">@gTarget</td>
+                                                                }
+                                                                <td>@gType</td>
+                                                                <td>@gFacts</td>
+                                                                <td>@(gMs >= 1000 ? (gMs / 1000.0).ToString("F1") + "s" : gMs + "ms")</td>
+                                                                <td>@(gErr ?? "—")</td>
+                                                            </tr>
+                                                        }
+                                                    }
+                                                    </tbody>
+                                                </table>
+                                            }
+                                            else
+                                            {
+                                                <p class="prose text-dim" style="font-size:var(--fs-sm)">No service-collector
+                                                    data for this cycle.</p>
+                                            }
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                }
+                </div>
+            </div>
+        </div>
+
+        <!-- ══ Configuration ══════════════════════════════════════════════════════ -->
+        <div class="mode-panel" id="mode-config" hidden>
+        <div class="section">
+            <div class="tabs" role="tablist">
+                <button class="tab" role="tab" id="tab-btn-collectors" aria-controls="tab-collectors"
+                        onclick="switchTab('collectors')">Host Collectors
+                </button>
+                <button class="tab" role="tab" id="tab-btn-scanners" aria-controls="tab-scanners"
+                        onclick="switchTab('scanners')">Discovery
+                </button>
+                <button class="tab" role="tab" id="tab-btn-targets" aria-controls="tab-targets"
+                        onclick="switchTab('targets')">Targets
+                </button>
+                <button class="tab" role="tab" id="tab-btn-settings" aria-controls="tab-settings"
+                        onclick="switchTab('settings')">Settings
+                </button>
+            </div>
+
+            <!-- Tab: Host Collectors -->
+            <div class="tab-panel" id="tab-collectors" role="tabpanel" aria-labelledby="tab-btn-collectors">
+                <table class="data" style="table-layout:fixed;width:100%">
+                    <colgroup>
+                        <col style="width:40%">
+                        <col style="width:12%">
+                        <col style="width:22%">
+                        <col style="width:26%">
+                    </colgroup>
+                    <thead>
+                    <tr>
+                        <th>Collector</th>
+                        <th>Enabled</th>
+                        <th>Interval override</th>
+                        <th>Health <span class="text-dim" style="font-weight:var(--fw-normal)">(last @AgentDetailModel.LookbackHours h)</span></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (AgentDetailModel.CollectorRow c in Model.Collectors)
+                    {
+                        <tr class="@(c.Supported ? "" : "text-dim")">
+                            <td>
+                                @c.Name
+                                @if (!c.Supported)
+                                {
+                                    <span class="status warn" title="Reported unsupported on this agent's OS/platform">unsupported</span>
+                                }
+                            </td>
+                            <td>
+                                <label class="switch">
+                                    <input type="checkbox" @(c.Enabled ? "checked" : "")
+                                           onchange="toggleCollector('@c.Name', this)">
+                                    <span class="slider"></span>
+                                </label>
+                            </td>
+                            <td>
+                                <input class="input" type="text" style="width:140px"
+                                       id="cint-@c.Name" value="@(c.IntervalSecs?.ToString() ?? "")"
+                                       placeholder="inherit"
+                                       onchange="saveCollectorInterval('@c.Name', this)">
+                            </td>
+                            <td>
+                                @if (Model.InlineHealth.TryGetValue(c.Name, out AgentDetailModel.CollectorHealthRow? ch) && ch is { } chh && chh.RunCount > 0)
+                                {
+                                    double cr = 100.0 * chh.ErrorCount / chh.RunCount;
+                                    string crc = cr == 0 ? "ok" : cr < 25 ? "warn" : "crit";
+                                    <span class="hcue"><span class="status @crc">@cr.ToString("F0")%</span><span>@chh.RunCount run@(chh.RunCount == 1 ? "" : "s")</span></span>
+                                }
+                                else
+                                {
+                                    <span class="text-dim">—</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+                <p class="prose text-dim" style="margin-top:var(--space-3)">
+                    <strong>NetworkDiscoveryCollector</strong> is the master switch for all network scanning.
+                    Disable it to stop all scanners regardless of their individual settings.
+                </p>
+            </div>
+
+            <!-- Tab: Discovery -->
+            <div class="tab-panel" id="tab-scanners" role="tabpanel" aria-labelledby="tab-btn-scanners" hidden>
+                <p class="prose text-dim" style="margin-bottom:var(--space-3)">
+                    Subnet discovery scanners — each runs independently when
+                    <strong>NetworkDiscoveryCollector</strong> (Host Collectors tab) is enabled. They run on the
+                    <strong>Discovery</strong> interval above. Grouped by how each scanner reaches devices.
+                </p>
+                @{
+                    ILookup<string, AgentDetailModel.ScannerRow> scannersByFamily = Model.Scanners.ToLookup(s => s.Family);
+                }
+                @foreach (string family in AgentDetailModel.ScannerFamilyOrder)
+                {
+                    if (!scannersByFamily.Contains(family))
+                    {
+                        continue;
+                    }
+                    <h4 style="margin:var(--space-4) 0 var(--space-2)">@family</h4>
+                    <table class="data" style="table-layout:fixed;width:100%">
+                        <colgroup>
+                            <col style="width:40%">
+                            <col style="width:12%">
+                            <col style="width:22%">
+                            <col style="width:26%">
+                        </colgroup>
+                        <thead>
+                        <tr>
+                            <th>Scanner</th>
+                            <th>Enabled</th>
+                            <th>Interval override</th>
+                            <th>Health <span class="text-dim" style="font-weight:var(--fw-normal)">(last @AgentDetailModel.LookbackHours h)</span></th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (AgentDetailModel.ScannerRow s in scannersByFamily[family])
+                        {
+                            <tr class="@(s.Supported ? "" : "text-dim")">
+                                <td>
+                                    @s.Name
+                                    @if (!s.Supported)
+                                    {
+                                        <span class="status warn" title="Reported unsupported on this agent's OS/platform">unsupported</span>
+                                    }
+                                </td>
+                                <td>
+                                    <label class="switch">
+                                        <input type="checkbox" @(s.Enabled ? "checked" : "")
+                                               onchange="toggleCollector('@s.Name', this)">
+                                        <span class="slider"></span>
+                                    </label>
+                                </td>
+                                <td>
+                                    <input class="input" type="text" style="width:140px"
+                                           id="cint-@s.Name" value="@(s.IntervalSecs?.ToString() ?? "")"
+                                           placeholder="inherit"
+                                           onchange="saveCollectorInterval('@s.Name', this)">
+                                </td>
+                                <td>
+                                    @if (Model.InlineHealth.TryGetValue(s.Name, out AgentDetailModel.CollectorHealthRow? sh) && sh is { } shh && shh.RunCount > 0)
+                                    {
+                                        double sr = 100.0 * shh.ErrorCount / shh.RunCount;
+                                        string src = sr == 0 ? "ok" : sr < 25 ? "warn" : "crit";
+                                        <span class="hcue"><span class="status @src">@sr.ToString("F0")%</span><span>@shh.RunCount run@(shh.RunCount == 1 ? "" : "s")</span></span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-dim">—</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                }
+            </div>
+
+            <!-- Tab: Targets -->
+            <div class="tab-panel" id="tab-targets" role="tabpanel" aria-labelledby="tab-btn-targets" hidden>
+                @if (Model.Targets.Count == 0)
+                {
+                    <p class="prose text-dim">No remote targets configured.</p>
+                }
+                else
+                {
+                    <table class="data">
+                        <thead>
+                        <tr>
+                            <th>Label</th>
+                            <th>Endpoint</th>
+                            <th>Collector type</th>
+                            <th>Credential</th>
+                            <th>Enabled</th>
+                            <th></th>
+                        </tr>
+                        </thead>
+                        <tbody id="targets-tbody">
+                        @foreach (AgentDetailModel.TargetRow t in Model.Targets)
+                        {
+                            <tr id="target-row-@t.TargetId">
+                                <td>@(t.Label ?? "—")</td>
+                                <td class="mono">@t.Endpoint</td>
+                                <td>@t.CollectorType</td>
+                                <td>@(t.CredentialName ?? "—")</td>
+                                <td>
+                                    <label class="switch">
+                                        <input type="checkbox" @(t.Enabled ? "checked" : "")
+                                               onchange="toggleTarget('@t.TargetId')">
+                                        <span class="slider"></span>
+                                    </label>
+                                </td>
+                                <td style="display:flex;gap:var(--space-2)">
+                                    <button class="btn btn-sm"
+                                            onclick="openTarget('@t.TargetId','@t.Endpoint','@t.CollectorType','@(t.CredentialId ?? "")','@(t.Label ?? "")')">
+                                        Edit
+                                    </button>
+                                    <button class="btn btn-sm" style="color:var(--crit)"
+                                            onclick="deleteTarget('@t.TargetId','@(t.Label ?? t.Endpoint)')">Delete
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                }
+                <div class="toolbar" style="margin-top:var(--space-3)">
+                    <button class="btn" onclick="openTarget(null,'','ssh','','')">+ Add Target</button>
+                    <button class="btn" onclick="openTargetCandidates()">Discover targets…</button>
+                </div>
+            </div>
+
+            <!-- Tab: Settings -->
+            <div class="tab-panel" id="tab-settings" role="tabpanel" aria-labelledby="tab-btn-settings" hidden>
+                <h3 style="margin-bottom:var(--space-2)">Collection Intervals</h3>
+                <div style="display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:0 24px">
+                    <div class="field"><label for="hbInt">Heartbeat</label><input class="input" id="hbInt" type="text"
+                                                                                  value="@Model.HeartbeatIntervalSecs">
+                    </div>
+                    <div class="field"><label for="discInt">Discovery</label><input class="input" id="discInt"
+                                                                                    type="text"
+                                                                                    value="@Model.DiscoveryIntervalSecs">
+                    </div>
+                    <div class="field"><label for="invInt">Inventory</label><input class="input" id="invInt" type="text"
+                                                                                   value="@Model.InventoryIntervalSecs">
+                    </div>
+                </div>
+                <p class="prose text-dim" style="margin-top:var(--space-2)">Accepts seconds (`300`) or duration text
+                    like `1d 2h 3m 4s`. Delivered on the agent's next heartbeat.</p>
+                <div class="toolbar">
+                    <button class="btn btn-primary" onclick="saveIntervals()">Save intervals</button>
+                </div>
+
+                <h3 style="margin:var(--space-5) 0 var(--space-2)">Zone</h3>
+                <div class="field" style="max-width:340px">
+                    <label for="zoneInput">Zone</label>
+                    <div style="display:flex;gap:var(--space-2);align-items:center">
+                        <input class="input" id="zoneInput" type="text" list="zoneOptions"
+                               value="@Model.Zone" placeholder="none">
+                        <datalist id="zoneOptions">
+                            @foreach (string z in Model.KnownZones)
+                            {
+                                <option value="@z"></option>
+                            }
+                        </datalist>
+                        <button class="btn btn-sm" onclick="saveZone()">Save</button>
+                    </div>
+                </div>
+
+                <h3 style="margin:var(--space-5) 0 var(--space-2)">Liveness thresholds</h3>
+                <p class="prose text-dim">
+                    Online while the last heartbeat is within @Model.LivenessOnlineMultiplier× the heartbeat interval;
+                    offline after @(Model.LivenessOfflineCeilingSecs / 60) minutes without one. Configured globally,
+                    not per-agent.
+                </p>
+
+                <h3 style="margin:var(--space-5) 0 var(--space-2)">Cache</h3>
+                <p class="prose text-dim">
+                    The agent tracks which facts it already sent per target, so unchanged data isn't
+                    re-transmitted every cycle. If server-side data for this agent was reset independently
+                    (e.g. a projection table was wiped), that local cache can go stale and silently withhold
+                    facts the server no longer has a record of. Clearing it forces a full resend on the
+                    agent's next heartbeat.
+                </p>
+                <div class="toolbar">
+                    <button class="btn" style="color:var(--crit)" onclick="clearAgentCache()">Clear agent cache</button>
+                </div>
+            </div>
+        </div>
+        </div>
+    }
+</main>
+
+<!-- Add / Edit target drawer -->
+<div class="modal-scrim" id="targetModal" hidden role="dialog" aria-modal="true" aria-labelledby="tTitle">
+    <div class="modal">
+        <header><h3 id="tTitle">Add Target</h3>
+            <button class="btn btn-sm" onclick="closeTarget()" aria-label="Close">✕</button>
+        </header>
+        <div class="body">
+            <div class="field"><label for="tLabel">Label <span class="text-dim">(optional)</span></label><input
+                    class="input" id="tLabel" placeholder="e.g. core switch"></div>
+            <div class="field">
+                <label for="tType">Collector type</label>
+                <select class="input" id="tType" onchange="syncTargetTypeHint()">
+                    <option value="ssh">ssh</option>
+                    <option value="snmp">snmp</option>
+                    <option value="bacnet">bacnet</option>
+                    <option value="modbus">modbus</option>
+                    <option value="http">http</option>
+                    <option value="cert">cert</option>
+                    <option value="google-wifi">google-wifi</option>
+                    <option value="technitium-dns">technitium-dns</option>
+                    <option value="home-assistant">home-assistant</option>
+                </select>
+            </div>
+            <div class="field"><label for="tAddr">Endpoint</label><input class="input" id="tAddr"
+                                                                        placeholder="10.0.0.x or hostname">
+                <span class="help" id="tAddrHelp"></span></div>
+            <div class="field">
+                <label for="tCred">Credential</label>
+                <select class="input" id="tCred">
+                    <option value="">(none)</option>
+                    @foreach (AgentDetailModel.CredentialOption c in Model.CredentialOptions)
+                    {
+                        <option value="@c.CredentialId">@c.Name (@c.Type)</option>
+                    }
+                </select>
+            </div>
+        </div>
+        <footer>
+            <button class="btn" onclick="closeTarget()">Cancel</button>
+            <button class="btn btn-primary" onclick="saveTarget()">Save target</button>
+        </footer>
+    </div>
+</div>
+
+<!-- Discovery-assisted target picker -->
+<div class="modal-scrim" id="targetCandidatesModal" hidden role="dialog" aria-modal="true"
+     aria-labelledby="tcTitle">
+    <div class="modal">
+        <header><h3 id="tcTitle">Discover Targets</h3>
+            <button class="btn btn-sm" onclick="closeTargetCandidates()" aria-label="Close">✕</button>
+        </header>
+        <div class="body">
+            <p class="prose text-dim" style="margin-bottom:var(--space-2)">Already-discovered hosts/services that
+                look reachable on a supported collector type. A candidate is a suggestion, not a guarantee — verify
+                before relying on it.</p>
+            <div id="targetCandidatesList"></div>
+        </div>
+        <footer>
+            <button class="btn" onclick="closeTargetCandidates()">Cancel</button>
+            <button class="btn btn-primary" onclick="addSelectedTargetCandidates()">Add selected</button>
+        </footer>
+    </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+@section Scripts {
+    <script>
+        const CSRF = '@Model.AntiforgeryToken';
+        const AGENT_ID = '@Model.AgentId';
+        let targetEditId = null;
+
+        // ── Two-level navigation: Overview (monitoring) vs Configuration ────────────
+
+        const CONFIG_TABS = ['collectors', 'scanners', 'targets', 'settings'];
+
+        // Accepts either the mode name 'overview' or a config sub-tab name. 'activity' is the
+        // legacy name for what is now the Overview, so old ?tab=activity links still resolve.
+        function switchTab(name) {
+            if (name === 'activity' || !name) name = 'overview';
+            const isConfig = CONFIG_TABS.includes(name);
+            const mode = isConfig ? 'config' : 'overview';
+            if (!isConfig) name = 'overview';
+
+            document.getElementById('mode-overview').hidden = mode !== 'overview';
+            document.getElementById('mode-config').hidden = mode !== 'config';
+            [['overview', 'mode-btn-overview'], ['config', 'mode-btn-config']].forEach(([m, id]) => {
+                const btn = document.getElementById(id);
+                btn.classList.toggle('active', mode === m);
+                btn.setAttribute('aria-selected', mode === m ? 'true' : 'false');
+            });
+
+            if (isConfig) {
+                CONFIG_TABS.forEach(t => {
+                    document.getElementById('tab-' + t).hidden = t !== name;
+                    const btn = document.getElementById('tab-btn-' + t);
+                    btn.classList.toggle('active', t === name);
+                    btn.setAttribute('aria-selected', t === name ? 'true' : 'false');
+                });
+            }
+
+            const url = new URL(location.href);
+            url.searchParams.set('tab', name);
+            history.replaceState(null, '', url);
+        }
+
+        // The "Configuration" mode button lands on the last-viewed config tab, or Host Collectors.
+        function switchConfig() {
+            const current = new URLSearchParams(location.search).get('tab');
+            switchTab(CONFIG_TABS.includes(current) ? current : 'collectors');
+        }
+
+        // ── Live refresh (Overview) ─────────────────────────────────────────────────
+        // Polls this same URL and swaps in the freshly-rendered Overview markup, so
+        // heartbeat/collection status and the health/cycle tables update without a manual
+        // reload. Reuses the normal page render rather than a separate JSON endpoint, so
+        // there's no client-side re-implementation of the table/tile rendering logic.
+        // Configuration-tab content (targets, settings, drawers) isn't polled — those already
+        // update immediately via their own save/toggle calls.
+
+        let overviewPollInFlight = false;
+
+        async function pollOverview() {
+            if (overviewPollInFlight || document.visibilityState !== 'visible') return;
+            const activeId = document.activeElement && document.activeElement.id;
+            if (['actSince', 'actUntil', 'actErrorsOnly'].includes(activeId)) return;
+
+            overviewPollInFlight = true;
+            try {
+                const resp = await fetch(location.href);
+                if (!resp.ok) return;
+                const html = await resp.text();
+                const fresh = new DOMParser().parseFromString(html, 'text/html').getElementById('mode-overview');
+                const current = document.getElementById('mode-overview');
+                if (!fresh || !current) return;
+
+                const expandedDetails = new Set(
+                    [...current.querySelectorAll('[id^="detail-"]')].filter(el => !el.hidden).map(el => el.id)
+                );
+
+                current.innerHTML = fresh.innerHTML;
+
+                expandedDetails.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.hidden = false;
+                });
+            } catch {
+                // Transient network error — retry on the next tick.
+            } finally {
+                overviewPollInFlight = false;
+            }
+        }
+
+        setInterval(pollOverview, 15000);
+
+        // ── Toasts ──────────────────────────────────────────────────────────────────
+
+        function toast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.hidden = false;
+            setTimeout(() => t.hidden = true, 3000);
+        }
+
+        // ── Disable / Enable ────────────────────────────────────────────────────────
+
+        async function disableAgent() {
+            if (!confirm('Disable this agent? It will stop accepting heartbeats and facts until re-enabled. This is reversible.')) return;
+            const resp = await fetch('/api/v1/admin/agents/' + AGENT_ID + '/disable', {
+                method: 'PATCH',
+                headers: { 'X-CSRF-TOKEN': CSRF },
+            });
+            if (!resp.ok) { toast('Failed to disable agent.'); return; }
+            location.reload();
+        }
+
+        async function enableAgent() {
+            const resp = await fetch('/api/v1/admin/agents/' + AGENT_ID + '/enable', {
+                method: 'PATCH',
+                headers: { 'X-CSRF-TOKEN': CSRF },
+            });
+            if (!resp.ok) { toast('Failed to enable agent.'); return; }
+            location.reload();
+        }
+
+        // ── Duration helpers ────────────────────────────────────────────────────────
+
+        function parseDurationToSeconds(raw) {
+            const text = raw.trim().toLowerCase();
+            if (!text) return null;
+            if (/^\d+$/.test(text)) {
+                const n = parseInt(text, 10);
+                return n > 0 ? n : null;
+            }
+            const compact = text.replace(/\s+/g, '');
+            const tokenRe = /(\d+)(d|h|m|s)/g;
+            let idx = 0, total = 0, seen = false, m;
+            while ((m = tokenRe.exec(compact)) !== null) {
+                if (m.index !== idx) return null;
+                idx = tokenRe.lastIndex;
+                seen = true;
+                const n = parseInt(m[1], 10);
+                if (m[2] === 'd') total += n * 86400;
+                else if (m[2] === 'h') total += n * 3600;
+                else if (m[2] === 'm') total += n * 60;
+                else total += n;
+            }
+            return (!seen || idx !== compact.length || total <= 0) ? null : total;
+        }
+
+        function formatSeconds(seconds) {
+            const total = parseInt(seconds, 10);
+            if (!Number.isFinite(total) || total <= 0) return String(seconds);
+            let rem = total;
+            const d = Math.floor(rem / 86400);
+            rem -= d * 86400;
+            const h = Math.floor(rem / 3600);
+            rem -= h * 3600;
+            const m = Math.floor(rem / 60);
+            rem -= m * 60;
+            const s = rem;
+            const parts = [];
+            if (d > 0) parts.push(d + 'd');
+            if (h > 0) parts.push(h + 'h');
+            if (m > 0) parts.push(m + 'm');
+            if (s > 0 || parts.length === 0) parts.push(s + 's');
+            return parts.join(' ');
+        }
+
+        function parseRequiredDurationInput(id, label) {
+            const el = document.getElementById(id);
+            const secs = parseDurationToSeconds(el.value);
+            if (secs === null) {
+                toast(label + ' must be a positive number of seconds or duration like 5m / 1h 30m.');
+                el.focus();
+                return null;
+            }
+            return secs;
+        }
+
+        // ── Intervals ───────────────────────────────────────────────────────────────
+
+        async function saveIntervals() {
+            const heartbeat_interval_secs = parseRequiredDurationInput('hbInt', 'Heartbeat');
+            if (heartbeat_interval_secs === null) return;
+            const discovery_interval_secs = parseRequiredDurationInput('discInt', 'Discovery');
+            if (discovery_interval_secs === null) return;
+            const inventory_interval_secs = parseRequiredDurationInput('invInt', 'Inventory');
+            if (inventory_interval_secs === null) return;
+
+            const resp = await fetch('/api/v1/admin/agents/' + AGENT_ID + '/config', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF},
+                body: JSON.stringify({heartbeat_interval_secs, discovery_interval_secs, inventory_interval_secs}),
+            });
+            if (!resp.ok) {
+                toast('Save failed (' + resp.status + ').');
+                return;
+            }
+            document.getElementById('hbInt').value = formatSeconds(heartbeat_interval_secs);
+            document.getElementById('discInt').value = formatSeconds(discovery_interval_secs);
+            document.getElementById('invInt').value = formatSeconds(inventory_interval_secs);
+            toast('Intervals saved — delivered on next heartbeat.');
+        }
+
+        // ── Zone ────────────────────────────────────────────────────────────────────
+
+        async function saveZone() {
+            const zone = document.getElementById('zoneInput').value.trim();
+            const resp = await fetch('/api/v1/admin/agents/' + AGENT_ID + '/zone', {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF},
+                body: JSON.stringify({zone: zone === '' ? null : zone}),
+            });
+            if (!resp.ok) {
+                toast('Save failed (' + resp.status + ').');
+                return;
+            }
+            toast('Zone saved.');
+        }
+
+        // ── Cache ───────────────────────────────────────────────────────────────────
+
+        async function clearAgentCache() {
+            if (!confirm('Clear this agent\'s local delta-tracker cache? It will resend its full fact set on the next heartbeat.')) return;
+            const resp = await fetch('/api/v1/admin/agents/' + AGENT_ID + '/clear-cache', {
+                method: 'POST',
+                headers: {'X-CSRF-TOKEN': CSRF},
+            });
+            if (!resp.ok) {
+                toast('Request failed (' + resp.status + ').');
+                return;
+            }
+            toast('Cache clear requested — takes effect on the agent\'s next heartbeat.');
+        }
+
+        // ── Collectors & scanners (shared endpoints, keyed by name) ─────────────────
+
+        async function toggleCollector(name, el) {
+            const resp = await fetch('/api/v1/admin/agents/' + AGENT_ID + '/collectors/' + name + '/toggle', {
+                method: 'POST',
+                headers: {'X-CSRF-TOKEN': CSRF},
+            });
+            if (!resp.ok) {
+                el.checked = !el.checked;
+                toast('Toggle failed (' + resp.status + ').');
+                return;
+            }
+            toast(name + (el.checked ? ' enabled.' : ' disabled.'));
+        }
+
+        async function saveCollectorInterval(name, el) {
+            const raw = el.value.trim();
+            const interval_secs = raw === '' ? null : parseDurationToSeconds(raw);
+            if (raw !== '' && interval_secs === null) {
+                toast('Invalid interval for ' + name + '. Use seconds or duration like 10m.');
+                el.focus();
+                return;
+            }
+            const resp = await fetch('/api/v1/admin/agents/' + AGENT_ID + '/collectors/' + name + '/interval', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF},
+                body: JSON.stringify({interval_secs}),
+            });
+            if (!resp.ok) {
+                toast('Save failed (' + resp.status + ').');
+                return;
+            }
+            if (interval_secs !== null) el.value = formatSeconds(interval_secs);
+            toast(name + ' interval saved.');
+        }
+
+        // ── Targets ─────────────────────────────────────────────────────────────────
+
+        // Collector types whose endpoint is a full service URL rather than a bare host/IP,
+        // each with its default port so the user never has to remember/look it up — mirrors
+        // TargetsApi.UrlStyleCollectorTypes server-side.
+        const URL_STYLE_COLLECTOR_TYPES = {
+            'technitium-dns': 'http://10.0.0.x:5380',
+            'home-assistant': 'http://10.0.0.x:8123',
+        };
+
+        function openTarget(id, endpoint, collectorType, credId, label) {
+            targetEditId = id;
+            document.getElementById('tTitle').textContent = id ? 'Edit Target' : 'Add Target';
+            document.getElementById('tLabel').value = label || '';
+            document.getElementById('tType').value = collectorType;
+            document.getElementById('tAddr').value = endpoint;
+            document.getElementById('tCred').value = credId;
+            syncTargetTypeHint();
+            document.getElementById('targetModal').hidden = false;
+            document.getElementById('tAddr').focus();
+        }
+
+        // Endpoint helper text/placeholder flips between "IP or hostname" and "URL" based on
+        // the selected collector type. Google Wifi targets address the AP's local /api/v1
+        // endpoint directly — no credential needed.
+        function syncTargetTypeHint() {
+            const type = document.getElementById('tType').value;
+            const addr = document.getElementById('tAddr');
+            const help = document.getElementById('tAddrHelp');
+            if (type === 'google-wifi') {
+                addr.placeholder = 'AP IP, e.g. 192.168.1.1';
+                help.textContent = 'Local OnHub API — no credential needed.';
+            } else if (type in URL_STYLE_COLLECTOR_TYPES) {
+                addr.placeholder = URL_STYLE_COLLECTOR_TYPES[type];
+                help.textContent = 'Absolute http(s) URL, including the port.';
+            } else {
+                addr.placeholder = '10.0.0.x or hostname';
+                help.textContent = '';
+            }
+        }
+
+        function closeTarget() {
+            document.getElementById('targetModal').hidden = true;
+        }
+
+        async function saveTarget() {
+            const endpoint = document.getElementById('tAddr').value.trim();
+            const collector_type = document.getElementById('tType').value;
+            const credRaw = document.getElementById('tCred').value;
+            const credential_id = credRaw === '' ? null : credRaw;
+            const labelRaw = document.getElementById('tLabel').value.trim();
+            const label = labelRaw === '' ? null : labelRaw;
+            if (!endpoint) {
+                toast('Endpoint is required.');
+                return;
+            }
+            let url, method, body;
+            if (targetEditId === null) {
+                url = '/api/v1/admin/targets';
+                method = 'POST';
+                body = JSON.stringify({agent_id: AGENT_ID, endpoint, collector_type, credential_id, label});
+            } else {
+                url = '/api/v1/admin/targets/' + targetEditId;
+                method = 'PUT';
+                body = JSON.stringify({endpoint, collector_type, credential_id, label});
+            }
+            const resp = await fetch(url, {
+                method,
+                headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF},
+                body
+            });
+            if (!resp.ok) {
+                toast('Save failed (' + resp.status + ').');
+                return;
+            }
+            closeTarget();
+            toast('Target saved.');
+            location.reload();
+        }
+
+        async function toggleTarget(id) {
+            const resp = await fetch('/api/v1/admin/targets/' + id + '/enabled', {
+                method: 'PATCH',
+                headers: {'X-CSRF-TOKEN': CSRF}
+            });
+            if (!resp.ok) {
+                toast('Toggle failed (' + resp.status + ').');
+                return;
+            }
+        }
+
+        async function deleteTarget(id, endpoint) {
+            if (!confirm('Delete target "' + endpoint + '"?')) return;
+            const resp = await fetch('/api/v1/admin/targets/' + id, {
+                method: 'DELETE',
+                headers: {'X-CSRF-TOKEN': CSRF}
+            });
+            if (!resp.ok && resp.status !== 204) {
+                toast('Delete failed (' + resp.status + ').');
+                return;
+            }
+            const row = document.getElementById('target-row-' + id);
+            if (row) row.remove();
+            toast('Target deleted.');
+        }
+
+        // ── Discovery-assisted target picker ───────────────────────────────────────
+
+        async function openTargetCandidates() {
+            const list = document.getElementById('targetCandidatesList');
+            list.innerHTML = '<p class="prose text-dim">Loading…</p>';
+            document.getElementById('targetCandidatesModal').hidden = false;
+
+            const resp = await fetch('/api/v1/admin/targets/candidates?agent_id=' + AGENT_ID);
+            if (!resp.ok) {
+                list.innerHTML = '<p class="prose text-dim">Failed to load candidates.</p>';
+                return;
+            }
+            const data = await resp.json();
+            if (data.items.length === 0) {
+                list.innerHTML = '<p class="prose text-dim">No new candidates found.</p>';
+                return;
+            }
+            list.innerHTML = '<table class="data"><thead><tr>' +
+                '<th></th><th>Endpoint</th><th>Collector type</th><th>Hostname</th><th>Vendor / Model</th>' +
+                '</tr></thead><tbody>' +
+                data.items.map((c, i) => `<tr>
+                    <td><input type="checkbox" class="js-target-candidate" data-idx="${i}"></td>
+                    <td class="mono">${escapeHtml(c.endpoint)}</td>
+                    <td>${escapeHtml(c.collector_type)}</td>
+                    <td>${escapeHtml(c.hostname || '—')}</td>
+                    <td>${escapeHtml([c.vendor, c.model].filter(Boolean).join(' ') || '—')}</td>
+                </tr>`).join('') +
+                '</tbody></table>';
+            targetCandidatesData = data.items;
+        }
+
+        function closeTargetCandidates() {
+            document.getElementById('targetCandidatesModal').hidden = true;
+        }
+
+        function escapeHtml(s) {
+            const div = document.createElement('div');
+            div.textContent = s ?? '';
+            return div.innerHTML;
+        }
+
+        let targetCandidatesData = [];
+
+        async function addSelectedTargetCandidates() {
+            const checked = [...document.querySelectorAll('.js-target-candidate:checked')]
+                .map(el => targetCandidatesData[parseInt(el.dataset.idx, 10)]);
+            if (checked.length === 0) {
+                toast('No candidates selected.');
+                return;
+            }
+            let succeeded = 0, failed = 0;
+            for (const c of checked) {
+                const resp = await fetch('/api/v1/admin/targets', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF},
+                    body: JSON.stringify({agent_id: AGENT_ID, endpoint: c.endpoint, collector_type: c.collector_type, credential_id: null}),
+                });
+                if (resp.ok) succeeded++; else failed++;
+            }
+            closeTargetCandidates();
+            toast(`Added ${succeeded} target(s)` + (failed > 0 ? `, ${failed} failed.` : '.'));
+            if (succeeded > 0) location.reload();
+        }
+
+        // ── Init ────────────────────────────────────────────────────────────────────
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // Restore view from URL, defaulting to the Overview. switchTab normalizes unknown
+            // values (and the legacy 'activity') to 'overview'.
+            const tab = new URLSearchParams(location.search).get('tab');
+            switchTab(tab);
+
+            // Render second values as human-readable durations.
+            ['hbInt', 'discInt', 'invInt'].forEach(id => {
+                const el = document.getElementById(id);
+                el.value = formatSeconds(el.value);
+            });
+            document.querySelectorAll('input[id^="cint-"]').forEach(el => {
+                if (el.value.trim() !== '') el.value = formatSeconds(el.value);
+            });
+        });
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') {
+                closeTarget();
+                closeService();
+            }
+        });
+
+        // ── Cycle detail toggle ─────────────────────────────────────────────────────
+
+        function toggleCycleDetail(id) {
+            const row = document.getElementById(id);
+            if (row) row.hidden = !row.hidden;
+        }
+
+        // ── Activity filter ─────────────────────────────────────────────────────────
+
+        function applyActivityFilter() {
+            const since = document.getElementById('actSince').value;
+            const until = document.getElementById('actUntil').value;
+            const errorsOnly = document.getElementById('actErrorsOnly').checked;
+            const url = new URL(location.href);
+            url.searchParams.set('tab', 'overview');
+            if (since) url.searchParams.set('ActivitySince', since); else url.searchParams.delete('ActivitySince');
+            if (until) url.searchParams.set('ActivityUntil', until); else url.searchParams.delete('ActivityUntil');
+            if (errorsOnly) url.searchParams.set('ActivityErrorsOnly', 'true'); else url.searchParams.delete('ActivityErrorsOnly');
+            location.href = url.toString();
+        }
+
+        function clearActivityFilter() {
+            const url = new URL(location.href);
+            url.searchParams.set('tab', 'overview');
+            url.searchParams.delete('ActivitySince');
+            url.searchParams.delete('ActivityUntil');
+            url.searchParams.delete('ActivityErrorsOnly');
+            location.href = url.toString();
+        }
+
+        // ── Collector blast radius (F4) ────────────────────────────────────────────
+
+        const blastRadiusLoaded = new Set();
+
+        async function toggleBlastRadius(rowId, deviceId, sourceName) {
+            const row = document.getElementById(rowId);
+            if (!row) return;
+            row.hidden = !row.hidden;
+            if (row.hidden || blastRadiusLoaded.has(rowId)) return;
+
+            const content = row.querySelector('.blast-radius-content');
+            const resp = await fetch(
+                '/api/v1/devices/' + deviceId + '/facts-by-source?source_name=' + encodeURIComponent(sourceName)
+            );
+            if (!resp.ok) {
+                content.textContent = 'Failed to load affected facts.';
+                return;
+            }
+            const data = await resp.json();
+            blastRadiusLoaded.add(rowId);
+
+            if (data.facts.length === 0) {
+                content.textContent = 'No current facts on this device are attributed to ' + sourceName + '.';
+                return;
+            }
+
+            content.innerHTML = '<p style="margin-bottom:var(--space-2)">' + data.facts.length +
+                ' current fact(s) on this device came from ' + sourceName +
+                ' — staleness is relative to now, since that\'s when they last updated:</p>' +
+                '<table class="data"><thead><tr>' +
+                '<th>Attribute</th><th>Key</th><th>Value</th><th>Last updated</th>' +
+                '</tr></thead><tbody>' +
+                data.facts.map(f => {
+                    const collected = new Date(f.collected_at);
+                    const ageMs = Date.now() - collected.getTime();
+                    const ageStr = ageMs < 60000 ? Math.round(ageMs / 1000) + 's'
+                        : ageMs < 3600000 ? Math.round(ageMs / 60000) + 'm'
+                        : ageMs < 86400000 ? Math.round(ageMs / 3600000) + 'h'
+                        : Math.round(ageMs / 86400000) + 'd';
+                    return `<tr>
+                        <td class="mono">${escapeHtml(f.attribute_path || '')}</td>
+                        <td class="mono">${escapeHtml(f.key || '—')}</td>
+                        <td>${escapeHtml(f.value ?? '—')}</td>
+                        <td>${ageStr} ago</td>
+                    </tr>`;
+                }).join('') +
+                '</tbody></table>';
+        }
+    </script>
+}

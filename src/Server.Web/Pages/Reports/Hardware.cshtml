@@ -1,0 +1,18 @@
+@page "/hardware"
+@model JMW.Discovery.Server.Pages.Reports.HardwareModel
+@{
+    ViewData["Title"] = "System Specs — JMW Discovery";
+    ViewData["ActiveNav"] = "inventory";
+}
+<main class="main data-grid-page">
+    <div class="page-head">
+        <h1>System Specs</h1>
+        <span class="meta">@Model.Hardware.Count devices shown</span>
+    </div>
+
+    <partial name="_HubTabs" model="@(new HubTabsModel(HubTabSets.Inventory, "/hardware", "Inventory views"))"/>
+
+    <partial name="_FilterBar" model="Model.FilterBar"/>
+
+    <partial name="_HardwareTable" model="Model"/>
+</main>

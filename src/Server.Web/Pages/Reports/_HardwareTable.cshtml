@@ -1,0 +1,66 @@
+@using JMW.Discovery.Server.Reporting
+@model JMW.Discovery.Server.Pages.Reports.HardwareModel
+
+<div id="hardware-table" class="grid-panel">
+    <partial name="_SectionError" model="Model.LoadError"/>
+
+    @if (Model.LoadError is null && Model.Hardware.Count == 0)
+    {
+        <div class="empty">No hardware inventory reported yet.</div>
+    }
+    else if (Model.LoadError is null)
+    {
+        <div class="grid-scroll">
+            <table class="data" aria-label="Hardware inventory">
+                <thead>
+                <tr>
+                    <th sort-key="hostname" sort-grid="Model.Grid" sort-target="#hardware-table">Hostname</th>
+                    <th sort-key="vendor" sort-grid="Model.Grid" sort-target="#hardware-table">Vendor</th>
+                    <th style="cursor:default">Model</th>
+                    <th sort-key="cpu" sort-grid="Model.Grid" sort-target="#hardware-table">CPU</th>
+                    <th style="cursor:default">Cores</th>
+                    <th style="cursor:default">Memory</th>
+                    <th style="cursor:default">Storage</th>
+                    <th style="cursor:default">BIOS</th>
+                    <th style="cursor:default">Virtualization</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (HardwareListItem h in Model.Hardware)
+                {
+                    <tr data-href="/devices/@h.Device?from=hardware" style="cursor:pointer">
+                        <td>@(string.IsNullOrEmpty(h.Hostname) ? h.Device : h.Hostname)</td>
+                        <td>@(h.SystemVendor ?? "—")</td>
+                        <td>@(h.SystemModel ?? "—")</td>
+                        <td>
+                            @(h.CpuModel ?? "—")
+                            @if (h.CpuMhz is { } mhz)
+                            {
+                                <span class="text-dim">(@($"{mhz / 1000:0.#}") GHz)</span>
+                            }
+                        </td>
+                        <td>
+                            @if (h.CpuCores is { } cores)
+                            {
+                                @(h.CpuLogicalCores is { } logical && logical != cores
+                                    ? $"{cores} ({logical} threads)"
+                                    : cores.ToString())
+                            }
+                            else
+                            {
+                                @:—
+                            }
+                        </td>
+                        <td>@(h.TotalMemBytes is { } mem ? ViewFormat.Bytes(mem) : "—")</td>
+                        <td>@(h.TotalStorageBytes is { } storage ? ViewFormat.Bytes(storage) : "—")</td>
+                        <td class="mono">@(h.BiosVersion ?? "—")</td>
+                        <td>@(h.Virtualization ?? "—")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+
+        <partial name="_Pagination" model="Model.Pagination"/>
+    }
+</div>

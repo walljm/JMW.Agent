@@ -1,0 +1,178 @@
+@page "/admin/custom-fields"
+@using JMW.Discovery.Server.ManualFacts
+@using JMW.Discovery.Server.UI
+@model JMW.Discovery.Server.Pages.Admin.CustomFieldsModel
+@{
+    ViewData["Title"] = "Custom Fields — JMW Discovery";
+    ViewData["ActiveNav"] = "data";
+}
+
+<main class="main">
+    <div class="page-head">
+        <h1>Custom Fields</h1>
+    </div>
+
+    <partial name="_HubTabs" model="@(new HubTabsModel(HubTabSets.Data, "/admin/custom-fields", "Data views"))"/>
+
+    <div class="section">
+        <p class="prose text-dim" style="margin-bottom:var(--space-3)">
+            Schema for operator-defined device fields (docs/plans/user-provided.md). Per-device values are
+            entered from each device's detail page, under its "Manual Overrides" section.
+        </p>
+
+        @if (Model.Definitions.Count == 0)
+        {
+            <div class="empty">No custom fields defined yet.</div>
+        }
+        else
+        {
+            <table class="data" style="margin-bottom:var(--space-4)">
+                <thead>
+                <tr>
+                    <th>Label</th>
+                    <th>Slug</th>
+                    <th>Shows in</th>
+                    <th>Created</th>
+                    <th></th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (CustomFieldDefinition def in Model.Definitions)
+                {
+                    string shownIn = def.TargetViewTitle is null
+                        ? "Custom Fields (default)"
+                        : def.IsNewView
+                            ? $"New view: {def.TargetViewTitle} ({def.TargetViewGroup})"
+                            : $"Attached to: {def.TargetViewTitle}";
+                    <tr id="row-@def.Id">
+                        <td>@def.Label</td>
+                        <td class="mono">@def.Slug</td>
+                        <td>@shownIn</td>
+                        <td class="text-dim" style="font-size:var(--fs-sm)" title="@def.CreatedAt.ToString("O")">
+                            @ViewFormat.RelativeTime(def.CreatedAt.UtcDateTime)
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-danger" onclick="deleteDefinition('@def.Id', '@def.Label')">
+                                Delete
+                            </button>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+
+        <h3>Define a new custom field</h3>
+        <div style="display:flex;flex-direction:column;gap:var(--space-2);max-width:480px">
+            <div class="field">
+                <label for="cfLabel">Label</label>
+                <input class="input" id="cfLabel" type="text" placeholder="Warranty Expiration"/>
+            </div>
+            <div class="field">
+                <label for="cfSlug">Slug (immutable, kebab-case)</label>
+                <input class="input" id="cfSlug" type="text" placeholder="warranty-expiration"/>
+            </div>
+            <div class="field">
+                <label for="cfTarget">Shows in</label>
+                <select class="input" id="cfTarget" onchange="onTargetChange()">
+                    <option value="default">Custom Fields (default)</option>
+                    <option value="existing">An existing view…</option>
+                    <option value="new">A new view…</option>
+                </select>
+            </div>
+            <div class="field" id="cfExistingRow" hidden>
+                <label for="cfExistingView">Existing view</label>
+                <select class="input" id="cfExistingView">
+                    @foreach (string title in Model.AttachableViews)
+                    {
+                        <option value="@title">@title</option>
+                    }
+                </select>
+            </div>
+            <div id="cfNewRow" hidden style="display:flex;flex-direction:column;gap:var(--space-2)">
+                <div class="field">
+                    <label for="cfNewTitle">New view title</label>
+                    <input class="input" id="cfNewTitle" type="text" placeholder="Asset Info"/>
+                </div>
+                <div class="field">
+                    <label for="cfNewGroup">Section group</label>
+                    <select class="input" id="cfNewGroup">
+                        @foreach (string group in Model.ViewGroups)
+                        {
+                            <option value="@group">@group</option>
+                        }
+                    </select>
+                </div>
+            </div>
+            <button class="btn btn-primary btn-sm" style="align-self:flex-start" onclick="createDefinition()">
+                Create
+            </button>
+        </div>
+    </div>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+
+@section Scripts {
+    <script>
+        const CSRF = '@Model.AntiforgeryToken';
+
+        function toast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.hidden = false;
+            setTimeout(() => t.hidden = true, 3000);
+        }
+
+        function onTargetChange() {
+            const target = document.getElementById('cfTarget').value;
+            document.getElementById('cfExistingRow').hidden = target !== 'existing';
+            document.getElementById('cfNewRow').hidden = target !== 'new';
+        }
+
+        async function createDefinition() {
+            const label = document.getElementById('cfLabel').value;
+            const slug = document.getElementById('cfSlug').value;
+            const target = document.getElementById('cfTarget').value;
+
+            const body = {label: label, slug: slug, is_new_view: target === 'new'};
+            if (target === 'existing') {
+                body.target_view_title = document.getElementById('cfExistingView').value;
+            } else if (target === 'new') {
+                body.target_view_title = document.getElementById('cfNewTitle').value;
+                body.target_view_group = document.getElementById('cfNewGroup').value;
+            }
+
+            const resp = await fetch('/api/v1/admin/custom-fields', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF},
+                body: JSON.stringify(body),
+            });
+
+            if (resp.ok) {
+                location.reload();
+            } else {
+                const j = await resp.json().catch(() => null);
+                toast('Error: ' + (j?.detail ?? resp.status));
+            }
+        }
+
+        async function deleteDefinition(id, label) {
+            if (!confirm('Delete custom field "' + label + '"? This removes every device\'s value for it.')) {
+                return;
+            }
+
+            const resp = await fetch('/api/v1/admin/custom-fields/' + id, {
+                method: 'DELETE',
+                headers: {'X-CSRF-TOKEN': CSRF},
+            });
+
+            if (resp.ok || resp.status === 204) {
+                document.getElementById('row-' + id)?.remove();
+            } else {
+                const j = await resp.json().catch(() => null);
+                toast('Error: ' + (j?.detail ?? resp.status));
+            }
+        }
+    </script>
+}

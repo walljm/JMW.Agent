@@ -1,142 +1,92 @@
-# JMW Agent
+# JMW Discovery
 
-A lightweight home network monitoring system written in Go.
+A home/SMB network discovery and inventory system written in **C# / .NET 10**.
 
-A single Go server hosts the dashboard + API; lightweight Go agents installed on each
-host stream metrics back over HTTPS, and double as network sensors that report ARP
-sightings of every other device on their subnet. Devices that can't run an agent
-(IoT, printers, routers) show up automatically as "discovered" entries.
+A single ASP.NET Core server hosts the dashboard + API and stores everything in
+PostgreSQL. Lightweight agents installed on each host stream host inventory back
+over HTTPS as *facts*, and double as network sensors that report ARP sightings and
+active protocol probes of every other device on their subnet. Devices that can't
+run an agent (IoT, printers, routers) show up automatically as "discovered" entries.
 
 ## Features
 
-- Single static binary per side — server and agent (no CGO, no runtime).
-- HTTPS by default with auto-generated self-signed certs and SHA-256 cert pinning on agents.
-- First-boot setup wizard creates the admin user; PSK is printed once at startup.
-- Live system metrics: CPU, memory, load, uptime, per-disk usage, per-interface counters.
-- Threshold alerting with email + webhook delivery and a firings/event log.
-- Distributed network discovery: every agent reports its ARP table; devices are merged
-  by MAC across observers.
-- SQLite storage in WAL mode — one file, one process.
-- Dark-mode dashboard built with vanilla JS, plain HTML templates, and a small CSS.
-- Smoke test that exercises register → approve → heartbeat → metrics → discovery.
+- **Server + agent** split; the agent publishes as a single self-contained binary per platform.
+- **PostgreSQL** storage. Facts are appended to `facts_history`; live state is maintained in per-domain `proj_*` projection tables.
+- **Fingerprint-based device identity** — devices are merged across observers by MAC / serial / machine-id, so one physical device is one row regardless of how many agents see it.
+- **Distributed discovery** — every agent reports its ARP table and runs active scanners (mDNS, SSDP, SNMP, WS-Discovery, HTTP/TLS/SSH banners, BACnet, Modbus, and more); devices are merged by fingerprint.
+- **OUI vendor enrichment**, threshold-free change feed, dashboard, and per-device detail tabs.
+- **Typed SQL, no ORM** — hand-written SQL bound to C# via a `[DatabaseCommand]` source generator, validated against the live schema in tests.
+- HTTPS with agent API-key auth; cookie sessions + RBAC for the dashboard.
 
 ## Build
 
-Requires Go 1.26.4+.
+Requires the .NET 10 SDK.
 
 ```sh
-make build           # builds bin/jmw-server and bin/jmw-agent for the host
-make build-all       # cross-builds for linux/darwin × amd64/arm64
-make test            # runs go test ./...
-make vet             # runs go vet ./...
+dotnet build JMW.Discovery.slnx -c Release
+dotnet test  test/Unit/JMW.Discovery.UnitTests.csproj
+dotnet test  test/Integration/JMW.Discovery.IntegrationTests.csproj   # requires Postgres
 ```
 
-## Run (development, single host)
+## Run (development)
+
+The simplest path is docker-compose, which brings up PostgreSQL and the server:
 
 ```sh
-# 1. Start the server in one terminal. First boot prints the agent PSK.
-./bin/jmw-server -config server.toml
-
-# 2. Visit https://localhost:8443 to create the admin account.
-#    (Browser will warn about self-signed cert; proceed once.)
-
-# 3. Configure agent.toml with the printed PSK and start the agent:
-cat > agent.toml <<EOF
-server_url    = "https://localhost:8443"
-psk           = "PASTE_PSK_HERE"
-id_file       = "./agent.id"
-interval_secs = 30
-EOF
-
-./bin/jmw-agent -config agent.toml
-
-# 4. Approve the agent under https://localhost:8443/pending.
+docker compose up -d --build
 ```
 
-## Deploy
+- Postgres → host `:5433` (db `jmwfacts`, schema `jmwdiscovery`).
+- Server  → host `:8090`.
 
-Reference unit files live in [deploy/](deploy/):
+Then:
 
-- [deploy/systemd/jmw-server.service](deploy/systemd/jmw-server.service)
-- [deploy/systemd/jmw-agent.service](deploy/systemd/jmw-agent.service)
-- [deploy/launchd/com.walljm.jmw.server.plist](deploy/launchd/com.walljm.jmw.server.plist)
-- [deploy/launchd/com.walljm.jmw.agent.plist](deploy/launchd/com.walljm.jmw.agent.plist)
+1. Open `http://localhost:8090/Bootstrap` and create the admin account (first boot only).
+2. Log in at `http://localhost:8090/Login`.
+3. Configure and start an agent (see below), then approve it on the Agents admin page.
 
-### Publishing agent updates
+## Agent
 
-The server can push binary updates to agents over the same PSK + pinned-TLS
-channel. Drop release binaries into the directory named by `releases_dir` in
-`server.toml` (default `./releases`) with one Ed25519 signature sidecar per
-binary:
+The agent is configured with a JSON file (`dev-agent.json` is a sample):
 
-```
-releases/
-  v1.4.0/
-    jmw-agent-linux-amd64
-    jmw-agent-linux-amd64.sig
-    jmw-agent-linux-arm64
-    jmw-agent-linux-arm64.sig
-    jmw-agent-darwin-amd64
-    jmw-agent-darwin-amd64.sig
-    jmw-agent-darwin-arm64
-    jmw-agent-darwin-arm64.sig
-    jmw-agent-windows-amd64.exe
-    jmw-agent-windows-amd64.exe.sig
-  v1.5.0/
-    ...
+```json
+{
+  "server_url": "http://localhost:8090",
+  "name": "my-host",
+  "zone": "local",
+  "interval": 30,
+  "targets": []
+}
 ```
 
-Filenames must match `jmw-agent-<os>-<arch>[.exe]`; signatures are base64
-Ed25519 detached signatures written by `cmd/updatesign`. Native agents must
-have `update_public_key` set in `agent.toml`; unsigned releases are not
-offered. The server picks the highest semver-clean directory per platform;
-dev/dirty tags are ignored on both sides (the agent will not auto-update from
-a clean release to a dirty one, and vice versa). On the next heartbeat after a
-new signed release lands, each eligible agent downloads the binary, verifies
-SHA-256 and the Ed25519 signature, swaps it in, and re-execs in place. Docker
-deployments use Watchtower instead — see
-[deploy/docker/README.md](deploy/docker/README.md#auto-updating-the-agent).
-Home Assistant add-ons use Supervisor updates backed by the
-`walljm/jmw-agent-ha:<version>` image.
+Each entry in `targets` is a remote device (SSH/SNMP/BACnet/Modbus/Google Wifi) or
+service (Technitium DNS, Home Assistant) to collect from, matched to a collector by
+`collector_type`. Targets can also be configured centrally via the Fleet UI's
+"Targets" tab and are merged with the file-configured ones on every cycle.
+
+Publish a self-contained Linux binary and run it (as root for full collector coverage):
+
+```sh
+dotnet publish src/Agent/JMW.Discovery.Agent.csproj -r linux-x64 -c Release \
+  /p:PublishSingleFile=true /p:SelfContained=true -o out/agent-linux-x64
+
+sudo JMW_AGENT_STATE_DIR=/var/lib/jmw-agent ./out/agent-linux-x64/JMW.Discovery.Agent agent.json
+```
+
+The agent registers, waits to be approved in the dashboard, then streams facts each
+cycle. Only changed facts are sent (delta tracking).
 
 ## Architecture
 
-See [planning/architecture/overview.md](planning/architecture/overview.md) and
-[planning/implementation/plan.md](planning/implementation/plan.md).
+- `src/Core` — shared model (`Fact`, `Fingerprint`, analysis/normalizers).
+- `src/Agent` — collectors, network scanners, transport, agent runtime.
+- `src/Server.Web` — API, ingest pipeline, projections, device registry, Razor Pages dashboard.
 
-## Layout
+Ingest flow: an agent posts a fact batch → `FactRepository` appends to `facts_history`
+and `ProjectionRouter` updates the `proj_*` tables → `DeviceRegistry` resolves/merges the
+device by fingerprint. See [AGENTS.md](AGENTS.md) for conventions and the query layout,
+and [docs/architecture/index.md](docs/architecture/index.md) for the deeper design.
 
-```
-cmd/server/        # jmw-server entry
-cmd/agent/         # jmw-agent entry
-internal/server/
-  config/          # TOML config loader, PSK bootstrap
-  store/           # SQLite + embedded migrations + repos
-  tls/             # self-signed cert bootstrap
-  http/            # routes, middleware, handlers, templates, static
-  alerting/        # threshold evaluator
-  notify/          # email + webhook dispatchers
-internal/agent/
-  config/          # agent TOML config
-  identity/        # persistent agent ID
-  collect/         # OS metric collectors (linux + darwin)
-  discover/        # ARP scanners
-  transport/       # pinned-TLS HTTP client
-internal/shared/
-  proto/           # wire types (versioned API)
-  version/         # build-time version (-ldflags)
-internal/smoke/    # end-to-end test
-deploy/            # systemd + launchd unit files
-```
+## Deploy
 
-## Status
-
-MVP per [planning/implementation/plan.md](planning/implementation/plan.md):
-
-- P1 Foundation
-- P3 Metrics + alerting
-- P4 Network discovery (ARP)
-- P5 Deploy units + smoke test
-
-Future work (post-MVP): mDNS service discovery, topology graph,
-Docker/service inventory, retention rollups, SMART/disk-IO, multi-user RBAC.
+Reference unit files live in [deploy/](deploy/).

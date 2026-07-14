@@ -1,0 +1,55 @@
+@using JMW.Discovery.Server.Pages.Admin
+@model AuditLogModel
+<div id="audit-log-table" class="grid-panel">
+    @if (Model.Entries.Count == 0)
+    {
+        <p class="prose text-dim">No audit log entries match the current filters.</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="data">
+                <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Actor</th>
+                    <th>Action</th>
+                    <th>Target</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (AuditEntry e in Model.Entries)
+                {
+                    bool hasDetail = e.Detail is not null;
+                    string detailId = "audit-detail-" + e.Id;
+                    <tr style="cursor:@(hasDetail ? "pointer" : "default")" onclick="toggleAuditDetail('@detailId')">
+                        <td class="mono" data-utc-title="@ViewFormat.IsoUtc(e.OccurredAt)" title="@e.OccurredAt.ToString("yyyy-MM-dd HH:mm:ss") UTC">@ViewFormat.RelativeTime(e.OccurredAt)</td>
+                        <td>@e.Actor</td>
+                        <td><span class="status @e.Severity" title="@e.Action">@AuditActionLabel.Humanize(e.Action)</span></td>
+                        <td>
+                            @if (e.LinkHref is not null)
+                            {
+                                <a class="mono" href="@e.LinkHref" onclick="event.stopPropagation()">@(e.TargetRef ?? "—")</a>
+                            }
+                            else
+                            {
+                                <span class="mono">@(e.TargetRef ?? "—")</span>
+                            }
+                        </td>
+                    </tr>
+                    if (hasDetail)
+                    {
+                        <tr id="@detailId" hidden>
+                            <td colspan="4" style="background:var(--surface-2)">
+                                <pre class="mono" style="white-space:pre-wrap;margin:0">@e.Detail</pre>
+                            </td>
+                        </tr>
+                    }
+                }
+                </tbody>
+            </table>
+        </div>
+
+        <partial name="_Pagination" model="Model.Pagination"/>
+    }
+</div>

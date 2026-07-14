@@ -1,0 +1,18 @@
+@page "/ports"
+@model JMW.Discovery.Server.Pages.Reports.PortsModel
+@{
+    ViewData["Title"] = "Open Ports — JMW Discovery";
+    ViewData["ActiveNav"] = "inventory";
+}
+<main class="main data-grid-page">
+    <div class="page-head">
+        <h1>Open Ports</h1>
+        <span class="meta">@Model.Ports.Count ports shown</span>
+    </div>
+
+    <partial name="_HubTabs" model="@(new HubTabsModel(HubTabSets.Inventory, "/ports", "Inventory views"))"/>
+
+    <partial name="_FilterBar" model="Model.FilterBar"/>
+
+    <partial name="_PortsTable" model="Model"/>
+</main>

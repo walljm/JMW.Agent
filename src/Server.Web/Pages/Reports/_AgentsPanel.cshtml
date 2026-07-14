@@ -1,0 +1,136 @@
+@using JMW.Discovery.Server.Pages.Reports
+@model JMW.Discovery.Server.Pages.Reports.DashboardModel
+@{
+    string? err = Model.PanelError("agents");
+    AgentHealthVm? h = Model.AgentHealth;
+    bool isAdmin = User.IsInRole("admin");
+}
+@{
+    string? agentsActionHref = isAdmin ? "/fleet" : null;
+}
+<dash-panel panel-name="agents" title="Agents" refresh-seconds="60" action-href="@agentsActionHref"
+            action-text="All agents →">
+    @if (err is not null)
+    {
+        <partial name="_SectionError" model="err"/>
+    }
+    else if (h is null)
+    {
+        <div class="empty">Loading…</div>
+    }
+    else if (h.Total == 0)
+    {
+        <div class="empty">No agents reporting yet.</div>
+    }
+    else
+    {
+        <p class="meta" style="margin-top:calc(-1 * var(--space-2));margin-bottom:var(--space-3)">
+            @h.Total agent@(h.Total == 1 ? "" : "s") · @h.Approved approved ·
+            @if (h.Pending > 0 && isAdmin)
+            {
+                <a href="/fleet/agents?status=pending">@h.Pending pending</a>
+            }
+            else
+            {
+                @:@h.Pending pending
+            }
+        </p>
+        <div class="coll-stats">
+            <div>
+                <div class="label">Online</div>
+                <div class="value">@h.Online</div>
+            </div>
+            <div>
+                <div class="label">Stale</div>
+                <div class="value warn">@h.Stale</div>
+            </div>
+            <div>
+                <div class="label">Offline</div>
+                <div class="value crit">@h.Offline</div>
+            </div>
+        </div>
+
+        @if (h.Agents.Count == 0)
+        {
+            <div class="empty">No agent details available.</div>
+        }
+        else
+        {
+            <table class="data">
+                <thead>
+                <tr>
+                    <th>Agent</th>
+                    <th>Status</th>
+                    <th>Ver</th>
+                    <th>Zone</th>
+                    <th>Passive</th>
+                    <th class="num">Last seen</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (AgentRow a in h.Agents)
+                {
+                    (string approvalCls, string approvalLabel) = a.Status switch
+                    {
+                        "approved" => ("ok", "Approved"),
+                        "disabled" => ("crit", "Disabled"),
+                        _ => ("warn", "Pending"),
+                    };
+                    (string liveCls, string liveLabel) = a.Liveness switch
+                    {
+                        "online" => ("ok", "Online"),
+                        "stale" => ("warn", "Stale"),
+                        _ => ("crit", "Offline"),
+                    };
+                    (string passiveCls, string passiveLabel) = a.PassiveMode switch
+                    {
+                        "full" => ("ok", "Full"),
+                        "degraded" => ("warn", "Degraded"),
+                        _ => ("", "—"),
+                    };
+                    <tr>
+                        <td>
+                            @if (isAdmin)
+                            {
+                                <a href="/fleet/agents/@a.AgentId">@a.Hostname</a>
+                            }
+                            else
+                            {
+                                @a.Hostname
+                            }
+                        </td>
+                        <td><span class="status @approvalCls">@approvalLabel</span></td>
+                        <td class="mono">@(a.Version ?? "—")</td>
+                        <td>@(a.Zone ?? "—")</td>
+                        <td>
+                            @if (passiveCls.Length > 0)
+                            {
+                                <span class="status @passiveCls">@passiveLabel</span>
+                            }
+                            else
+                            {
+                                @:—
+                            }
+                        </td>
+                        <td class="num">
+                            @if (a.LastHeartbeat.HasValue)
+                            {
+                                <span
+                                    class="status @liveCls">@ViewFormat.RelativeTime(a.LastHeartbeat.Value.UtcDateTime)</span>
+                            }
+                            else
+                            {
+                                <span class="status @liveCls">@liveLabel</span>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+            <p class="meta" style="margin-top:var(--space-3)">
+                Online / Stale / Offline count heartbeat <em>liveness</em> (shown in Last seen); the Status column
+                shows <em>approval</em> state — a Pending agent can still be Online.
+            </p>
+        }
+    }
+</dash-panel>

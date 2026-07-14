@@ -1,0 +1,51 @@
+@using JMW.Discovery.Server.Reporting
+@model JMW.Discovery.Server.Pages.Reports.ComponentsModel
+
+<div id="components-table" class="grid-panel">
+    <partial name="_SectionError" model="Model.LoadError"/>
+
+    @if (Model.LoadError is null && Model.Components.Count == 0)
+    {
+        <div class="empty">No hardware components reported yet.</div>
+    }
+    else if (Model.LoadError is null)
+    {
+        <div class="grid-scroll">
+            <table class="data" aria-label="Hardware components">
+                <thead>
+                <tr>
+                    <th sort-key="hostname" sort-grid="Model.Grid" sort-target="#components-table">Hostname</th>
+                    <th sort-key="class" sort-grid="Model.Grid" sort-target="#components-table">Class</th>
+                    <th style="cursor:default">Slot</th>
+                    <th style="cursor:default">Description</th>
+                    <th style="cursor:default">Vendor</th>
+                    <th style="cursor:default">Model</th>
+                    <th style="cursor:default">Serial</th>
+                    <th style="cursor:default">Firmware</th>
+                    <th style="cursor:default">Status</th>
+                    <th style="cursor:default">FRU</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (ComponentListItem c in Model.Components)
+                {
+                    <tr data-href="/devices/@c.Device?from=components" style="cursor:pointer">
+                        <td>@(string.IsNullOrEmpty(c.Hostname) ? c.Device : c.Hostname)</td>
+                        <td>@(c.Class ?? "—")</td>
+                        <td>@(c.Slot ?? "—")</td>
+                        <td>@(c.Description ?? "—")</td>
+                        <td>@(c.Vendor ?? "—")</td>
+                        <td>@(c.Model ?? "—")</td>
+                        <td class="mono">@(c.Serial ?? "—")</td>
+                        <td>@(c.Firmware ?? "—")</td>
+                        <td>@(c.Status ?? "—")</td>
+                        <td>@(c.IsFru == true ? "Yes" : "—")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+
+        <partial name="_Pagination" model="Model.Pagination"/>
+    }
+</div>

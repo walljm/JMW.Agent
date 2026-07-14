@@ -1,0 +1,91 @@
+@{
+    string active = ViewData["ActiveNav"] as string ?? string.Empty;
+
+    string NavClass(string key) =>
+        string.Equals(active, key, StringComparison.Ordinal) ? "nav-item active" : "nav-item";
+
+    string? Current(string key) =>
+        string.Equals(active, key, StringComparison.Ordinal) ? "page" : null;
+
+    string username = User.Identity?.Name ?? "—";
+    string role = User.IsInRole("admin") ? "admin" : "viewer";
+    string roleBadge = role == "admin" ? "role-badge" : "role-badge readonly";
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@ViewData["Title"]</title>
+    <link rel="stylesheet" href="/css/design-system.css" asp-append-version="true">
+    <script src="/js/htmx.min.js" asp-append-version="true"></script>
+    <script src="/js/filter-bar.js" defer asp-append-version="true"></script>
+    <script src="/js/row-nav.js" defer asp-append-version="true"></script>
+    <script src="/js/local-time.js" defer asp-append-version="true"></script>
+</head>
+<body class="dark-mode">
+<div class="app">
+    <button class="btn sidebar-toggle" id="sidebarToggle" aria-label="Collapse navigation" aria-expanded="true"
+            onclick="toggleSidebar()">‹
+    </button>
+    <nav class="sidebar" aria-label="Primary">
+        <a class="brand" href="/dashboard">◆ JMW Discovery</a>
+        <a class="@NavClass("dashboard")" href="/dashboard" aria-current="@Current("dashboard")">Dashboard</a>
+        <a class="@NavClass("all-hosts")" href="/all-hosts" aria-current="@Current("all-hosts")">All Hosts</a>
+        <a class="@NavClass("services")" href="/services" aria-current="@Current("services")">Services</a>
+
+        <a class="@NavClass("inventory")" href="/ports" aria-current="@Current("inventory")">Inventory</a>
+        <a class="@NavClass("network")" href="/subnets" aria-current="@Current("network")">Network</a>
+        <a class="@NavClass("terrain")" href="/terrain" aria-current="@Current("terrain")">Terrain</a>
+
+        @if (User.IsInRole("admin"))
+        {
+            <div class="nav-group"><span class="group-label">Admin</span>
+                <a class="@NavClass("fleet")" href="/fleet" aria-current="@Current("fleet")">Fleet</a>
+                <a class="@NavClass("system")" href="/admin/users" aria-current="@Current("system")">System</a>
+                <a class="@NavClass("data")" href="/admin/conflicts" aria-current="@Current("data")">Data</a>
+            </div>
+        }
+
+        <div class="nav-user">
+            <span>@username</span>
+            <span class="@roleBadge">@role</span>
+            <a class="btn btn-sm nav-user-btn" href="/account/password">
+                Change Password
+            </a>
+            <button class="btn btn-sm nav-user-btn"
+                    onclick="fetch('/auth/logout',{method:'POST'}).then(()=>location.href='/Login')">
+                Sign out
+            </button>
+        </div>
+    </nav>
+    @RenderBody()
+</div>
+<button class="btn mode-toggle" aria-label="Toggle light/dark mode"
+        onclick="document.body.classList.toggle('dark-mode');document.body.classList.toggle('light-mode')">◐ Mode
+</button>
+<script>
+    // Restored immediately (not on DOMContentLoaded) so the sidebar doesn't flash open
+    // before collapsing on pages loaded while it was left collapsed.
+    (function () {
+        const app = document.querySelector('.app');
+        const btn = document.getElementById('sidebarToggle');
+        if (localStorage.getItem('sidebarCollapsed') === 'true') {
+            app.classList.add('sidebar-collapsed');
+            btn.textContent = '›';
+            btn.setAttribute('aria-expanded', 'false');
+        }
+    })();
+
+    function toggleSidebar() {
+        const app = document.querySelector('.app');
+        const btn = document.getElementById('sidebarToggle');
+        const collapsed = app.classList.toggle('sidebar-collapsed');
+        btn.textContent = collapsed ? '›' : '‹';
+        btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        localStorage.setItem('sidebarCollapsed', collapsed ? 'true' : 'false');
+    }
+</script>
+@await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

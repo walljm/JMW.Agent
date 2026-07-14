@@ -1,0 +1,68 @@
+@using System.Globalization
+@using JMW.Discovery.Server.Pages.Reports
+@model JMW.Discovery.Server.Pages.Reports.DashboardModel
+@{
+    string? err = Model.PanelError("composition");
+    CompositionVm? comp = Model.Composition;
+}
+<dash-panel panel-name="composition" title="Composition" refresh-seconds="300" action-href="/all-hosts"
+            action-text="All hosts →">
+    @if (err is not null)
+    {
+        <partial name="_SectionError" model="err"/>
+    }
+    else if (comp is null)
+    {
+        <div class="empty">Loading…</div>
+    }
+    else if (comp.ByVendor.Count == 0 && comp.ByOsFamily.Count == 0 && comp.ByKind.Count == 0)
+    {
+        <div class="empty">No devices to break down yet.</div>
+    }
+    else
+    {
+        <p class="section-title">By vendor</p>
+        <div class="compo" style="margin-bottom:var(--space-4)">
+            @foreach (LabelCount row in comp.ByVendor)
+            {
+                <span class="k">@row.Label</span>
+                <span class="bar"><span
+                        style="width:@(BarPct(row.Count, comp.ByVendor).ToString("0.#", CultureInfo.InvariantCulture))%"></span></span>
+                <span class="n">@row.Count</span>
+            }
+        </div>
+
+        <p class="section-title">By OS family</p>
+        <div class="compo" style="margin-bottom:var(--space-4)">
+            @foreach (LabelCount row in comp.ByOsFamily)
+            {
+                <span class="k">@row.Label</span>
+                <span class="bar"><span
+                        style="width:@(BarPct(row.Count, comp.ByOsFamily).ToString("0.#", CultureInfo.InvariantCulture))%"></span></span>
+                <span class="n">@row.Count</span>
+            }
+        </div>
+
+        <p class="section-title">By kind</p>
+        <div class="compo">
+            @foreach (LabelCount row in comp.ByKind)
+            {
+                <span class="k">@row.Label</span>
+                <span class="bar"><span
+                        style="width:@(BarPct(row.Count, comp.ByKind).ToString("0.#", CultureInfo.InvariantCulture))%"></span></span>
+                <span class="n">@row.Count</span>
+            }
+        </div>
+    }
+</dash-panel>
+
+@functions {
+
+    /// <summary>Bar width as a percentage of the largest count in the same breakdown (largest = 100%).</summary>
+    private static double BarPct(long count, IReadOnlyList<LabelCount> rows)
+    {
+        long max = rows.Count > 0 ? rows.Max(r => r.Count) : 0;
+        return max <= 0 ? 0 : (double)count / max * 100;
+    }
+
+}

@@ -1,0 +1,43 @@
+@using JMW.Discovery.Server.Pages.Reports
+@model JMW.Discovery.Server.Pages.Reports.DashboardModel
+@{
+    string? err = Model.PanelError("not-seen");
+    ActivityCountsVm? counts = Model.ActivityCounts;
+}
+<dash-panel panel-name="not-seen" title="Not seen recently" refresh-seconds="30"
+            action-href="/all-hosts?status=stale" action-text="View →">
+    @if (err is not null)
+    {
+        <partial name="_SectionError" model="err"/>
+    }
+    else
+    {
+        @if (counts is not null)
+        {
+            <p class="meta" style="margin-top:calc(-1 * var(--space-2));margin-bottom:var(--space-3)">
+                @counts.NotSeen7d not seen in over @DashboardModel.NotSeenDays days
+            </p>
+        }
+
+        @if (Model.NotSeen.Count == 0)
+        {
+            <div class="empty">Every device has been seen in the
+                last @DashboardModel.NotSeenDays days.
+            </div>
+        }
+        else
+        {
+            <div class="act-list">
+                @foreach (NotSeenRow d in Model.NotSeen)
+                {
+                    <a class="act-item" href="/devices/@d.DeviceId?from=dashboard">
+                        <span class="act-main">@d.Display</span>
+                        <span class="act-when" style="color:var(--warn)">
+                            @(d.LastSeen.HasValue ? ViewFormat.RelativeTime(d.LastSeen.Value.UtcDateTime) : "—")
+                        </span>
+                    </a>
+                }
+            </div>
+        }
+    }
+</dash-panel>

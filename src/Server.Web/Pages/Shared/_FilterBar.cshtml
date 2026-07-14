@@ -1,0 +1,29 @@
+@using System.Text.Json
+@model DataGridModel
+
+@{
+    var opts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    string filtersJson = JsonSerializer.Serialize(Model.Filters, opts);
+    string activeJson = JsonSerializer.Serialize(Model.ActiveFilters, opts);
+}
+<div class="filter-bar"
+     data-fragment-url="@Model.FragmentUrl"
+     data-htmx-target="@Model.HtmxTarget"
+     data-page-url="@Model.PageUrl"
+     data-filters="@filtersJson"
+     data-active-filters="@activeJson"
+     data-q="@Model.Q">
+    <div class="filter-chips" role="list"></div>
+    <div class="filter-input-wrap">
+        <span class="filter-search-icon" aria-hidden="true">⌕</span>
+        <input class="filter-input"
+               type="text"
+               placeholder="Filter or search…"
+               autocomplete="off"
+               spellcheck="false"
+               aria-label="Search and filter">
+    </div>
+    <div class="filter-dropdown" hidden>
+        <ul class="filter-dropdown-list" role="listbox"></ul>
+    </div>
+</div>

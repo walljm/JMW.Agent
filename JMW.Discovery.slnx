@@ -1,0 +1,24 @@
+<Solution>
+    <Folder Name="/lib/">
+        <Project Path="lib/ITPIE.Database.Abstractions/ITPIE.Database.Abstractions.csproj"/>
+        <Project Path="lib/ITPIE.Database.Generators/ITPIE.Database.Generators.csproj"/>
+        <Project Path="lib/ITPIE.Migrations/ITPIE.Migrations.csproj"/>
+    </Folder>
+    <Folder Name="/src/"/>
+    <Folder Name="/src/Agent/">
+        <Project Path="src/Agent/JMW.Discovery.Agent.csproj"/>
+    </Folder>
+    <Folder Name="/src/Core/">
+        <Project Path="src/Core/JMW.Discovery.Core.csproj"/>
+    </Folder>
+    <Folder Name="/src/Server.Web/">
+        <Project Path="src/Server.Web/JMW.Discovery.Server.csproj"/>
+    </Folder>
+    <Folder Name="/src/Tools/UpdateSign/">
+        <Project Path="src/Tools/UpdateSign/UpdateSign.csproj"/>
+    </Folder>
+    <Folder Name="/test/">
+        <Project Path="test/Unit/JMW.Discovery.UnitTests.csproj"/>
+        <Project Path="test/Integration/JMW.Discovery.IntegrationTests.csproj"/>
+    </Folder>
+</Solution>
