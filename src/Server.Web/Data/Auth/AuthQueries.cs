@@ -31,6 +31,18 @@ public static partial class AuthQueries
         CancellationToken cancellationToken
     );
 
+    /// <summary>
+    /// Deletes all other sessions for a user (all except the caller's current session).
+    /// Returns the deleted session IDs. Called on password change to revoke concurrent sessions.
+    /// </summary>
+    [DatabaseCommand]
+    public static partial IAsyncEnumerable<SessionIdResult> DeleteOtherSessionsAsync(
+        this NpgsqlConnection connection,
+        Guid userId,
+        string currentSessionId,
+        CancellationToken cancellationToken
+    );
+
     // ── Bootstrap ─────────────────────────────────────────────────────────────
 
     /// <summary>

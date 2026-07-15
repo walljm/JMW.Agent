@@ -2,8 +2,8 @@
 -- per-category COUNT...FILTER queries — a new incident_type shows up here with no new SQL.
 SELECT
     incident_type
-  , count(*)                    AS open_count
-  , count(DISTINCT entity_id)   AS distinct_entities
+  , COALESCE(count(*), 0)                    AS open_count
+  , COALESCE(count(DISTINCT entity_id), 0)   AS distinct_entities
 FROM
     incidents
 WHERE

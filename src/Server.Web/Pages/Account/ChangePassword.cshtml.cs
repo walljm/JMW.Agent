@@ -75,6 +75,15 @@ public sealed class ChangePasswordModel : PageModel
         }
 
         await conn.UpdateUserPasswordAsync(userRow.UserId, _passwords.Hash(NewPassword), ct).ExecuteAsync(ct);
+
+        // Revoke all other sessions for this user so a stolen cookie can't outlast
+        // the password change. Keep only the current session (the one performing the change).
+        string? currentSessionId = User.FindFirstValue("session_id");
+        if (!string.IsNullOrEmpty(currentSessionId))
+        {
+            await conn.DeleteOtherSessionsAsync(userRow.UserId, currentSessionId, ct).ExecuteAsync(ct);
+        }
+
         await _audit.WriteAsync($"user:{username}", "password_change.success", userRow.UserId.ToString(), ct: ct);
 
         CurrentPassword = string.Empty;

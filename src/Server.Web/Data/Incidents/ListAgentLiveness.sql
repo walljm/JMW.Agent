@@ -2,6 +2,6 @@
 -- same definition GetAgentHealthSummary.sql/GetAgentHealthList.sql/AgentsApi already use.
 SELECT
     agent_id
-  , agent_liveness(last_heartbeat, heartbeat_interval_secs) AS liveness
+  , COALESCE(agent_liveness(last_heartbeat, heartbeat_interval_secs), 'offline') AS liveness
 FROM
     agents

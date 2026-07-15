@@ -182,7 +182,7 @@ public sealed class DeviceDetailModel : PageModel
                 {
                     await using NpgsqlConnection c = await _db.OpenConnectionAsync(ct);
                     return await c.ListEntityHistoryAsync("device", deviceKey, HistoryLimit, ct)
-                        .Select(r => new HistoryRow(r.Kind, r.TypeName, r.Detail, r.At, r.Duration, r.Resolution))
+                        .Select(r => new HistoryRow(r.Kind ?? "unknown", r.TypeName ?? "unknown", r.Detail, r.At ?? DateTimeOffset.UtcNow, r.Duration, r.Resolution))
                         .ToListAsync(ct);
                 }
             ),

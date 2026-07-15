@@ -1,6 +1,6 @@
 SELECT
     d.mac
-  , COALESCE(d.discovered, NULL) AS ip  -- report nullable to match the string? tuple
+  , coalesce(d.discovered, NULL) AS ip  -- report nullable to match the string? tuple
   , d.hostname
   , d.onvif_serial
   , d.roku_serial

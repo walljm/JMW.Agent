@@ -54,6 +54,7 @@ public sealed class SessionMiddleware
             new Claim(ClaimTypes.NameIdentifier, row.UserId.ToString()),
             new Claim(ClaimTypes.Name, row.Username),
             new Claim(ClaimTypes.Role, row.Role),
+            new Claim("session_id", sessionId),
         };
         return new ClaimsPrincipal(new ClaimsIdentity(claims, "jmw-session"));
     }

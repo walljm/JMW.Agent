@@ -3,8 +3,12 @@
 -- lookup function mirroring oui_vendor(mac)'s longest-prefix-match shape. Kept as a
 -- separate function (rather than changing oui_vendor's return shape) so every existing
 -- caller of oui_vendor is unaffected.
+--
+-- NOTE: Originally numbered 0051 (duplicate with 0051_discovered_os), renamed to 0080.
+-- ALTER TABLE is guarded with IF NOT EXISTS so re-running this on existing deployments
+-- (where the column was already added under the old filename) is a safe no-op.
 
-ALTER TABLE oui_entries ADD COLUMN country text;
+ALTER TABLE oui_entries ADD COLUMN IF NOT EXISTS country text;
 
 CREATE OR REPLACE FUNCTION oui_country(mac text)
     RETURNS text

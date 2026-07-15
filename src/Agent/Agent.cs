@@ -403,6 +403,10 @@ public sealed class Agent
                     {
                         tracker.Rollback();
                     }
+
+                    // Persist the rollback immediately so a crash between now and the
+                    // next successful cycle doesn't leave stale (pre-rollback) state on disk.
+                    PersistAllTrackers();
                 }
 
                 AgentMessages.FactsPostFailed(_logger, ex);

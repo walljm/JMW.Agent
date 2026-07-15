@@ -15,7 +15,7 @@ internal static class AsyncEnumerableExtensions
         CancellationToken cancellationToken = default
     )
     {
-        await foreach (T _ in source.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (T _ in source.WithCancellation(cancellationToken))
         {
             // intentionally empty — we only need to drive execution
         }

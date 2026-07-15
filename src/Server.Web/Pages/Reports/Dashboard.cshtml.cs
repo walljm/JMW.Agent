@@ -129,10 +129,10 @@ public sealed class DashboardModel : PageModel
         try
         {
             List<IncidentCountRow> counts = [];
-            await foreach ((string incidentType, long openCount, long distinctEntities) in
+            await foreach ((string incidentType, long? openCount, long? distinctEntities) in
                 conn.GetOpenIncidentCountsAsync(ct))
             {
-                counts.Add(new IncidentCountRow(incidentType, openCount, distinctEntities));
+                counts.Add(new IncidentCountRow(incidentType, openCount ?? 0, distinctEntities ?? 0));
             }
 
             CertsExpiringResult certs = await conn.GetCertsExpiringAsync(ct).FirstOrDefaultAsync(ct);
@@ -304,11 +304,11 @@ public sealed class DashboardModel : PageModel
         try
         {
             List<ActivityRow> rows = [];
-            await foreach ((string Kind, string TypeName, string EntityKind, string EntityId, string? Detail,
-                DateTimeOffset At, TimeSpan? Duration, string? Resolution, string? EntityName) r in
+            await foreach ((string? Kind, string? TypeName, string? EntityKind, string? EntityId, string? Detail,
+                DateTimeOffset? At, TimeSpan? Duration, string? Resolution, string? EntityName) r in
                 conn.ListRecentActivityAsync(ChangesCap, ct))
             {
-                rows.Add(new ActivityRow(r.Kind, r.TypeName, r.EntityKind, r.EntityId, r.Detail, r.At, r.Duration, r.EntityName));
+                rows.Add(new ActivityRow(r.Kind ?? "unknown", r.TypeName ?? "unknown", r.EntityKind ?? "unknown", r.EntityId ?? "unknown", r.Detail, r.At ?? DateTimeOffset.UtcNow, r.Duration, r.EntityName));
             }
 
             Cache("dash_changes", rows, FastTtl);

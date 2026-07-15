@@ -23,6 +23,17 @@ string configPath = args.Length > 0 ? args[0] : "agent.json";
 string stateDir = Environment.GetEnvironmentVariable("JMW_AGENT_STATE_DIR")
  ?? "/var/lib/jmw-agent";
 
+// Warn loudly at startup if the update public key was not baked in. The agent
+// will run normally, but self-update will be permanently unavailable since every
+// update attempt will be rejected at signature-verification time.
+if (string.IsNullOrWhiteSpace(JMW.Discovery.Agent.Collection.UpdatePublicKey.Value))
+{
+    Console.Error.WriteLine(
+        "[WARN] UpdatePublicKey.Value is empty. This binary cannot receive self-updates. "
+      + "Rebuild with a real signing key before deploying to production."
+    );
+}
+
 Agent agent = new AgentBuilder()
     .WithConfig(configPath)
     .WithStateDirectory(stateDir)

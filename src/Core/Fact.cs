@@ -200,8 +200,28 @@ public readonly record struct Fact
 
     private static string FillKeys(string template, string[] keys)
     {
+        int bracketCount = 0;
+        int pos = 0;
+        while (pos < template.Length)
+        {
+            int idx = template.IndexOf("[]", pos, StringComparison.Ordinal);
+            if (idx < 0) { break; }
+
+            bracketCount++;
+            pos = idx + 2;
+        }
+
+        if (keys.Length != bracketCount)
+        {
+            throw new ArgumentException(
+                $"Fact path template '{template}' has {bracketCount} placeholder(s) but {keys.Length} key(s) were provided.",
+                nameof(keys)
+            );
+        }
+
         StringBuilder sb = new(template.Length + keys.Sum(k => k.Length));
-        int ki = 0, pos = 0;
+        int ki = 0;
+        pos = 0;
         while (pos < template.Length)
         {
             int bracket = template.IndexOf("[]", pos, StringComparison.Ordinal);

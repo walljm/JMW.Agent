@@ -29,6 +29,12 @@ public readonly record struct UserIdResult(Guid UserId);
 
 public readonly record struct AuditIdResult(long Id);
 
+public readonly record struct IncidentIdResult(long Id);
+
+public readonly record struct ChangeEventIdResult(long Id);
+
+public readonly record struct EntityIdResult(string EntityId);
+
 public readonly record struct AgentIdResult(Guid AgentId);
 
 public readonly record struct HeartbeatStatusResult(string Status, string? Os, string? Arch);

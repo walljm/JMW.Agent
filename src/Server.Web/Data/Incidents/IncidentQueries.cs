@@ -18,7 +18,7 @@ public static partial class IncidentQueries
     /// suppression), or refreshes last_seen_at/detail on an already-open one.
     /// </summary>
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<long> OpenOrTouchIncidentAsync(
+    public static partial IAsyncEnumerable<IncidentIdResult> OpenOrTouchIncidentAsync(
         this NpgsqlConnection connection,
         string entityKind,
         string entityId,
@@ -30,7 +30,7 @@ public static partial class IncidentQueries
 
     /// <summary>Auto-resolves the open incident for this entity+type, if any.</summary>
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<long> ResolveIncidentAsync(
+    public static partial IAsyncEnumerable<IncidentIdResult> ResolveIncidentAsync(
         this NpgsqlConnection connection,
         string entityKind,
         string entityId,
@@ -40,7 +40,7 @@ public static partial class IncidentQueries
 
     /// <summary>Manually resolves the open incident for this entity+type (admin action).</summary>
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<long> ResolveIncidentManualAsync(
+    public static partial IAsyncEnumerable<IncidentIdResult> ResolveIncidentManualAsync(
         this NpgsqlConnection connection,
         string entityKind,
         string entityId,
@@ -50,7 +50,7 @@ public static partial class IncidentQueries
 
     /// <summary>Records a one-shot change event (discovered/promoted/merged/...).</summary>
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<long> InsertChangeEventAsync(
+    public static partial IAsyncEnumerable<ChangeEventIdResult> InsertChangeEventAsync(
         this NpgsqlConnection connection,
         string eventType,
         string entityKind,
@@ -65,7 +65,7 @@ public static partial class IncidentQueries
     /// GetAgentHealthList.sql/AgentsApi.
     /// </summary>
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<(Guid AgentId, string Liveness)> ListAgentLivenessAsync(
+    public static partial IAsyncEnumerable<(Guid AgentId, string? Liveness)> ListAgentLivenessAsync(
         this NpgsqlConnection connection,
         CancellationToken cancellationToken
     );
@@ -83,7 +83,7 @@ public static partial class IncidentQueries
 
     /// <summary>Entity IDs with a currently-open incident of the given type — used to detect ones that no longer apply.</summary>
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<string> ListOpenIncidentEntityIdsAsync(
+    public static partial IAsyncEnumerable<EntityIdResult> ListOpenIncidentEntityIdsAsync(
         this NpgsqlConnection connection,
         string entityKind,
         string incidentType,
@@ -98,7 +98,7 @@ public static partial class IncidentQueries
     /// over the incidents table — a new incident type shows up here automatically, no new SQL.
     /// </summary>
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<(string IncidentType, long OpenCount, long DistinctEntities)>
+    public static partial IAsyncEnumerable<(string IncidentType, long? OpenCount, long? DistinctEntities)>
         GetOpenIncidentCountsAsync(this NpgsqlConnection connection, CancellationToken cancellationToken);
 
     /// <summary>
@@ -107,8 +107,8 @@ public static partial class IncidentQueries
     /// (resolved_at - opened_at) — the raw fact-diff feed this replaces never could.
     /// </summary>
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<(string Kind, string TypeName, string EntityKind, string EntityId,
-        string? Detail, DateTimeOffset At, TimeSpan? Duration, string? Resolution, string? EntityName)>
+    public static partial IAsyncEnumerable<(string? Kind, string? TypeName, string? EntityKind, string? EntityId,
+        string? Detail, DateTimeOffset? At, TimeSpan? Duration, string? Resolution, string? EntityName)>
         ListRecentActivityAsync(this NpgsqlConnection connection, int limit, CancellationToken cancellationToken);
 
     /// <summary>
@@ -116,7 +116,7 @@ public static partial class IncidentQueries
     /// most-recent-first.
     /// </summary>
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<(string Kind, string TypeName, string? Detail, DateTimeOffset At,
+    public static partial IAsyncEnumerable<(string? Kind, string? TypeName, string? Detail, DateTimeOffset? At,
         TimeSpan? Duration, string? Resolution)> ListEntityHistoryAsync(
         this NpgsqlConnection connection,
         string entityKind,

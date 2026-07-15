@@ -53,7 +53,7 @@ public static class Updater
     {
         ValidateOffer(info, serverUri);
 
-        if (!_inFlight.Wait(0, CancellationToken.None))
+        if (!_inFlight.Wait(0, ct))
         {
             throw new InvalidOperationException("Another update is already in progress.");
         }
@@ -129,11 +129,11 @@ public static class Updater
 
         try
         {
-            (string actualHash, long actualSize) = await DownloadAsync(info.Url, tmpPath, apiKey, http, ct);
+            (string actualHash, long actualSize) = await DownloadAsync(info.Url, tmpPath, apiKey, http, info.Size, ct);
             VerifyHash(info, actualHash, actualSize);
             VerifySignature(info, actualHash, actualSize);
 
-            Apply(exePath, tmpPath);
+            Apply(exePath, tmpPath, expectedHash: actualHash);
         }
         catch
         {
@@ -154,6 +154,7 @@ public static class Updater
         string tmpPath,
         string apiKey,
         HttpClient http,
+        long maxSize,
         CancellationToken ct
     )
     {
@@ -179,6 +180,14 @@ public static class Updater
         {
             await tee.WriteAsync(buf.AsMemory(0, read), ct);
             written += read;
+            // Abort early if the response is already larger than advertised —
+            // prevents a misbehaving server from filling disk before verification.
+            if (maxSize > 0 && written > maxSize)
+            {
+                throw new InvalidDataException(
+                    $"Download exceeded declared size {maxSize} bytes; aborting to protect disk space."
+                );
+            }
         }
 
         // Flush the CryptoStream to finalize the hash.
@@ -240,7 +249,7 @@ public static class Updater
 
     // ── Apply ─────────────────────────────────────────────────────────────────
 
-    private static void Apply(string exePath, string tmpPath)
+    private static void Apply(string exePath, string tmpPath, string expectedHash)
     {
         if (OperatingSystem.IsWindows())
         {
@@ -270,6 +279,19 @@ public static class Updater
             File.Move(tmpPath, exePath, overwrite: true);
 
             UpdaterLog.BinaryReplaced(Log);
+
+            // Re-verify the renamed binary before executing it, closing the TOCTOU
+            // window between the File.Move and Process.Start. An attacker who can write
+            // to the binary directory could otherwise replace the file in that gap.
+            using SHA256 sha = SHA256.Create();
+            using FileStream fs = File.OpenRead(exePath);
+            string diskHash = Convert.ToHexString(sha.ComputeHash(fs)).ToLowerInvariant();
+            if (!diskHash.Equals(expectedHash, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException(
+                    $"Post-rename hash mismatch: disk={diskHash}, expected={expectedHash}. Aborting update."
+                );
+            }
 
             // Start new binary before exiting so there is no window where neither
             // binary is running. The service manager may also restart on exit.

@@ -50,16 +50,16 @@ public sealed partial class AgentLivenessSweepService : BackgroundService
 
             // Materialize before writing — a second command can't open on this connection while
             // ListAgentLivenessAsync's reader is still streaming (see AGENTS.md's DB access rules).
-            List<(Guid AgentId, string Liveness)> agents = [];
-            await foreach ((Guid agentId, string liveness) in conn.ListAgentLivenessAsync(ct))
+            List<(Guid AgentId, string? Liveness)> agents = [];
+            await foreach ((Guid agentId, string? liveness) in conn.ListAgentLivenessAsync(ct))
             {
                 agents.Add((agentId, liveness));
             }
 
-            foreach ((Guid agentId, string liveness) in agents)
+            foreach ((Guid agentId, string? liveness) in agents)
             {
                 string entityId = agentId.ToString();
-                if (liveness == "offline")
+                if (liveness is "offline" or null)
                 {
                     await conn.OpenOrTouchIncidentAsync(
                             "agent",

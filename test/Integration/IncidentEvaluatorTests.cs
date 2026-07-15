@@ -160,10 +160,10 @@ public sealed class IncidentEvaluatorTests : IAsyncLifetime
 
         await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
         Dictionary<string, (long OpenCount, long DistinctEntities)> byType = new(StringComparer.Ordinal);
-        await foreach ((string incidentType, long openCount, long distinctEntities) in
+        await foreach ((string incidentType, long? openCount, long? distinctEntities) in
             conn.GetOpenIncidentCountsAsync(CancellationToken.None))
         {
-            byType[incidentType] = (openCount, distinctEntities);
+            byType[incidentType] = (openCount ?? 0, distinctEntities ?? 0);
         }
 
         Assert.Equal((2L, 2L), byType["smart_failing"]);
@@ -188,7 +188,7 @@ public sealed class IncidentEvaluatorTests : IAsyncLifetime
             await cmd.ExecuteNonQueryAsync();
         }
 
-        List<(string Kind, string TypeName, string EntityKind, string EntityId, string? Detail, DateTimeOffset At,
+        List<(string? Kind, string? TypeName, string? EntityKind, string? EntityId, string? Detail, DateTimeOffset? At,
             TimeSpan? Duration, string? Resolution, string? EntityName)> rows = await conn
             .ListRecentActivityAsync(10, CancellationToken.None)
             .ToListAsync(CancellationToken.None);

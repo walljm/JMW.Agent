@@ -89,29 +89,28 @@ public sealed class CollectorDeltaTracker
     public IReadOnlyList<Fact> FilterChanged(IEnumerable<Fact> facts)
     {
         List<Fact> changed = new();
-        List<(string Id, long Hash)> pending = new();
+        List<(string Id, long? PrevHash)> pending = new();
 
         foreach (Fact fact in facts)
         {
             long hash = ValueHash(fact.Value);
-            if (!_lastSent.TryGetValue(fact.Id, out long prev) || prev != hash)
+            bool had = _lastSent.TryGetValue(fact.Id, out long prev);
+            if (!had || prev != hash)
             {
                 changed.Add(fact);
-                pending.Add((fact.Id, hash));
+                // Remember the OLD hash (or null if the key was absent) so Rollback
+                // can restore it exactly rather than just deleting the key.
+                pending.Add((fact.Id, had ? prev : null));
+                _lastSent[fact.Id] = hash;
             }
         }
 
         // Optimistically update state. Call Rollback() if the send fails.
-        foreach ((string id, long hash) in pending)
-        {
-            _lastSent[id] = hash;
-        }
-
         _pendingRollback = pending;
         return changed;
     }
 
-    private List<(string Id, long Hash)>? _pendingRollback;
+    private List<(string Id, long? PrevHash)>? _pendingRollback;
 
     /// <summary>
     /// Reverts the state updated by the last <see cref="FilterChanged" /> call.
@@ -125,9 +124,19 @@ public sealed class CollectorDeltaTracker
             return;
         }
 
-        foreach ((string id, long _) in _pendingRollback)
+        foreach ((string id, long? prevHash) in _pendingRollback)
         {
-            _lastSent.Remove(id);
+            // Restore the previous state exactly: if the key existed before this
+            // cycle's FilterChanged call, put its old hash back; if it was a new
+            // key, remove it entirely so it looks unsent to the next cycle.
+            if (prevHash.HasValue)
+            {
+                _lastSent[id] = prevHash.Value;
+            }
+            else
+            {
+                _lastSent.Remove(id);
+            }
         }
 
         _pendingRollback = null;

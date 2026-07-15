@@ -36,7 +36,7 @@ public sealed class TerrainCaModel : ReportPageModel
                 await using NpgsqlConnection conn = await _db.OpenConnectionAsync(ct);
                 Cas = await conn.ListTerrainCaInventoryAsync(Q, ct)
                     .Select(r => new TerrainCaItem(
-                            r.Kind,
+                            r.Kind ?? "unknown",
                             r.Subtype,
                             r.SubjectDn,
                             r.Fingerprint,

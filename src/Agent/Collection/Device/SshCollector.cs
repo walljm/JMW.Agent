@@ -83,7 +83,8 @@ public sealed class SshCollector : IDeviceCollector, IDisposable
                     $"{connInfo.CurrentKeyExchangeAlgorithm}:{_client.ConnectionInfo.ServerVersion}".ToLowerInvariant()
                 )
             );
-            fingerprints.Add(new Fingerprint(FingerprintType.MachineId, hostname));
+            // NOTE: hostname is NOT a stable device identifier (user-configurable) — do not
+            // add it as MachineId. It is emitted as FactPaths.SystemHostname below instead.
         }
 
         string sshHostKeyRaw = _client.ConnectionInfo.ServerVersion ?? "";

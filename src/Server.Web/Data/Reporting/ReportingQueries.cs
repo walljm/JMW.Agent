@@ -245,7 +245,7 @@ public static partial class ReportingQueries
     /// </summary>
     [DatabaseCommand]
     public static partial
-        IAsyncEnumerable<(string Kind, string? Subtype, string? SubjectDn, string? Fingerprint,
+        IAsyncEnumerable<(string? Kind, string? Subtype, string? SubjectDn, string? Fingerprint,
             DateTimeOffset? NotBefore, DateTimeOffset? NotAfter, string? ServiceRef, long? SeenOnCount)>
         ListTerrainCaInventoryAsync(
             this NpgsqlConnection connection,

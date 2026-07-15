@@ -1081,12 +1081,15 @@
                 results.innerHTML = '<p class="text-dim">No matching devices.</p>';
                 return;
             }
-            results.innerHTML = items.map(function (h) {
-                var label = (h.hostname || h.device_id) + ' — ' + [h.ip, h.mac, h.vendor].filter(Boolean).join(' · ');
-                return '<div class="js-merge-device-pick" data-device-id="' + h.device_id
-                    + '" style="padding:var(--space-2);cursor:pointer;border-bottom:1px solid var(--border)">'
-                    + label + '</div>';
-            }).join('');
+            results.replaceChildren.apply(results, items.map(function (h) {
+                var label = (h.hostname || h.device_id) + ' \u2014 ' + [h.ip, h.mac, h.vendor].filter(Boolean).join(' \u00b7 ');
+                var div = document.createElement('div');
+                div.className = 'js-merge-device-pick';
+                div.dataset.deviceId = h.device_id;
+                div.style.cssText = 'padding:var(--space-2);cursor:pointer;border-bottom:1px solid var(--border)';
+                div.textContent = label;
+                return div;
+            }));
         }
 
         document.addEventListener('click', function (e) {

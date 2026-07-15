@@ -59,9 +59,9 @@ public sealed partial class FingerprintConflictSweepService : BackgroundService
             }
 
             List<string> openEntityIds = [];
-            await foreach (string entityId in conn.ListOpenIncidentEntityIdsAsync(EntityKind, IncidentType, ct))
+            await foreach (EntityIdResult row in conn.ListOpenIncidentEntityIdsAsync(EntityKind, IncidentType, ct))
             {
-                openEntityIds.Add(entityId);
+                openEntityIds.Add(row.EntityId);
             }
 
             HashSet<string> stillConflicting = new(StringComparer.Ordinal);
