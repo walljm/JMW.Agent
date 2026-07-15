@@ -772,4 +772,150 @@ public sealed class DerivationTests
 
         Assert.Empty(d.Derive(facts));
     }
+
+    // ── DeviceKindDerivation ───────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("Notebook", "laptop")]
+    [InlineData("Portable", "laptop")]
+    [InlineData("Sub Notebook", "laptop")]
+    [InlineData("Desktop", "desktop")]
+    [InlineData("Mini Tower", "desktop")]
+    [InlineData("Main Server Chassis", "server")]
+    [InlineData("Rack Mount Chassis", "server")]
+    [InlineData("Tablet", "tablet")]
+    public void DeviceKind_HostWithKnownChassisType_RefinesKind(string chassisType, string expectedKind)
+    {
+        DeviceKindDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].Kind", "host", T),
+            Fact.Create($"Device[{Dev}].Hardware.ChassisType", chassisType, T),
+        ];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+
+        Assert.Single(results);
+        Assert.Equal(expectedKind, results[0].Value.AsString());
+        Assert.Equal($"Device[{Dev}].Kind", results[0].Id);
+        Assert.Equal(FactPaths.DeviceKind, results[0].AttributePath);
+    }
+
+    [Fact]
+    public void DeviceKind_HostWithUnknownChassisType_ReturnsEmpty()
+    {
+        DeviceKindDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].Kind", "host", T),
+            Fact.Create($"Device[{Dev}].Hardware.ChassisType", "Hand Held", T),
+        ];
+
+        Assert.Empty(d.Derive(facts));
+    }
+
+    [Fact]
+    public void DeviceKind_HostWithNoChassisType_ReturnsEmpty()
+    {
+        DeviceKindDerivation d = new();
+        Fact[] facts = [Fact.Create($"Device[{Dev}].Kind", "host", T)];
+
+        Assert.Empty(d.Derive(facts));
+    }
+
+    [Theory]
+    [InlineData("Synology", "nas")]
+    [InlineData("QNAP", "nas")]
+    [InlineData("APC", "ups")]
+    [InlineData("Mikrotik", "router")]
+    [InlineData("Brother", "printer")]
+    public void DeviceKind_NetworkDeviceWithKnownVendor_RefinesKind(string vendor, string expectedKind)
+    {
+        DeviceKindDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].Kind", "network-device", T),
+            Fact.Create($"Device[{Dev}].VendorCanonical", vendor, T),
+        ];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+
+        Assert.Single(results);
+        Assert.Equal(expectedKind, results[0].Value.AsString());
+    }
+
+    [Fact]
+    public void DeviceKind_NetworkDeviceFallsBackToVendorGuess_WhenNoCanonicalVendor()
+    {
+        DeviceKindDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].Kind", "network-device", T),
+            Fact.Create($"Device[{Dev}].VendorGuess", "Synology", T),
+        ];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+
+        Assert.Single(results);
+        Assert.Equal("nas", results[0].Value.AsString());
+    }
+
+    [Theory]
+    [InlineData("HP LaserJet Pro M404", null, "printer")]
+    [InlineData(null, "HP OfficeJet 9015e", "printer")]
+    [InlineData("UniFi AP-AC-Pro", null, "access-point")]
+    [InlineData(null, "UniFi Switch 24 PoE", "switch")]
+    [InlineData("EdgeRouter X", null, "router")]
+    public void DeviceKind_NetworkDeviceWithKnownProductSignature_RefinesKind(
+        string? model,
+        string? sysDescr,
+        string expectedKind
+    )
+    {
+        DeviceKindDerivation d = new();
+        List<Fact> facts = [Fact.Create($"Device[{Dev}].Kind", "network-device", T)];
+        if (model is not null)
+        {
+            facts.Add(Fact.Create($"Device[{Dev}].Hardware.SystemModel", model, T));
+        }
+
+        if (sysDescr is not null)
+        {
+            facts.Add(Fact.Create($"Device[{Dev}].SNMP.SysDescr", sysDescr, T));
+        }
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+
+        Assert.Single(results);
+        Assert.Equal(expectedKind, results[0].Value.AsString());
+    }
+
+    [Fact]
+    public void DeviceKind_NetworkDeviceWithNoSignal_ReturnsEmpty()
+    {
+        DeviceKindDerivation d = new();
+        Fact[] facts = [Fact.Create($"Device[{Dev}].Kind", "network-device", T)];
+
+        Assert.Empty(d.Derive(facts));
+    }
+
+    [Fact]
+    public void DeviceKind_AlreadySpecificKind_IsNotOverridden()
+    {
+        DeviceKindDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].Kind", "router", T),
+            Fact.Create($"Device[{Dev}].VendorCanonical", "Synology", T),
+        ];
+
+        Assert.Empty(d.Derive(facts));
+    }
+
+    [Fact]
+    public void DeviceKind_NoInputs_ReturnsEmpty()
+    {
+        DeviceKindDerivation d = new();
+        Assert.Empty(d.Derive([]));
+    }
 }

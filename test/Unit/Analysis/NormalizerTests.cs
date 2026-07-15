@@ -510,4 +510,86 @@ public sealed class NormalizerTests
         FsTypeNormalizer n = new();
         Assert.Null(n.Normalize(FactValue.FromLong(1L)));
     }
+
+    // ── OsDistroNormalizer ────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("Debian GNU/Linux", "Debian")] // /etc/os-release NAME noise stripped
+    [InlineData("Raspbian GNU/Linux", "Raspbian")]
+    [InlineData("Kali GNU/Linux", "Kali Linux")]
+    [InlineData("Ubuntu", "Ubuntu")] // already canonical, passthrough unchanged
+    [InlineData("Fedora Linux", "Fedora")]
+    [InlineData("CentOS Linux", "CentOS")]
+    [InlineData("Red Hat Enterprise Linux", "Red Hat Enterprise Linux")]
+    [InlineData("Rocky Linux", "Rocky Linux")]
+    [InlineData("Arch Linux", "Arch Linux")] // not stripped to "Arch" — not a mechanical suffix rule
+    [InlineData("Alpine Linux", "Alpine Linux")]
+    [InlineData("SLES", "SUSE Linux Enterprise Server")]
+    [InlineData("Mac OS X", "macOS")]
+    [InlineData("OS X", "macOS")]
+    public void OsDistro_RecognizedVariants_ReturnsCanonicalName(string raw, string expected)
+    {
+        OsDistroNormalizer n = new();
+        Assert.Equal(expected, n.Normalize(FactValue.FromString(raw))?.AsString());
+    }
+
+    [Theory]
+    [InlineData("Ubuntu 22.04")] // version embedded in NAME — not in the alias table, passthrough
+    [InlineData("RouterOS")] // vendor-locked OS name — not a Linux distro NAME value, untouched
+    [InlineData("Chrome OS")]
+    public void OsDistro_UnrecognizedVariant_PassesThroughUnchanged(string raw)
+    {
+        OsDistroNormalizer n = new();
+        Assert.Equal(raw, n.Normalize(FactValue.FromString(raw))?.AsString());
+    }
+
+    [Theory]
+    [InlineData("Linux")] // bare family name carries no info OS.Family doesn't already have
+    [InlineData("Unknown")]
+    [InlineData("N/A")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void OsDistro_JunkOrUninformative_ReturnsNull(string raw)
+    {
+        OsDistroNormalizer n = new();
+        Assert.Null(n.Normalize(FactValue.FromString(raw)));
+    }
+
+    [Fact]
+    public void OsDistro_NonString_ReturnsNull()
+    {
+        OsDistroNormalizer n = new();
+        Assert.Null(n.Normalize(FactValue.FromLong(1L)));
+    }
+
+    // ── ModelNormalizer ───────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("OptiPlex   7090", "OptiPlex 7090")] // internal whitespace run collapsed
+    [InlineData("  ThinkPad T480  ", "ThinkPad T480")] // outer whitespace trimmed
+    [InlineData("HP\tLaserJet\n4000", "HP LaserJet 4000")] // tabs/newlines collapse to a single space
+    public void Model_WhitespaceNoise_Collapses(string raw, string expected)
+    {
+        ModelNormalizer n = new([]);
+        Assert.Equal(expected, n.Normalize(FactValue.FromString(raw))?.AsString());
+    }
+
+    [Theory]
+    [InlineData("unknown")]
+    [InlineData("N/A")]
+    [InlineData("Not Specified")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Model_JunkPlaceholder_ReturnsNull(string raw)
+    {
+        ModelNormalizer n = new([]);
+        Assert.Null(n.Normalize(FactValue.FromString(raw)));
+    }
+
+    [Fact]
+    public void Model_NonString_ReturnsNull()
+    {
+        ModelNormalizer n = new([]);
+        Assert.Null(n.Normalize(FactValue.FromLong(1L)));
+    }
 }

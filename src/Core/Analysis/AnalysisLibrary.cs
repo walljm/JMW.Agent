@@ -32,7 +32,6 @@ public static class AnalysisLibrary
             new LowercaseTrimNormalizer(
                 [
                     FactPaths.SystemOsFamily,
-                    FactPaths.SystemOsDistro,
                     FactPaths.HwVirtualization,
                     FactPaths.DeviceKind,
                     FactPaths.ContainerState,
@@ -46,6 +45,21 @@ public static class AnalysisLibrary
             // ── Vendor/manufacturer names — canonical proper-case display form,
             // NOT lowercased (see VendorNormalizer for why) ────────────────────
             new VendorNormalizer(),
+
+            // ── OS distro — canonical display form, NOT lowercased (see OsDistroNormalizer) ───
+            new OsDistroNormalizer(),
+
+            // ── Model strings — whitespace/placeholder cleanup only (see ModelNormalizer) ────
+            new ModelNormalizer(
+                [
+                    FactPaths.HwSystemModel,
+                    FactPaths.HwBoardModel,
+                    FactPaths.DiscoveredModel,
+                    FactPaths.BacnetModelName,
+                    ServicePaths.HomeAssistantHaDeviceModel,
+                    FactPaths.HwComponentModel,
+                ]
+            ),
 
             // ── Disk / filesystem ──────────────────────────────────────────────
             new DiskTypeNormalizer(),
@@ -96,6 +110,7 @@ public static class AnalysisLibrary
             new OsFromSnmpSysDescrDerivation(),
             new VendorFromModelPrefixDerivation(),
             new VendorFromHostnamePrefixDerivation(),
+            new DeviceKindDerivation(),
         ]
     );
 }

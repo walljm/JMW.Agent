@@ -1,4 +1,5 @@
 using JMW.Discovery.Core;
+using JMW.Discovery.Core.Analysis.Normalizers;
 using JMW.Discovery.Server.Queries;
 
 using Npgsql;
@@ -66,8 +67,12 @@ public static class HomeAssistantDevicePromotion
                 continue;
             }
 
-            string? cleanManufacturer = NullIfBlank(entry.Manufacturer);
-            string? cleanModel = NullIfBlank(entry.Model);
+            // This promotion writes straight to the resolved device's hardware/summary rows via
+            // direct SQL upsert, entirely outside the Fact/AnalysisEngine pipeline — so it must
+            // apply the same vendor/model normalization the pipeline would apply itself, or an
+            // HA-discovered device's manufacturer/model would reach reporting completely raw.
+            string? cleanManufacturer = NormalizeManufacturer(NullIfBlank(entry.Manufacturer));
+            string? cleanModel = NormalizeModel(NullIfBlank(entry.Model));
             if (cleanManufacturer != null || cleanModel != null)
             {
                 await conn.UpsertDeviceHardwareAsync(deviceId, cleanManufacturer, cleanModel, serial: null, ct)
@@ -149,6 +154,15 @@ public static class HomeAssistantDevicePromotion
 
     private static string? NullIfBlank(string? s) =>
         string.IsNullOrWhiteSpace(s) ? null : s;
+
+    private static readonly VendorNormalizer Vendor = new();
+    private static readonly ModelNormalizer Model = new([]);
+
+    private static string? NormalizeManufacturer(string? s) =>
+        s is null ? null : Vendor.Normalize(FactValue.FromString(s))?.AsString();
+
+    private static string? NormalizeModel(string? s) =>
+        s is null ? null : Model.Normalize(FactValue.FromString(s))?.AsString();
 
     private sealed class HaDeviceEntry
     {

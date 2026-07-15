@@ -9,14 +9,12 @@ namespace JMW.Discovery.Core.Analysis.Normalizers;
 /// </summary>
 public sealed class LowercaseTrimNormalizer : INormalizer
 {
-    private readonly IReadOnlyList<string>? _patterns;
-
     public LowercaseTrimNormalizer(IReadOnlyList<string>? patterns = null)
     {
-        _patterns = patterns;
+        AttributePathPatterns = patterns;
     }
 
-    public IReadOnlyList<string> AttributePathPatterns => _patterns ?? [];
+    public IReadOnlyList<string> AttributePathPatterns => field ?? [];
 
     public FactValue? Normalize(FactValue raw)
     {
@@ -31,6 +29,34 @@ public sealed class LowercaseTrimNormalizer : INormalizer
     }
 }
 
+/// <summary>
+/// Lowercases and trims any string FactValue.
+/// Accepts multiple attribute_path patterns so one instance covers all
+/// enum-like string facts: OS family/distro, disk type, container/battery
+/// state, vendor, kind, duplex, interface type.
+/// Returns null for non-string values and empty strings after trimming.
+/// </summary>
+public sealed class TrimNormalizer : INormalizer
+{
+    public TrimNormalizer(IReadOnlyList<string>? patterns = null)
+    {
+        AttributePathPatterns = patterns;
+    }
+
+    public IReadOnlyList<string> AttributePathPatterns => field ?? [];
+
+    public FactValue? Normalize(FactValue raw)
+    {
+        string? str = raw.AsString();
+        if (str is null)
+        {
+            return null;
+        }
+
+        string trimmed = str.Trim();
+        return trimmed.Length == 0 ? null : FactValue.FromString(trimmed);
+    }
+}
 /// <summary>
 /// Strips trailing DNS dots from a string FactValue.
 /// "host.local." → "host.local"
@@ -132,14 +158,12 @@ public sealed class SmartHealthNormalizer : INormalizer
 /// </summary>
 public sealed class ClampPercentNormalizer : INormalizer
 {
-    private readonly IReadOnlyList<string>? _patterns;
-
     public ClampPercentNormalizer(IReadOnlyList<string>? patterns = null)
     {
-        _patterns = patterns;
+        AttributePathPatterns = patterns;
     }
 
-    public IReadOnlyList<string> AttributePathPatterns => _patterns ?? [];
+    public IReadOnlyList<string> AttributePathPatterns => field ?? [];
 
     public FactValue? Normalize(FactValue raw)
     {
@@ -170,18 +194,17 @@ public sealed class ClampPercentNormalizer : INormalizer
 public sealed class NonNegativeBytesNormalizer : INormalizer
 {
     private readonly bool _rejectZero;
-    private readonly IReadOnlyList<string>? _patterns;
 
     public NonNegativeBytesNormalizer(
         IReadOnlyList<string>? patterns = null,
         bool rejectZero = false
     )
     {
-        _patterns = patterns;
+        AttributePathPatterns = patterns;
         _rejectZero = rejectZero;
     }
 
-    public IReadOnlyList<string> AttributePathPatterns => _patterns ?? [];
+    public IReadOnlyList<string> AttributePathPatterns => field ?? [];
 
     public FactValue? Normalize(FactValue raw)
     {
