@@ -457,15 +457,31 @@ public sealed class Agent
         }
     }
 
-    /// <summary>
-    /// Returns true when the named collector is enabled. A collector is enabled
-    /// unless the server config explicitly disables it. With no server config, all
-    /// collectors run (file-config fallback).
-    /// </summary>
     private bool IsCollectorEnabled(string collectorClassName) =>
-        _serverConfig is not { } cfg
-     || !cfg.Collectors.TryGetValue(collectorClassName, out CollectorSetting? setting)
-     || setting.Enabled;
+        IsCollectorEnabledCore(_serverConfig?.Collectors, collectorClassName);
+
+    /// <summary>
+    /// Returns true when the named collector is enabled. A collector is enabled unless the
+    /// server config explicitly disables it. Absent an explicit setting (no server config,
+    /// or the server config has no entry for this collector), every collector defaults to
+    /// enabled EXCEPT <see cref="NetworkDiscoveryCollector" /> — subnet-wide scanning is
+    /// opt-in per agent (toggle it on via the Admin UI/API) so a freshly registered agent
+    /// only reports on itself until someone explicitly asks it to scan its network.
+    /// Pulled out of <see cref="IsCollectorEnabled" /> as a pure function so the default can
+    /// be unit-tested without standing up a full <see cref="Agent" />.
+    /// </summary>
+    internal static bool IsCollectorEnabledCore(
+        IReadOnlyDictionary<string, CollectorSetting>? collectors,
+        string collectorClassName
+    )
+    {
+        if (collectors is not null && collectors.TryGetValue(collectorClassName, out CollectorSetting? setting))
+        {
+            return setting.Enabled;
+        }
+
+        return collectorClassName != nameof(NetworkDiscoveryCollector);
+    }
 
     /// <summary>
     /// Merges server-delivered targets with file-configured targets. Server targets

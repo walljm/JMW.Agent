@@ -476,7 +476,9 @@ public sealed class AgentDetailModel : PageModel
         List<CollectorRow> rows = new(known.Count);
         foreach ((string name, bool supported) in known)
         {
-            bool enabled = true;
+            // Matches Agent.cs's IsCollectorEnabled default: every collector defaults to
+            // enabled except NetworkDiscoveryCollector, which is opt-in per agent.
+            bool enabled = name != "NetworkDiscoveryCollector";
             int? intervalSecs = null;
 
             if (collectorsConfig.ValueKind == JsonValueKind.Object

@@ -11,6 +11,9 @@
         <ProjectReference Include="../Core/JMW.Discovery.Core.csproj"/>
     </ItemGroup>
     <ItemGroup>
+        <InternalsVisibleTo Include="JMW.Discovery.UnitTests"/>
+    </ItemGroup>
+    <ItemGroup>
         <PackageReference Include="SSH.NET" Version="2025.*"/>
         <PackageReference Include="Lextm.SharpSnmpLib" Version="12.*"/>
         <!-- Parses the Google Wifi OnHub /api/v1/diagnostic-report protobuf. The
