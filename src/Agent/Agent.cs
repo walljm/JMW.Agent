@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
@@ -1173,7 +1174,19 @@ internal sealed class ServiceCollectionContext : IServiceCollectionContext
 
 internal static class AgentVersion
 {
-    public const string Current = "0.1.0";
+    /// <summary>
+    /// The agent's version string, read from the assembly's InformationalVersion attribute
+    /// which is set by <c>-p:Version=X.Y.Z</c> during <c>dotnet publish</c>.
+    /// The CI/CD pipeline derives this from the git tag (e.g. v3.0.1 -> 3.0.1).
+    /// Strips any build-metadata suffix (e.g. "3.0.1+abc123" -> "3.0.1").
+    /// Falls back to "0.0.0-dev" for local development builds.
+    /// </summary>
+    public static readonly string Current =
+        typeof(AgentVersion).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion
+            .Split('+')[0]
+        ?? "0.0.0-dev";
 }
 
 // ── Local machine fingerprinting ──────────────────────────────────────────────

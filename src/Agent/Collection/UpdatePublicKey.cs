@@ -18,7 +18,6 @@ namespace JMW.Discovery.Agent.Collection;
 /// </summary>
 public static class UpdatePublicKey
 {
-    // PLACEHOLDER — replace with your real key before deploying.
-    // Build will succeed; updates will fail at runtime until this is set.
-    public const string Value = "";
+    // ECDSA P-256 public key generated 2026-07-15. Private key: ~/update-signing.pem (dev machine only).
+    public const string Value = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEO7YRsrnvLsWn3GQkbUmio1VaoLujWXnQ+Tq5R+QHDW52nsUjZ2XN6EB698aVvZ+YBe0n/FP/mrrkR9mO6473bg==";
 }
