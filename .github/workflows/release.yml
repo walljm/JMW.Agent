@@ -86,14 +86,18 @@ jobs:
       - name: Sign agent update binaries
         env:
           AGENT_UPDATE_SIGNING_KEY: ${{ secrets.AGENT_UPDATE_SIGNING_KEY }}
-          VERSION: ${{ steps.version.outputs.version }}
+          # Not named VERSION: MSBuild seeds properties from environment variables
+          # case-insensitively, so a VERSION env var shadows the reserved MSBuild
+          # `Version` property and NuGet.targets rejects our "vX.Y.Z" tag format
+          # (SemVer disallows the leading "v") when `dotnet run` builds this tool.
+          SIGN_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           keyfile="$(mktemp)"
           trap 'rm -f "$keyfile"' EXIT
           printf '%s' "$AGENT_UPDATE_SIGNING_KEY" > "$keyfile"
           dotnet run --project src/Tools/UpdateSign -c Release -- \
-            sign --key "$keyfile" --version "$VERSION" dist/jmw-agent-*
+            sign --key "$keyfile" --version "$SIGN_VERSION" dist/jmw-agent-*
 
       - name: Write release checksums
         run: |
