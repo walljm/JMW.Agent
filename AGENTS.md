@@ -97,6 +97,13 @@ dotnet publish src/Agent/JMW.Discovery.Agent.csproj -r linux-x64 -c Release \
 Run as **root** for full coverage — the docker/ports/disk/ARP collectors and raw-socket
 scanners need privilege; unprivileged runs fall back to degraded/passive mode.
 
+Native systemd install: binary at `/opt/jmw/bin/JMW.Discovery.Agent`, config at
+`/etc/jmw/agent.json`, unit from `deploy/systemd/jmw-agent.service`. That unit uses
+`Restart=always`, not `on-failure` — a successful self-update exits 0 after spawning the
+new binary, and since the spawned child is in the same cgroup, systemd's default
+`KillMode=control-group` reaps it right after; `on-failure` would then never restart the
+unit (exit code 0 isn't a failure), leaving the agent permanently dead.
+
 ### Agent self-update
 
 The agent can update itself from a binary the server offers over the heartbeat

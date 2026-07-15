@@ -1,0 +1,40 @@
+[Unit]
+Description=JMW Agent
+Documentation=https://github.com/walljm/JMW.Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/etc/jmw
+Environment="JMW_AGENT_STATE_DIR=/var/lib/jmw-agent"
+ExecStart=/opt/jmw/bin/JMW.Discovery.Agent /etc/jmw/agent.json
+
+# Restart=always (not on-failure): a successful self-update (Updater.cs) replaces the
+# binary, spawns the new one, and exits 0. The spawned child is a member of this unit's
+# cgroup, so systemd's default KillMode=control-group reaps it the moment the tracked
+# main PID exits — on-failure then never restarts, because the exit code is 0, leaving
+# the agent permanently dead until someone notices and restarts it by hand. always
+# covers every exit path (self-update, crash, or a plain `systemctl stop` — which is
+# still safe: WantedBy=multi-user.target plus a normal `systemctl stop`/`disable` is how
+# operators actually take an agent down, not by killing the binary and hoping it stays dead).
+Restart=always
+RestartSec=5s
+
+# ── Hardening ─────────────────────────────────────────────────────────────────
+NoNewPrivileges=false
+# NoNewPrivileges=false: several collectors (docker/ports/disk/ARP, raw-socket
+# scanners) need elevated privilege; the agent already runs as root (User=root)
+# for full collection coverage, matching AGENTS.md's documented convention.
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+# /opt/jmw/bin must stay writable so the in-process self-updater can atomically
+# replace the running binary (rename + re-exec); /var/lib/jmw-agent holds the
+# persistent agent identity/API key.
+ReadWritePaths=/var/lib/jmw-agent /opt/jmw/bin
+
+[Install]
+WantedBy=multi-user.target
