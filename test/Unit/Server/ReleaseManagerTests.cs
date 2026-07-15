@@ -157,4 +157,22 @@ public sealed class ReleaseManagerTests : IDisposable
     {
         Assert.Equal(expected, ReleaseManager.SemverGreater(a, b));
     }
+
+    // Regression coverage for the "v"-prefix mismatch bug: the agent self-reports its bare
+    // AssemblyInformationalVersion ("3.0.3", no "v"), while ReleaseEntry.Version always
+    // carries the "v" prefix. Requiring "v" on both sides made every one of these fall
+    // through to the ordinal-string fallback, which isn't a real version comparison and
+    // returned true for every case below regardless of actual version order — so an update
+    // looked perpetually "available" even when the agent already had the exact version.
+    [Theory]
+    [InlineData("3.0.3", "v3.0.3", false)] // exact production failure: same version, agent's side bare
+    [InlineData("v3.0.3", "3.0.3", false)] // same version, release side bare (shouldn't happen, but must not regress)
+    [InlineData("3.0.3", "v3.0.4", true)] // real upgrade must still be detected
+    [InlineData("v3.0.3", "3.0.4", true)]
+    [InlineData("3.0.4", "v3.0.3", false)] // no downgrade offered
+    [InlineData("1.0.0-rc1", "v1.0.0", true)] // clean release still beats a prerelease across mismatched prefixes
+    public void SemverGreater_TreatsLeadingVAsOptionalAndInsignificant(string a, string b, bool expected)
+    {
+        Assert.Equal(expected, ReleaseManager.SemverGreater(a, b));
+    }
 }

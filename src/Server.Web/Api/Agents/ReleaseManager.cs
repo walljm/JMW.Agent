@@ -224,12 +224,19 @@ public sealed class ReleaseManager
     private static string ReadSignature(string sigPath) =>
         File.Exists(sigPath) ? File.ReadAllText(sigPath).Trim() : "";
 
+    // "v" is optional: release directory names always carry it (CleanSemverPattern gates on
+    // that), but the agent self-reports its bare AssemblyInformationalVersion ("3.0.3", no
+    // "v", built via -p:Version="${VERSION#v}"). Requiring "v" on both sides made every
+    // agent<->release comparison fall through to the ordinal-string fallback below, which is
+    // NOT a version comparison — '3' < 'v' ordinally regardless of the actual numbers, so an
+    // update looked "available" on every heartbeat even when the agent already had it.
     private static readonly Regex SemverPattern =
-        new(@"^v(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$", RegexOptions.Compiled);
+        new(@"^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$", RegexOptions.Compiled);
 
     /// <summary>Reports whether <paramref name="b" /> is strictly greater than <paramref name="a" /> in semver order.
     /// Non-parseable inputs fall back to an ordinal string compare so a malformed/dev version is
-    /// still handled deterministically instead of throwing.</summary>
+    /// still handled deterministically instead of throwing. A leading "v" is optional and not
+    /// itself compared, so "3.0.3" and "v3.0.3" are equal.</summary>
     public static bool SemverGreater(string a, string b)
     {
         if (a == b)
