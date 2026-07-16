@@ -24,19 +24,61 @@ public sealed class VendorFromOsDistroDerivation : IDerivation
 
     // Vendor-exclusive OS names — each of these only ever runs on one manufacturer's hardware,
     // so exact match is safe (unlike a generic substring scan over free text; see plan §1.3).
+    // Deliberately excludes bare "IOS" (Cisco IOS vs. Apple's "iOS" — a real collision risk once
+    // this field also carries mobile-device OS names), bare "ROS" (Siemens Ruggedcom ROS vs. the
+    // Robot Operating System — plausible collision as IoT/industrial device coverage grows), and
+    // bare "NOS" (too generic a token to trust even as an exact match).
     private static readonly Dictionary<string, string> VendorLockedOsNames = new(StringComparer.OrdinalIgnoreCase)
     {
         ["RouterOS"] = "Mikrotik",
         ["JunOS"] = "Juniper",
         ["IOS-XE"] = "Cisco",
+        ["IOS-XR"] = "Cisco",
         ["NX-OS"] = "Cisco",
+        ["AireOS"] = "Cisco",
+        ["FXOS"] = "Cisco",
+        ["ACSW"] = "Cisco",
+        ["ASAS"] = "Cisco",
+        ["CIMC"] = "Cisco",
+        ["CSS-OS"] = "Cisco",
+        ["UCOS"] = "Cisco",
+        ["UCSM"] = "Cisco",
+        ["WebNS"] = "Cisco",
+        ["Meraki"] = "Cisco",
         ["EdgeOS"] = "Ubiquiti",
         ["UniFi OS"] = "Ubiquiti",
         ["PAN-OS"] = "Palo Alto Networks",
         ["FortiOS"] = "Fortinet",
         ["ArubaOS"] = "Aruba",
+        ["AOS-CX"] = "Aruba",
         ["DSM"] = "Synology",
         ["QTS"] = "QNAP",
+        ["ScreenOS"] = "Juniper",
+        ["Comware"] = "HP",
+        ["ProVision"] = "HP",
+        ["ExtremeWare"] = "Extreme",
+        ["FTOS"] = "Dell",
+        ["EqualLogic"] = "Dell",
+        ["Netware"] = "Novell",
+        ["OS/2"] = "IBM",
+        ["HPUX"] = "HP",
+        ["Solaris"] = "Oracle",
+        ["SunOS"] = "Oracle",
+        ["TMOS"] = "F5",
+        ["GigaVUE"] = "Gigamon",
+        ["GigaVUE-FM"] = "Gigamon",
+        ["NIOS"] = "Infoblox",
+        ["ONTAP"] = "NetApp",
+        ["SecureOS"] = "Forcepoint",
+        ["SGOS"] = "BlueCoat",
+        ["NGOS"] = "NETGEAR",
+        ["pfSense"] = "Netgate",
+        ["PSOS"] = "AudioCodes",
+        ["LOS"] = "Lantronix",
+        ["TPOS"] = "Trend Micro",
+        ["TPSMSOS"] = "Trend Micro",
+        ["ERSstackable"] = "Avaya",
+        ["NNCLI"] = "Avaya",
     };
 
     public IReadOnlyList<Fact> Derive(IReadOnlyList<Fact> scopedFacts)

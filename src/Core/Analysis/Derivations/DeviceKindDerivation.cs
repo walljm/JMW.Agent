@@ -29,6 +29,8 @@ public sealed class DeviceKindDerivation : IDerivation
         FactPaths.DeviceKind,
         FactPaths.Derived.DeviceVendorCanonical,
         FactPaths.Derived.DeviceVendorGuess,
+        FactPaths.Derived.DeviceOsGuess,
+        FactPaths.Derived.DeviceModelCanonical,
         FactPaths.HwChassisType,
         FactPaths.HwSystemModel,
         FactPaths.DiscoveredModel,
@@ -44,8 +46,10 @@ public sealed class DeviceKindDerivation : IDerivation
         Fact? kindFact = null;
         string? vendorCanonical = null;
         string? vendorGuess = null;
+        string? os = null;
+        string? modelCanonical = null;
         string? chassisType = null;
-        string? model = null;
+        string? rawModel = null;
         string? sysDescr = null;
 
         foreach (Fact f in scopedFacts)
@@ -67,12 +71,18 @@ public sealed class DeviceKindDerivation : IDerivation
                 case FactPaths.Derived.DeviceVendorGuess:
                     vendorGuess = s;
                     break;
+                case FactPaths.Derived.DeviceOsGuess:
+                    os = s;
+                    break;
+                case FactPaths.Derived.DeviceModelCanonical:
+                    modelCanonical = s;
+                    break;
                 case FactPaths.HwChassisType:
                     chassisType = s;
                     break;
                 case FactPaths.HwSystemModel:
                 case FactPaths.DiscoveredModel:
-                    model ??= s;
+                    rawModel ??= s;
                     break;
                 case FactPaths.SnmpSysDescr:
                     sysDescr = s;
@@ -87,7 +97,10 @@ public sealed class DeviceKindDerivation : IDerivation
 
         string kind = anchor.Value.AsString() ?? "";
         string vendor = vendorCanonical ?? vendorGuess ?? "";
-        string? refined = Refine(kind, vendor, chassisType, model ?? "", sysDescr ?? "");
+        // Prefer the cleaned product-family name (DeviceModelDerivation) over the raw SKU text —
+        // more reliable to dispatch on, e.g. "Catalyst 9300" rather than "WS-C9300-48P".
+        string model = modelCanonical ?? rawModel ?? "";
+        string? refined = Refine(kind, vendor, os ?? "", chassisType, model, sysDescr ?? "");
 
         if (refined is null || string.Equals(refined, kind, StringComparison.OrdinalIgnoreCase))
         {
@@ -98,7 +111,7 @@ public sealed class DeviceKindDerivation : IDerivation
         return [Fact.Create(id, refined, anchor.CollectedAt)];
     }
 
-    private static string? Refine(string kind, string vendor, string? chassisType, string model, string sysDescr)
+    private static string? Refine(string kind, string vendor, string os, string? chassisType, string model, string sysDescr)
     {
         if (string.Equals(kind, DeviceKinds.Host, StringComparison.OrdinalIgnoreCase))
         {
@@ -107,7 +120,7 @@ public sealed class DeviceKindDerivation : IDerivation
 
         if (string.Equals(kind, DeviceKinds.NetworkDevice, StringComparison.OrdinalIgnoreCase))
         {
-            return RefineNetworkDevice(vendor, model, sysDescr);
+            return RefineNetworkDevice(vendor, os, model, sysDescr);
         }
 
         return null;
@@ -164,10 +177,13 @@ public sealed class DeviceKindDerivation : IDerivation
         return null;
     }
 
-    // Exact-vendor signatures only — same discipline as VendorFromSnmpSysDescrDerivation/
-    // VendorFromOsDistroDerivation: each of these vendors is exclusively (or overwhelmingly, for
-    // this codebase's home/SMB device population) one device category, so an exact match on the
-    // already-canonicalized vendor name is safe. Not a substring scan over free text.
+    // Exact-vendor signatures only — same discipline as VendorFromOsDistroDerivation/
+    // VendorOsFromDeviceBannerDerivation: each of these vendors is exclusively (or overwhelmingly,
+    // for this codebase's home/SMB device population) one device category, so an exact match on
+    // the already-canonicalized vendor name is safe. Not a substring scan over free text.
+    // Camera/intercom/microphone vendors added from VendorOsFromDeviceBannerDerivation's own
+    // vendor list — each is a single-purpose brand in this codebase's signature set (Sony is
+    // deliberately excluded: it's a multi-category vendor, unlike these).
     private static readonly Dictionary<string, string> VendorKindSignatures = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Synology"] = DeviceKinds.Nas,
@@ -178,27 +194,161 @@ public sealed class DeviceKindDerivation : IDerivation
         ["Epson"] = DeviceKinds.Printer,
         ["Lexmark"] = DeviceKinds.Printer,
         ["Xerox"] = DeviceKinds.Printer,
+        ["HanwhaVision"] = DeviceKinds.Camera,
+        ["AxisCommunications"] = DeviceKinds.Camera,
+        ["Illustra"] = DeviceKinds.Camera,
+        ["Pelco"] = DeviceKinds.Camera,
+        ["Zenitel"] = DeviceKinds.Intercom,
+        ["Shure"] = DeviceKinds.Microphone,
     };
+
+    // (vendor, os) -> kind for cases where the OS-guess value alone is a confident, unambiguous
+    // signal, independent of model text. Uses THIS codebase's own canonical vendor/OS values (see
+    // VendorOsFromDeviceBannerDerivation / VendorFromOsDistroDerivation), not the reference
+    // project's raw lowercased strings — a literal port would silently never fire.
+    // Conceptually ported from ITPIE.DeviceAnalysis's DeriveManufacturerType top-level (vendor, os)
+    // switch; the reference project's Linux-distro-as-"vendor" HOSTS block (centos/canonical/
+    // debian/red hat => Host) is deliberately not ported — this codebase's OS-distro values never
+    // appear in the Vendor field (see OsDistroNormalizer), and Host refinement already has a more
+    // precise mechanism (SMBIOS chassis type, above).
+    private static string? KindFromVendorOs(string vendor, string os, string model)
+        => (vendor, os) switch
+        {
+            ("Aruba", "AOS-CX") => DeviceKinds.Switch,
+            ("HP", "ProVision") => DeviceKinds.Switch,
+            ("Cisco", "Cisco ISE") => DeviceKinds.ServerAppliance,
+            ("Cisco", "Cisco ADE-OS") => DeviceKinds.ServerAppliance,
+            ("Cisco", "Cisco IOS-XR") => DeviceKinds.Router,
+            ("Cisco", "Cisco UCOS") => DeviceKinds.UcSessionController,
+            ("Forcepoint", "SecureOS") => DeviceKinds.Firewall,
+            ("Gigamon", "GigaVUE") => DeviceKinds.Tap,
+            ("Nortel", "NNCLI") => DeviceKinds.Switch,
+            ("Avaya", "NNCLI") => DeviceKinds.Switch,
+            ("Infoblox", "NIOS") => DeviceKinds.Application,
+            ("NetApp", "ONTAP") => DeviceKinds.ServerAppliance,
+            ("Netscout", "nPoint OS") => DeviceKinds.Application,
+            ("OpenGear", "Firmware") => DeviceKinds.TerminalServer,
+            ("AudioCodes", "PSOS") => DeviceKinds.Sbc,
+            ("VMware", "ESXi") => DeviceKinds.VmHypervisor,
+            // "Firmware-UC" is only ever produced by phone/UC-endpoint signatures in this
+            // codebase's banner cascade (Cisco/Avaya/Polycom/Aastra/Zenitel/Nortel IP phones) —
+            // model text distinguishes the video-conferencing subset from plain desk phones.
+            (_, "Firmware-UC")
+                when model.Contains("Telepresence", StringComparison.OrdinalIgnoreCase)
+                  || model.Contains("Trio", StringComparison.OrdinalIgnoreCase)
+                => DeviceKinds.Vtc,
+            (_, "Firmware-UC") => DeviceKinds.Phone,
+            _ => null,
+        };
 
     // Vendor-invented product-family names, safe to substring-match regardless of which vendor
     // reported them (a multi-category vendor like HP or Ubiquiti can't be dispatched on vendor
-    // name alone) — same "vendor-exclusive product name" discipline as
-    // OsFromSnmpSysDescrDerivation's KnownSignatures.
+    // name alone) — same "vendor-exclusive product name" discipline as KnownSignatures. Matched
+    // primarily against the cleaned model family name from DeviceModelDerivation (e.g. "Catalyst
+    // 9300", "ASR 1000") rather than raw SKU text — that derivation already did the SKU-parsing
+    // work, so classifying the clean family name into a kind bucket is simpler and more reliable
+    // than re-deriving from scratch.
     private static readonly (string Signature, string Kind)[] ProductSignatures =
     [
+        // Printers
         ("LaserJet", DeviceKinds.Printer),
         ("OfficeJet", DeviceKinds.Printer),
         ("DeskJet", DeviceKinds.Printer),
         ("JetDirect", DeviceKinds.Printer),
+
+        // Ubiquiti
         ("UniFi AP", DeviceKinds.AccessPoint),
         ("UniFi Switch", DeviceKinds.Switch),
         ("EdgeRouter", DeviceKinds.Router),
         ("Dream Machine", DeviceKinds.Router),
         ("UniFi Gateway", DeviceKinds.Router),
+
+        // Cisco model families (from DeviceModelDerivation's Cisco dispatch)
+        ("Catalyst", DeviceKinds.Switch),
+        ("Nexus", DeviceKinds.Switch),
+        ("Aironet", DeviceKinds.AccessPoint),
+        ("ASA ", DeviceKinds.Firewall),
+        ("ASAv", DeviceKinds.Firewall),
+        ("Firepower", DeviceKinds.Firewall),
+        ("Meraki Switch", DeviceKinds.Switch),
+        ("Meraki Wireless", DeviceKinds.AccessPoint),
+        ("Meraki Security", DeviceKinds.Firewall),
+        ("UCS-FI", DeviceKinds.FabricManager),
+        ("UCSM", DeviceKinds.FabricManager),
+        ("UCS ", DeviceKinds.BladeServer),
+        ("IOSv", DeviceKinds.Switch),
+        ("ISR ", DeviceKinds.Router),
+        ("ASR ", DeviceKinds.Router),
+        ("MAR ", DeviceKinds.Router),
+        ("Cloud Services Router", DeviceKinds.Router),
+
+        // Juniper model families
+        ("QFX", DeviceKinds.Switch),
+        ("vMX", DeviceKinds.Router),
+        ("MX Series", DeviceKinds.Router),
+        ("SRX", DeviceKinds.Firewall),
+        ("vSRX", DeviceKinds.Firewall),
+        ("cSRX", DeviceKinds.Firewall),
+        ("NetScreen", DeviceKinds.Firewall),
+        ("SSG-", DeviceKinds.Firewall),
+
+        // F5 / Gigamon
+        ("BIG-IP", DeviceKinds.LoadBalancer),
+        ("GigaVUE", DeviceKinds.Tap),
+
+        // HP Comware / Ironware (Brocade/Foundry/Extreme/Ruckus) switch families
+        ("4800G", DeviceKinds.Switch),
+        ("4510G", DeviceKinds.Switch),
+        ("4210G", DeviceKinds.Switch),
+        ("A5120", DeviceKinds.Switch),
+        ("A5500", DeviceKinds.Switch),
+        ("A5800", DeviceKinds.Switch),
+        ("A5820", DeviceKinds.Switch),
+        ("NetIron", DeviceKinds.Router),
+        ("ServerIron", DeviceKinds.LoadBalancer),
+        ("FastIron", DeviceKinds.Switch),
+        ("ICX ", DeviceKinds.Switch),
+        ("MLX", DeviceKinds.Router),
+        ("XMR", DeviceKinds.Router),
+
+        // A10 / APC
+        ("Thunder Series", DeviceKinds.LoadBalancer),
+        ("AX Series", DeviceKinds.LoadBalancer),
+        ("Smart-UPS", DeviceKinds.Ups),
+        ("AP7000 Series PDU", DeviceKinds.Pdu),
+        ("AP8000 Series PDU", DeviceKinds.Pdu),
+        ("ePDU", DeviceKinds.Pdu),
+
+        // Palo Alto
+        ("PA 200", DeviceKinds.Firewall),
+        ("PA 400", DeviceKinds.Firewall),
+        ("PA 800", DeviceKinds.Firewall),
+        ("PA 3200", DeviceKinds.Firewall),
+        ("PA 5000", DeviceKinds.Firewall),
+        ("PA 5200", DeviceKinds.Firewall),
+        ("PA 7000", DeviceKinds.Firewall),
+        ("VM-Series", DeviceKinds.Firewall),
+
+        // UC / video conferencing
+        ("Telepresence", DeviceKinds.Vtc),
+        ("Trio", DeviceKinds.Vtc),
+        ("Wall Mount Touchscreen", DeviceKinds.Vtc),
+        ("HD Touchscreen", DeviceKinds.Vtc),
+        ("Tabletop Touchscreen", DeviceKinds.Vtc),
+        ("Room Scheduling Touchscreen", DeviceKinds.Vtc),
+        ("IP Phone", DeviceKinds.Phone),
+        ("SoundPoint IP", DeviceKinds.Phone),
+        ("VVX", DeviceKinds.Phone),
     ];
 
-    private static string? RefineNetworkDevice(string vendor, string model, string sysDescr)
+    private static string? RefineNetworkDevice(string vendor, string os, string model, string sysDescr)
     {
+        string? byVendorOs = KindFromVendorOs(vendor, os, model);
+        if (byVendorOs is not null)
+        {
+            return byVendorOs;
+        }
+
         if (vendor.Length > 0 && VendorKindSignatures.TryGetValue(vendor, out string? vendorKind))
         {
             return vendorKind;

@@ -716,6 +716,14 @@ public static class FactPaths
         // (DeviceVendorDerivation) — the one place a cross-device report should read "vendor".
         public const string DeviceVendorCanonical = "Device[].VendorCanonical";
 
+        // Fanned in from whichever raw model field is present (DeviceModelDerivation), with a
+        // vendor+OS-dispatched cleanup pass applied on top — turns a raw SKU string (e.g.
+        // "WS-C9300-48P") into a clean product-family display name (e.g. "Catalyst 9300"). Kept
+        // separate from the raw HwSystemModel/DiscoveredModel/BacnetModelName paths (fan-in
+        // precedent, same as DeviceVendorCanonical) rather than overwriting any one of them —
+        // there's no single canonical raw model path the way there is for vendor.
+        public const string DeviceModelCanonical = "Device[].ModelCanonical";
+
         // Inferred vendor guess from a curated, vendor-exclusive signature (OS distro,
         // SNMP sysDescr, model prefix, hostname prefix — see docs/plans/vendor-derivation-updates.md
         // §2). Deliberately kept separate from DeviceVendorCanonical: that field is a fan-in over

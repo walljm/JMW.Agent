@@ -428,7 +428,30 @@ public sealed class NormalizerTests
     [InlineData("D-Link Systems, Inc.", "D-Link")]
     [InlineData("PALO ALTO NETWORKS", "Palo Alto Networks")] // IANA registrant name is all-caps
     [InlineData("Aruba, a Hewlett Packard Enterprise company", "Aruba")] // no legal-suffix pattern matches this
+    // Ported from ITPIE.DeviceAnalysis's GetVendor exact-match table (see VendorNormalizer.Aliases).
+    [InlineData("f5", "F5")]
+    [InlineData("h3c", "H3C")]
+    [InlineData("brocade", "Brocade")]
+    [InlineData("juniper", "Juniper")] // bare form, distinct key from "Juniper Networks"
+    [InlineData("hp", "HP")]
+    [InlineData("hpe", "HPE")]
+    [InlineData("palo alto", "Palo Alto Networks")] // realigned to this codebase's canonical form, not the reference project's "PaloAlto"
+    [InlineData("paloalto", "Palo Alto Networks")]
+    [InlineData("fortinet", "Fortinet")]
+    [InlineData("ruckus", "Ruckus")]
+    [InlineData("ubiquiti", "Ubiquiti")] // bare form, distinct key from "Ubiquiti Networks"
     public void Vendor_RecognizedVariants_ReturnsCanonicalName(string raw, string expected)
+    {
+        VendorNormalizer n = new();
+        Assert.Equal(expected, n.Normalize(FactValue.FromString(raw))?.AsString());
+    }
+
+    [Theory]
+    [InlineData("Netgear", "NETGEAR")] // this codebase's established canonical form wins over the reference project's "Netgear"
+    [InlineData("Lenovo", "Lenovo")]
+    [InlineData("MikroTik", "Mikrotik")]
+    [InlineData("Super Micro Computer", "Supermicro")]
+    public void Vendor_ConflictingWithReferenceProject_KeepsThisCodebasesCanonicalForm(string raw, string expected)
     {
         VendorNormalizer n = new();
         Assert.Equal(expected, n.Normalize(FactValue.FromString(raw))?.AsString());

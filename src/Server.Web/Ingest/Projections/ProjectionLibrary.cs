@@ -30,6 +30,9 @@ public static class ProjectionLibrary
                     // consult this when `vendor` is NULL. See docs/plans/vendor-derivation-updates.md §3.
                     new(FactPaths.Derived.DeviceVendorGuess, "vendor_guess", NpgsqlDbType.Text),
                     new(FactPaths.DeviceKind, "kind", NpgsqlDbType.Text),
+                    // Fanned in from whichever raw model field is present (DeviceModelDerivation),
+                    // vendor+OS-dispatched cleanup applied on top — see FactPaths.Derived.DeviceModelCanonical.
+                    new(FactPaths.Derived.DeviceModelCanonical, "model", NpgsqlDbType.Text),
                 ]
             ),
             maxCacheEntries
@@ -43,7 +46,7 @@ public static class ProjectionLibrary
                     new(FactPaths.SystemHostname, "hostname", NpgsqlDbType.Text),
                     new(FactPaths.SystemOsFamily, "os_family", NpgsqlDbType.Text),
                     new(FactPaths.SystemOsDistro, "os_distro", NpgsqlDbType.Text),
-                    // Inferred guess (OsFromSnmpSysDescrDerivation et al.) — reporting should only
+                    // Inferred guess (VendorOsFromDeviceBannerDerivation) — reporting should only
                     // consult this when `os_distro` is NULL. See vendor-derivation-updates.md §5.
                     new(FactPaths.Derived.DeviceOsGuess, "os_distro_guess", NpgsqlDbType.Text),
                     // os_version/os_build/kernel/kernel_arch/timezone/boot_time/uptime_seconds and

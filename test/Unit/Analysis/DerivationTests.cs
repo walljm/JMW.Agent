@@ -415,163 +415,160 @@ public sealed class DerivationTests
         Assert.Empty(d.Derive(facts));
     }
 
-    // ── VendorFromSnmpSysDescrDerivation ───────────────────────────────────────
+    // ── VendorOsFromDeviceBannerDerivation ──────────────────────────────────────
+    // Supersedes the former separate VendorFromSnmpSysDescrDerivation/OsFromSnmpSysDescrDerivation.
 
     [Theory]
-    [InlineData("Cisco IOS Software, C2960 Software", "Cisco")]
-    [InlineData("Cisco NX-OS(tm) n9000", "Cisco")]
-    [InlineData("RouterOS 6.49.6", "Mikrotik")]
-    [InlineData("EdgeOS 2.0.9-hotfix.4", "Ubiquiti")]
-    [InlineData("HP ProCurve Switch 2530-24G", "HP")]
-    [InlineData("FortiOS 7.2.5", "Fortinet")]
-    public void VendorFromSnmpSysDescr_KnownSignature_ProducesGuess(string sysDescr, string vendor)
+    [InlineData("Cisco IOS Software, C2960 Software", "Cisco", "Cisco IOS")]
+    [InlineData("Cisco IOS-XE Software, ASR1000 Software", "Cisco", "Cisco IOS-XE")]
+    [InlineData("Cisco NX-OS(tm) n9000", "Cisco", "Cisco NX-OS")]
+    [InlineData("Juniper Networks, Inc. srx340, kernel JUNOS 20.4R3-S1.6", "Juniper", "JunOS")]
+    [InlineData("UniFi OS 3.2.9", "Ubiquiti", "UniFi OS")]
+    [InlineData("Palo Alto Networks PA-220 series firewall, PAN-OS 10.1.6", "Palo Alto Networks", "PAN-OS")]
+    [InlineData("ArubaOS 8.10.0.4", "Aruba", "ArubaOS")]
+    public void VendorOsFromDeviceBanner_KnownSignature_ProducesBothGuesses(string banner, string vendor, string os)
     {
-        VendorFromSnmpSysDescrDerivation d = new();
-        Fact[] facts = [Fact.Create($"Device[{Dev}].SNMP.SysDescr", sysDescr, T)];
+        VendorOsFromDeviceBannerDerivation d = new();
+        Fact[] facts = [Fact.Create($"Device[{Dev}].SNMP.SysDescr", banner, T)];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+
+        Assert.Equal(2, results.Count);
+        Fact vendorFact = Assert.Single(results, r => r.AttributePath == FactPaths.Derived.DeviceVendorGuess);
+        Fact osFact = Assert.Single(results, r => r.AttributePath == FactPaths.Derived.DeviceOsGuess);
+        Assert.Equal(vendor, vendorFact.Value.AsString());
+        Assert.Equal(os, osFact.Value.AsString());
+        Assert.Equal($"Device[{Dev}].VendorGuess", vendorFact.Id);
+        Assert.Equal($"Device[{Dev}].OsGuess", osFact.Id);
+    }
+
+    // Legacy fallback signatures kept from the derivations this replaces (not present in the
+    // ported source cascade) — must keep working.
+    [Theory]
+    [InlineData("RouterOS 6.49.6", "Mikrotik", "RouterOS")]
+    [InlineData("EdgeOS 2.0.9-hotfix.4", "Ubiquiti", "EdgeOS")]
+    [InlineData("FortiOS 7.2.5", "Fortinet", "FortiOS")]
+    public void VendorOsFromDeviceBanner_LegacyFallbackSignature_StillProducesBothGuesses(
+        string banner,
+        string vendor,
+        string os
+    )
+    {
+        VendorOsFromDeviceBannerDerivation d = new();
+        Fact[] facts = [Fact.Create($"Device[{Dev}].SNMP.SysDescr", banner, T)];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+
+        Assert.Equal(2, results.Count);
+        Assert.Equal(vendor, Assert.Single(results, r => r.AttributePath == FactPaths.Derived.DeviceVendorGuess).Value.AsString());
+        Assert.Equal(os, Assert.Single(results, r => r.AttributePath == FactPaths.Derived.DeviceOsGuess).Value.AsString());
+    }
+
+    [Fact]
+    public void VendorOsFromDeviceBanner_HpProCurve_ProducesVendorOnly()
+    {
+        VendorOsFromDeviceBannerDerivation d = new();
+        Fact[] facts = [Fact.Create($"Device[{Dev}].SNMP.SysDescr", "HP ProCurve Switch 2530-24G", T)];
 
         IReadOnlyList<Fact> results = d.Derive(facts);
 
         Assert.Single(results);
-        Assert.Equal(vendor, results[0].Value.AsString());
-        Assert.Equal($"Device[{Dev}].VendorGuess", results[0].Id);
         Assert.Equal(FactPaths.Derived.DeviceVendorGuess, results[0].AttributePath);
+        Assert.Equal("HP", results[0].Value.AsString());
     }
 
     [Fact]
-    public void VendorFromSnmpSysDescr_CaseInsensitive_StillMatches()
+    public void VendorOsFromDeviceBanner_BareLinux_ProducesOsOnlyNoVendor()
     {
-        VendorFromSnmpSysDescrDerivation d = new();
-        Fact[] facts = [Fact.Create($"Device[{Dev}].SNMP.SysDescr", "cisco ios software", T)];
-
-        IReadOnlyList<Fact> results = d.Derive(facts);
-
-        Assert.Single(results);
-        Assert.Equal("Cisco", results[0].Value.AsString());
-    }
-
-    [Theory]
-    [InlineData("Cisco NX-OS and IOS hybrid", "Cisco")] // NX-OS checked before IOS
-    public void VendorFromSnmpSysDescr_MultipleSignaturesPresent_MostSpecificWins(string sysDescr, string vendor)
-    {
-        VendorFromSnmpSysDescrDerivation d = new();
-        Fact[] facts = [Fact.Create($"Device[{Dev}].SNMP.SysDescr", sysDescr, T)];
-
-        IReadOnlyList<Fact> results = d.Derive(facts);
-        Assert.Single(results);
-        Assert.Equal(vendor, results[0].Value.AsString());
-    }
-
-    [Fact]
-    public void VendorFromSnmpSysDescr_UnknownDescr_ReturnsEmpty()
-    {
-        VendorFromSnmpSysDescrDerivation d = new();
+        VendorOsFromDeviceBannerDerivation d = new();
         Fact[] facts = [Fact.Create($"Device[{Dev}].SNMP.SysDescr", "Linux server 5.15.0 x86_64", T)];
 
-        Assert.Empty(d.Derive(facts));
-    }
-
-    [Fact]
-    public void VendorFromSnmpSysDescr_NoInputs_ReturnsEmpty()
-    {
-        VendorFromSnmpSysDescrDerivation d = new();
-        Assert.Empty(d.Derive([]));
-    }
-
-    [Fact]
-    public void VendorFromSnmpSysDescr_WhitespaceOnlyValue_ReturnsEmpty()
-    {
-        VendorFromSnmpSysDescrDerivation d = new();
-        Fact[] facts = [Fact.Create($"Device[{Dev}].SNMP.SysDescr", "   ", T)];
-
-        Assert.Empty(d.Derive(facts));
-    }
-
-    [Fact]
-    public void VendorFromSnmpSysDescr_UnrelatedFactsOnly_ReturnsEmpty()
-    {
-        VendorFromSnmpSysDescrDerivation d = new();
-        Fact[] facts = [Fact.Create($"Device[{Dev}].SNMP.SysName", "switch1", T)];
-
-        Assert.Empty(d.Derive(facts));
-    }
-
-    // ── OsFromSnmpSysDescrDerivation ────────────────────────────────────────────
-
-    [Theory]
-    [InlineData("Cisco IOS Software, C2960 Software", "Cisco IOS")]
-    [InlineData("Cisco IOS-XE Software, ASR1000 Software", "Cisco IOS-XE")]
-    [InlineData("Cisco NX-OS(tm) n9000", "Cisco NX-OS")]
-    [InlineData("RouterOS 6.49.6", "RouterOS")]
-    [InlineData("Juniper Networks, Inc. srx340, kernel JUNOS 20.4R3-S1.6", "JunOS")]
-    [InlineData("EdgeOS 2.0.9-hotfix.4", "EdgeOS")]
-    [InlineData("UniFi OS 3.2.9", "UniFi OS")]
-    [InlineData("Palo Alto Networks PA-220 series firewall, PAN-OS 10.1.6", "PAN-OS")]
-    [InlineData("FortiOS 7.2.5", "FortiOS")]
-    [InlineData("ArubaOS 8.10.0.4", "ArubaOS")]
-    public void OsFromSnmpSysDescr_KnownSignature_ProducesGuess(string sysDescr, string osName)
-    {
-        OsFromSnmpSysDescrDerivation d = new();
-        Fact[] facts = [Fact.Create($"Device[{Dev}].SNMP.SysDescr", sysDescr, T)];
-
         IReadOnlyList<Fact> results = d.Derive(facts);
 
         Assert.Single(results);
-        Assert.Equal(osName, results[0].Value.AsString());
-        Assert.Equal($"Device[{Dev}].OsGuess", results[0].Id);
         Assert.Equal(FactPaths.Derived.DeviceOsGuess, results[0].AttributePath);
+        Assert.Equal("Linux", results[0].Value.AsString());
     }
 
     [Fact]
-    public void OsFromSnmpSysDescr_IosXeNotMisclassifiedAsPlainIos()
+    public void VendorOsFromDeviceBanner_NxOsBeforeIos_MostSpecificWins()
     {
-        OsFromSnmpSysDescrDerivation d = new();
-        Fact[] facts = [Fact.Create($"Device[{Dev}].SNMP.SysDescr", "Cisco IOS-XE Software, Version 17.03.04a", T)];
+        VendorOsFromDeviceBannerDerivation d = new();
+        // "cisco nx-os" — a plain "cisco ios" substring scan would misfire if checked first.
+        Fact[] facts = [Fact.Create($"Device[{Dev}].SNMP.SysDescr", "Cisco NX-OS(tm) n9000", T)];
 
         IReadOnlyList<Fact> results = d.Derive(facts);
-        Assert.Single(results);
-        Assert.Equal("Cisco IOS-XE", results[0].Value.AsString());
+
+        Assert.Equal("Cisco NX-OS", Assert.Single(results, r => r.AttributePath == FactPaths.Derived.DeviceOsGuess).Value.AsString());
     }
 
     [Fact]
-    public void OsFromSnmpSysDescr_CaseInsensitive_StillMatches()
+    public void VendorOsFromDeviceBanner_CaseInsensitive_StillMatches()
     {
-        OsFromSnmpSysDescrDerivation d = new();
-        Fact[] facts = [Fact.Create($"Device[{Dev}].SNMP.SysDescr", "routeros 6.49.6", T)];
+        VendorOsFromDeviceBannerDerivation d = new();
+        Fact[] facts = [Fact.Create($"Device[{Dev}].SNMP.SysDescr", "ROUTEROS 6.49.6", T)];
 
         IReadOnlyList<Fact> results = d.Derive(facts);
-        Assert.Single(results);
-        Assert.Equal("RouterOS", results[0].Value.AsString());
+
+        Assert.Equal("Mikrotik", Assert.Single(results, r => r.AttributePath == FactPaths.Derived.DeviceVendorGuess).Value.AsString());
     }
 
     [Fact]
-    public void OsFromSnmpSysDescr_UnknownDescr_ReturnsEmpty()
+    public void VendorOsFromDeviceBanner_ReadsAcrossMultipleBannerFields()
     {
-        OsFromSnmpSysDescrDerivation d = new();
-        Fact[] facts = [Fact.Create($"Device[{Dev}].SNMP.SysDescr", "Linux server 5.15.0 x86_64", T)];
+        VendorOsFromDeviceBannerDerivation d = new();
+        // Vendor/OS present only once the SSH banner and SysDescr are considered together.
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].SNMP.SysDescr", "generic embedded device", T),
+            Fact.Create($"Device[{Dev}].Discovered[d1].SshBanner", "SSH-2.0 EdgeOS", T),
+        ];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+
+        Assert.Equal("Ubiquiti", Assert.Single(results, r => r.AttributePath == FactPaths.Derived.DeviceVendorGuess).Value.AsString());
+    }
+
+    [Fact]
+    public void VendorOsFromDeviceBanner_PoweredgeCorrectedToDell_NotSourcesHp()
+    {
+        VendorOsFromDeviceBannerDerivation d = new();
+        Fact[] facts = [Fact.Create($"Device[{Dev}].SNMP.SysDescr", "Dell PowerEdge R740 BMC", T)];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+
+        Assert.Equal("Dell", Assert.Single(results, r => r.AttributePath == FactPaths.Derived.DeviceVendorGuess).Value.AsString());
+    }
+
+    [Fact]
+    public void VendorOsFromDeviceBanner_UnknownBanner_ReturnsEmpty()
+    {
+        VendorOsFromDeviceBannerDerivation d = new();
+        Fact[] facts = [Fact.Create($"Device[{Dev}].SNMP.SysDescr", "Widget 3000 embedded controller", T)];
 
         Assert.Empty(d.Derive(facts));
     }
 
     [Fact]
-    public void OsFromSnmpSysDescr_NoInputs_ReturnsEmpty()
+    public void VendorOsFromDeviceBanner_NoInputs_ReturnsEmpty()
     {
-        OsFromSnmpSysDescrDerivation d = new();
+        VendorOsFromDeviceBannerDerivation d = new();
         Assert.Empty(d.Derive([]));
     }
 
     [Fact]
-    public void OsFromSnmpSysDescr_WhitespaceOnlyValue_ReturnsEmpty()
+    public void VendorOsFromDeviceBanner_WhitespaceOnlyValue_ReturnsEmpty()
     {
-        OsFromSnmpSysDescrDerivation d = new();
+        VendorOsFromDeviceBannerDerivation d = new();
         Fact[] facts = [Fact.Create($"Device[{Dev}].SNMP.SysDescr", "   ", T)];
 
         Assert.Empty(d.Derive(facts));
     }
 
     [Fact]
-    public void OsFromSnmpSysDescr_UnrelatedFactsOnly_ReturnsEmpty()
+    public void VendorOsFromDeviceBanner_UnrelatedFactsOnly_ReturnsEmpty()
     {
-        OsFromSnmpSysDescrDerivation d = new();
+        VendorOsFromDeviceBannerDerivation d = new();
         Fact[] facts = [Fact.Create($"Device[{Dev}].SNMP.SysName", "switch1", T)];
 
         Assert.Empty(d.Derive(facts));
@@ -916,6 +913,247 @@ public sealed class DerivationTests
     public void DeviceKind_NoInputs_ReturnsEmpty()
     {
         DeviceKindDerivation d = new();
+        Assert.Empty(d.Derive([]));
+    }
+
+    [Theory]
+    [InlineData("Aruba", "AOS-CX", "switch")]
+    [InlineData("HP", "ProVision", "switch")]
+    [InlineData("Cisco", "Cisco ISE", "server-appliance")]
+    [InlineData("Cisco", "Cisco IOS-XR", "router")]
+    [InlineData("Cisco", "Cisco UCOS", "uc-session-controller")]
+    [InlineData("Forcepoint", "SecureOS", "firewall")]
+    [InlineData("Gigamon", "GigaVUE", "tap")]
+    [InlineData("Nortel", "NNCLI", "switch")]
+    [InlineData("Infoblox", "NIOS", "application")]
+    [InlineData("NetApp", "ONTAP", "server-appliance")]
+    [InlineData("AudioCodes", "PSOS", "sbc")]
+    [InlineData("VMware", "ESXi", "vm-hypervisor")]
+    public void DeviceKind_NetworkDeviceWithKnownVendorOs_RefinesKind(string vendor, string os, string expectedKind)
+    {
+        DeviceKindDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].Kind", "network-device", T),
+            Fact.Create($"Device[{Dev}].VendorCanonical", vendor, T),
+            Fact.Create($"Device[{Dev}].OsGuess", os, T),
+        ];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+
+        Assert.Single(results);
+        Assert.Equal(expectedKind, results[0].Value.AsString());
+    }
+
+    [Theory]
+    [InlineData("Cisco", "Firmware-UC", "Cisco IP Phone 7841", "phone")]
+    [InlineData("Cisco", "Firmware-UC", "Telepresence MX700", "vtc")]
+    [InlineData("Polycom", "Firmware-UC", "Poly Trio 8500", "vtc")]
+    public void DeviceKind_FirmwareUc_DistinguishesPhoneFromVtcByModel(
+        string vendor,
+        string os,
+        string model,
+        string expectedKind
+    )
+    {
+        DeviceKindDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].Kind", "network-device", T),
+            Fact.Create($"Device[{Dev}].VendorCanonical", vendor, T),
+            Fact.Create($"Device[{Dev}].OsGuess", os, T),
+            Fact.Create($"Device[{Dev}].ModelCanonical", model, T),
+        ];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+
+        Assert.Single(results);
+        Assert.Equal(expectedKind, results[0].Value.AsString());
+    }
+
+    [Theory]
+    [InlineData("Catalyst 9300", "switch")]
+    [InlineData("Nexus 9300", "switch")]
+    [InlineData("Aironet 2800", "access-point")]
+    [InlineData("ASA 5500-X", "firewall")]
+    [InlineData("Firepower 4100", "firewall")]
+    [InlineData("ISR 4000", "router")]
+    [InlineData("Meraki Switch", "switch")]
+    [InlineData("Meraki Wireless", "access-point")]
+    [InlineData("Meraki Security", "firewall")]
+    [InlineData("QFX5100", "switch")]
+    [InlineData("vSRX", "firewall")]
+    [InlineData("BIG-IP VE", "load-balancer")]
+    [InlineData("Smart-UPS", "ups")]
+    public void DeviceKind_NetworkDeviceWithKnownModelFamily_RefinesKindViaCanonicalModel(
+        string canonicalModel,
+        string expectedKind
+    )
+    {
+        DeviceKindDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].Kind", "network-device", T),
+            Fact.Create($"Device[{Dev}].ModelCanonical", canonicalModel, T),
+        ];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+
+        Assert.Single(results);
+        Assert.Equal(expectedKind, results[0].Value.AsString());
+    }
+
+    [Fact]
+    public void DeviceKind_ModelCanonicalPreferredOverRawModel()
+    {
+        DeviceKindDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].Kind", "network-device", T),
+            // Raw SKU text alone wouldn't match any ProductSignature; the canonical family name would.
+            Fact.Create($"Device[{Dev}].Hardware.SystemModel", "WS-C9300-48P", T),
+            Fact.Create($"Device[{Dev}].ModelCanonical", "Catalyst 9300", T),
+        ];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+
+        Assert.Single(results);
+        Assert.Equal("switch", results[0].Value.AsString());
+    }
+
+    [Theory]
+    [InlineData("HanwhaVision", "camera")]
+    [InlineData("AxisCommunications", "camera")]
+    [InlineData("Illustra", "camera")]
+    [InlineData("Pelco", "camera")]
+    [InlineData("Zenitel", "intercom")]
+    [InlineData("Shure", "microphone")]
+    public void DeviceKind_NetworkDeviceWithSinglePurposeVendor_RefinesKind(string vendor, string expectedKind)
+    {
+        DeviceKindDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].Kind", "network-device", T),
+            Fact.Create($"Device[{Dev}].VendorCanonical", vendor, T),
+        ];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+
+        Assert.Single(results);
+        Assert.Equal(expectedKind, results[0].Value.AsString());
+    }
+
+    // ── DeviceModelDerivation ────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("Cisco", "Cisco IOS-XE", "WS-C9300-48P", "Catalyst 9300")]
+    [InlineData("Cisco", "Cisco NX-OS", "N9K-C93180YC-EX", "Nexus 9300")]
+    [InlineData("Juniper", "JunOS", "QFX5100-48S", "QFX5100")]
+    [InlineData("Aruba", "ArubaOS", "MM-VA-50", "Aruba MM-VA")]
+    [InlineData("F5", "TMOS", "BIG-IP Virtual Edition", "BIG-IP VE")]
+    [InlineData("HP", "Comware", "A5800-48G", "A5800")]
+    [InlineData("Palo Alto Networks", "PAN-OS", "PA-220", "PA 200")]
+    public void DeviceModel_KnownVendorOsModel_ProducesCanonicalModel(
+        string vendor,
+        string os,
+        string rawModel,
+        string expected
+    )
+    {
+        DeviceModelDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].Hardware.SystemModel", rawModel, T),
+            Fact.Create($"Device[{Dev}].VendorCanonical", vendor, T),
+            Fact.Create($"Device[{Dev}].OsGuess", os, T),
+        ];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+
+        Assert.Single(results);
+        Assert.Equal(expected, results[0].Value.AsString());
+        Assert.Equal($"Device[{Dev}].ModelCanonical", results[0].Id);
+        Assert.Equal(FactPaths.Derived.DeviceModelCanonical, results[0].AttributePath);
+    }
+
+    [Fact]
+    public void DeviceModel_JuniperJunosUnrecognizedModel_FallsBackToUppercase()
+    {
+        DeviceModelDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].Hardware.SystemModel", "something-random-9999", T),
+            Fact.Create($"Device[{Dev}].VendorCanonical", "Juniper", T),
+            Fact.Create($"Device[{Dev}].OsGuess", "JunOS", T),
+        ];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+
+        Assert.Single(results);
+        Assert.Equal("SOMETHING-RANDOM-9999", results[0].Value.AsString());
+    }
+
+    [Fact]
+    public void DeviceModel_UnrecognizedVendorOsCombination_ReturnsEmpty()
+    {
+        DeviceModelDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].Hardware.SystemModel", "OptiPlex 7090", T),
+            Fact.Create($"Device[{Dev}].VendorCanonical", "Dell", T),
+        ];
+
+        Assert.Empty(d.Derive(facts));
+    }
+
+    [Fact]
+    public void DeviceModel_NoVendorOrOs_ReturnsEmpty()
+    {
+        DeviceModelDerivation d = new();
+        Fact[] facts = [Fact.Create($"Device[{Dev}].Hardware.SystemModel", "WS-C9300-48P", T)];
+
+        Assert.Empty(d.Derive(facts));
+    }
+
+    [Fact]
+    public void DeviceModel_PrefersHwSystemModelOverDiscoveredModel()
+    {
+        DeviceModelDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].Hardware.SystemModel", "WS-C9300-48P", T),
+            Fact.Create($"Device[{Dev}].Discovered[192.168.1.1].Model", "some other model", T),
+            Fact.Create($"Device[{Dev}].VendorCanonical", "Cisco", T),
+            Fact.Create($"Device[{Dev}].OsGuess", "Cisco IOS-XE", T),
+        ];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+
+        Assert.Single(results);
+        Assert.Equal("Catalyst 9300", results[0].Value.AsString());
+    }
+
+    [Fact]
+    public void DeviceModel_FallsBackToVendorGuess_WhenNoCanonicalVendor()
+    {
+        DeviceModelDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].Hardware.SystemModel", "PA-220", T),
+            Fact.Create($"Device[{Dev}].VendorGuess", "Palo Alto Networks", T),
+            Fact.Create($"Device[{Dev}].OsGuess", "PAN-OS", T),
+        ];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+
+        Assert.Single(results);
+        Assert.Equal("PA 200", results[0].Value.AsString());
+    }
+
+    [Fact]
+    public void DeviceModel_NoInputs_ReturnsEmpty()
+    {
+        DeviceModelDerivation d = new();
         Assert.Empty(d.Derive([]));
     }
 }

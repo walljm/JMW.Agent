@@ -106,10 +106,10 @@ public static class AnalysisLibrary
             new BatteryHealthDerivation(),
             new DeviceVendorDerivation(),
             new VendorFromOsDistroDerivation(),
-            new VendorFromSnmpSysDescrDerivation(),
-            new OsFromSnmpSysDescrDerivation(),
+            new VendorOsFromDeviceBannerDerivation(),
             new VendorFromModelPrefixDerivation(),
             new VendorFromHostnamePrefixDerivation(),
+            new DeviceModelDerivation(),
             new DeviceKindDerivation(),
         ]
     );

@@ -11,7 +11,7 @@ namespace JMW.Discovery.Core.Analysis.Derivations;
 /// Deliberately a small curated prefix list, not a generic scan over free text (plan §1.3) —
 /// e.g. matching anywhere a substring like "Pro" or "Air" appears would be far too loose;
 /// StartsWith against a real product-line name is the safe form here.
-/// Outputs to the same "guess" field as VendorFromOsDistroDerivation/VendorFromSnmpSysDescrDerivation
+/// Outputs to the same "guess" field as VendorFromOsDistroDerivation/VendorOsFromDeviceBannerDerivation
 /// (see plan §3): an inference from a proxy signal, kept separate from the canonical vendor fan-in.
 /// </summary>
 public sealed class VendorFromModelPrefixDerivation : IDerivation
