@@ -1560,6 +1560,18 @@ table.data th.col-select {
     min-width: 900px;
 }
 
+/* Infinite scroll (grid-infinite-scroll.js): a zero-height marker at the end of the scroll
+   region that the IntersectionObserver watches; the manual First/Next pager is hidden while
+   JS auto-loads the next page. */
+.grid-infinite-sentinel {
+    height: 1px;
+    flex-shrink: 0;
+}
+
+.grid-panel.infinite-on .pagination {
+    display: none;
+}
+
 /* ===== Bulk action bar (e.g. Fleet Agents batch-approve) ===== */
 .bulk-bar {
     display: flex;
