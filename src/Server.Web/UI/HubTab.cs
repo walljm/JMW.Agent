@@ -49,6 +49,6 @@ public static class HubTabSets
     [
         new HubTab("Conflicts", "/admin/conflicts"),
         new HubTab("OUI Database", "/admin/oui-database"),
-        new HubTab("Custom Fields", "/admin/custom-fields"),
+        new HubTab("Operator Facts", "/admin/operator-facts"),
     ];
 }

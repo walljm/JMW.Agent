@@ -17,11 +17,6 @@ public static class FactPaths
     public const string DeviceVendor = "Device[].Vendor";
     public const string DeviceKind = "Device[].Kind";
 
-    // ── Operator-authored data (FactSource.ManualEntry only — no collector writes here) ──
-    // The list key is a user-chosen slug (a custom_field_definitions row), not a collector
-    // identifier. See docs/plans/user-provided.md and FactViewLibrary's "Custom Fields" view.
-    public const string CustomFieldValue = "Device[].Custom[].Value";
-
     // ── System / real-time metrics (MetricSnapshot) ───────────────────────────
     public const string SystemCpuPercent = "Device[].System.CpuPercent";
     public const string SystemMemUsedBytes = "Device[].System.MemUsedBytes";
@@ -35,8 +30,8 @@ public static class FactPaths
     public const string SystemHostname = "Device[].OS.Hostname";
     // Display rollup for proj_systems.friendly_name — NOT the real OS hostname. Populated by
     // DiscoveryMaterializer promotion (mDNS/UPnP friendly name, Home Assistant registry name)
-    // and directly operator-editable (single Device[] dimension → ManualFactCatalog picks it
-    // up automatically). Reporting's display-name rollup is
+    // and directly operator-editable through the unified operator-facts mechanism
+    // (OperatorFactCatalog). Reporting's display-name rollup is
     // COALESCE(friendly_name, <live proj_discovered friendly name>, hostname) — see DeviceListApi.
     public const string SystemFriendlyName = "Device[].OS.FriendlyName";
     public const string SystemOsFamily = "Device[].OS.Family";

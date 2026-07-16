@@ -13,29 +13,8 @@ namespace JMW.Discovery.Server.FactViews;
 /// </summary>
 public static class FactViewLibrary
 {
-    /// <summary>
-    /// Baseline destination for an operator-authored custom field (see
-    /// <see cref="JMW.Discovery.Core.FactSource.ManualEntry" />, docs/plans/user-provided.md) whose
-    /// definition doesn't target a specific existing/new view. This entry is what makes
-    /// <see cref="FactPaths.CustomFieldValue" /> pass the fact-path routing fitness test — but it
-    /// also does real work at runtime: <c>CustomFieldViewMerger</c> leaves it in place so any
-    /// custom fact with no (or a since-deleted) definition still renders here by its raw slug,
-    /// rather than vanishing silently.
-    /// </summary>
-    public const string CustomFieldsViewTitle = "Custom Fields";
-
     public static readonly IReadOnlyList<FactViewDef> All =
     [
-        new(
-            CustomFieldsViewTitle,
-            [
-                FactViewColumn.Key("Field"),
-                FactViewColumn.Fact("Value", FactPaths.CustomFieldValue),
-            ],
-            Kind: FactViewKind.List,
-            Group: FactViewGroup.Custom
-        ),
-
         new(
             "Thermal",
             [

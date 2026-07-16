@@ -19,11 +19,11 @@ public sealed record FactViewColumn(string Label, string? FactPath, string? KeyF
 
     /// <summary>
     /// A Properties-sheet column scoped to one specific list-dimension instance of
-    /// <paramref name="factPath" /> — e.g. one particular <c>Custom[slug]</c> among many sharing
+    /// <paramref name="factPath" /> — e.g. one particular <c>Interface[mac]</c> among many sharing
     /// the same structural path. Ordinary <see cref="Fact(string, string)" /> columns assume the
     /// path is unique per entity (true for every compiled view today); this overload is for the
-    /// one case where it isn't (see <c>CustomFieldViewMerger</c>, docs/plans/user-provided.md).
-    /// Only honored by <see cref="FactViewRenderer" />'s Properties rendering, not List.
+    /// case where it isn't. Only honored by <see cref="FactViewRenderer" />'s Properties rendering,
+    /// not List.
     /// </summary>
     public static FactViewColumn Fact(string label, string factPath, string keyFilter) =>
         new(label, factPath, keyFilter);

@@ -42,6 +42,69 @@ public sealed class DiscoveryMaterializer
         "proj_systems", // MaterializePromotionGapsAsync gap detection + promotion target
     };
 
+    /// <summary>Whether an identity input is read from a projection value column or a dimension key.</summary>
+    public enum IdentityInputKind
+    {
+        /// <summary>A projection value column (maps to a FactPaths const via ProjectionLibrary).</summary>
+        Value,
+
+        /// <summary>A projection dimension key (maps to a DimKey; no const can express it).</summary>
+        DimensionKey,
+    }
+
+    /// <summary>One projection read this materializer performs as a device-identity input.</summary>
+    public readonly record struct IdentityInputColumn(string Table, string ColumnOrDimension, IdentityInputKind Kind);
+
+    /// <summary>
+    /// The column-grain companion to <see cref="RelevantTables" />: every projection value column or
+    /// dimension key a pass in this file reads as a device fingerprint or promotion input (NFR-8,
+    /// architecture §4.3). This is the authoritative read-set the operator-facts identity exclusion
+    /// is checked against — the two-arm exact set-equality fitness test maps each <c>Value</c> entry
+    /// to a <c>FactPaths</c> const (asserting it is in <c>OperatorFactCatalog.IdentityBearingFactPaths</c>)
+    /// and each <c>DimensionKey</c> entry to a <c>DimKey</c> (asserting it is in
+    /// <c>OperatorFactCatalog.IdentityBearingDimensions</c>). <b>Code-review rule:</b> adding a
+    /// projection read to any pass here means adding its (table, column|dimension) entry below, or the
+    /// fitness test fails. Hand-maintained (full automation would require parsing the <c>.sql</c>
+    /// SELECT lists); the exact-equality test forces this list and the exclusion set to move together.
+    /// </summary>
+    public static readonly IReadOnlyList<IdentityInputColumn> IdentityInputColumns =
+    [
+        // Tier 1 — identity/merge-critical value columns.
+        new("proj_device_arp", "mac", IdentityInputKind.Value), // GetNewArpMacs, GetKnownMacsForIp
+        new("proj_discovered", "mac", IdentityInputKind.Value), // GetNewDiscoveredMacs, GetKnownMacsForIp
+        new("proj_discovered", "obscured_mac", IdentityInputKind.Value), // GetObscuredMacRows
+        new("proj_discovered", "onvif_serial", IdentityInputKind.Value), // GetNewDiscoveredSerials, GetPromotionGapRows
+        new("proj_discovered", "roku_serial", IdentityInputKind.Value), // GetNewDiscoveredSerials, GetPromotionGapRows
+        new("proj_discovered", "snmp_serial", IdentityInputKind.Value), // GetNewDiscoveredSerials, GetPromotionGapRows
+        new("proj_discovered", "ssdp_uuid", IdentityInputKind.Value), // GetNewDiscoveredSerials, GetPromotionGapRows
+        new("proj_discovered", "wsd_uuid", IdentityInputKind.Value), // GetNewDiscoveredSerials, GetPromotionGapRows
+        new("proj_discovered", "ssh_host_key", IdentityInputKind.Value), // GetSshHostKeyRows
+        new("proj_discovered", "hue_bridge_id", IdentityInputKind.Value), // GetScannerIdRows
+        new("proj_discovered", "onvif_hardware_id", IdentityInputKind.Value), // GetScannerIdRows
+        new("proj_discovered", "cast_id", IdentityInputKind.Value), // GetObscuredMacRows, GetCastIdIpCounts
+        new("proj_interfaces", "mac_address", IdentityInputKind.Value), // GetInterfaceObscuredMacRows
+        new("proj_interfaces", "obscured_mac", IdentityInputKind.Value), // GetInterfaceObscuredMacRows
+        new("proj_interfaces", "ipv4", IdentityInputKind.Value), // GetInterfaceObscuredMacRows (join key)
+        new("proj_dhcp_local_leases", "ip", IdentityInputKind.Value), // GetNewDhcpLocalMacs, GetKnownMacsForIp
+
+        // Tier 2 — promotion input value columns.
+        new("proj_discovered", "hostname", IdentityInputKind.Value), // GetPromotionGapRows, discovered promote
+        new("proj_discovered", "friendly_name", IdentityInputKind.Value), // GetObscuredMacRows, GetPromotionGapRows
+        new("proj_discovered", "vendor", IdentityInputKind.Value), // discovered promote, GetPromotionGapRows
+        new("proj_discovered", "model", IdentityInputKind.Value), // discovered promote, GetPromotionGapRows
+        new("proj_discovered", "os", IdentityInputKind.Value), // discovered promote, GetPromotionGapRows
+        new("proj_discovered", "device_type", IdentityInputKind.Value), // GetObscuredMacRows
+        new("proj_hardware", "system_vendor", IdentityInputKind.Value), // GetPromotionGapRows gap detection
+        new("proj_hardware", "system_model", IdentityInputKind.Value), // GetPromotionGapRows gap detection
+        new("proj_systems", "hostname", IdentityInputKind.Value), // GetPromotionGapRows gap detection
+        new("proj_systems", "os_family", IdentityInputKind.Value), // GetPromotionGapRows gap detection
+        new("proj_systems", "friendly_name", IdentityInputKind.Value), // GetPromotionGapRows; promoted DiscoveryMaterializer
+        new("proj_dhcp_local_leases", "hostname", IdentityInputKind.Value), // GetPromotionGapRows fallback
+
+        // Dimension keys that are themselves fingerprints.
+        new("proj_dhcp_local_leases", "Lease", IdentityInputKind.DimensionKey), // key is a MAC — GetNewDhcpLocalMacs, GetKnownMacsForIp
+    ];
+
     private readonly ILogger<DiscoveryMaterializer> _logger;
     private readonly NpgsqlDataSource _db;
 

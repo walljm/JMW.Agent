@@ -2364,3 +2364,45 @@ table.data th[aria-sort="descending"]::after {
     font-family: var(--font-sans);
     font-weight: var(--fw-med);
 }
+
+/* ===== Combo box (typeahead + pick list) — operator-facts path/key entry ===== */
+.combo { position: relative; }
+
+.combo-results {
+    position: absolute;
+    top: calc(100% + var(--space-1));
+    left: 0;
+    right: 0;
+    max-height: 280px;
+    overflow-y: auto;
+    background: var(--surface);
+    border: var(--border-hair);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    z-index: 50;
+}
+
+.combo-group-label {
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--fs-xs);
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+}
+
+.combo-option {
+    padding: var(--space-2) var(--space-3);
+    cursor: pointer;
+    font-size: var(--fs-sm);
+}
+
+.combo-option:hover,
+.combo-option[aria-selected="true"] {
+    background: var(--surface-hover);
+}
+
+.combo-empty {
+    padding: var(--space-3);
+    font-size: var(--fs-sm);
+    color: var(--text-dim);
+}

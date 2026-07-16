@@ -448,8 +448,7 @@ OuiApi.Map(adminGroup);
 ConflictsApi.Map(adminGroup);
 AgentLivenessSettingsApi.Map(adminGroup);
 UsersApi.Map(adminGroup);
-DeviceFactsApi.Map(adminGroup);
-CustomFieldsApi.Map(adminGroup);
+OperatorFactsApi.Map(adminGroup);
 
 // Reporting endpoints — require any authenticated user.
 RouteGroupBuilder reportGroup = v1.MapGroup("")

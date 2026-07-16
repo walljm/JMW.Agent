@@ -1,7 +1,7 @@
 ---
 agent: sdev-architecture
 date: 2026-07-16
-status: in_review
+status: approved
 mode: standalone
 ---
 
@@ -10,7 +10,7 @@ mode: standalone
 > Companion to `docs/plans/user-provided.md` (requirements, approved) and
 > `docs/plans/ux-operator-facts.md` (UX, approved). This is the architecture pass those documents
 > deferred: API shapes, storage layout, the override-vs-arbitrary disambiguation + near-miss
-> algorithm, the exhaustive NFR-8 identity-bearing exclusion list, the Custom Fields migration
+> algorithm, the NFR-8 identity-bearing exclusion set (consts + dimensions), the Custom Fields migration
 > mechanics, and validation rules.
 >
 > **Run mode:** standalone. `planning/` exists but is empty and unused for this feature — the
@@ -125,7 +125,7 @@ no `description`, no `type` column (verified migration `0074`). Migration carrie
 `description` is new and starts NULL; there is no `type` to migrate. The UX "read-only Type hint
 badge" is dropped — no data feeds it, and a `value_type` column now would be gold-plating.
 
-## 4. NFR-8 — exhaustive identity-bearing exclusion list
+## 4. NFR-8 — identity-bearing exclusion set (consts + dimensions)
 
 `DiscoveryMaterializer` (verified end to end, `src/Server.Web/Ingest/DiscoveryMaterializer.cs` plus
 every `Data/Discovery/*.sql` it calls) **never reads `facts_history`** — it reads **projection
@@ -137,7 +137,7 @@ The exclusion is therefore **column-precise, not table-level.** A table-level ru
 block `InterfaceSpeedBps` (routes to `proj_interfaces`), which NFR-8's own acceptance criteria
 require to remain overridable.
 
-### 4.1 The list (both tiers blocked — 29 constants + `HwSystemSerial`)
+### 4.1 The list (both tiers blocked — 28 constants: Tier 1 = 16, Tier 2 = 12; + `HwSystemSerial`)
 
 Each row is a `FactPaths` const whose projection column a materializer query reads as an input,
 with the query that reads it. Mapping verified against `ProjectionLibrary.cs`.
@@ -192,9 +192,13 @@ fingerprint on the agent path," not "the materializer reads it."
 `InterfaceSpeedBps` and every other non-identity `Interface*`, `InterfaceIPv4PrefixLength` (routes to
 `proj_interfaces.ipv4_prefix_length`, which the materializer does not read — it reads `ipv4`),
 `SshInterfaceIP` (`Device[].Interface[].IP` — no mapping to `proj_interfaces.ipv4`), `DiscoveredSources`,
-`SystemOsDistro`, `DhcpLocalLeaseExpires`/`Source`, and all disk/docker/security/battery/etc. facts.
-This satisfies NFR-8 AC's adjacency requirement (an override of `InterfaceSpeedBps`, next to
-`InterfaceMAC`, succeeds normally).
+`SystemOsDistro`, and all disk/docker/security/battery/etc. facts. This satisfies NFR-8 AC's
+adjacency requirement (an override of `InterfaceSpeedBps`, next to `InterfaceMAC`, succeeds normally).
+
+> **Cycle-3 correction:** cycle 2 listed `DhcpLocalLeaseExpires`/`Source` here as overridable. They
+> are **not** — they live under the `Device[].Lease[]` dimension, whose *key* is a fingerprint (see
+> §4.4). The entire `Lease[]` dimension is now blocked at the dimension grain, which subsumes these
+> two consts and the arbitrary-path attack they enabled.
 
 > **Cycle-2 correction:** cycle 1 wrongly listed `SystemFriendlyName` here as "not read." It maps to
 > `proj_systems.friendly_name` (added in migration `0082`), which `GetPromotionGapRows.sql:43` reads
@@ -241,6 +245,53 @@ table.
 - **AC tests:** every excluded const is rejected at write time; `InterfaceSpeedBps` (adjacent to
   `InterfaceMAC`) succeeds.
 
+**Value-column arm + key-column arm (cycle-3, critic BLOCKING-1).** The mapping above via
+`ProjectionLibrary` only knows **value** columns — a projection *dimension key* has no `FactPaths`
+const, so a key that is itself a fingerprint is silently dropped from the equality check. That is a
+real hole (see §4.4). `IdentityInputColumns` therefore tags each entry as `Value` or `DimensionKey`:
+
+- **Value** entries → map `(table, column) → const`, assert `∈ IdentityBearingFactPaths` (the arm
+  above).
+- **DimensionKey** entries → map `(table, dimension) → DimKey`, assert `∈ IdentityBearingDimensions`
+  (§4.4).
+
+The completeness assertion is the conjunction of both arms as exact set-equalities. Only with the
+key arm added is the exclusion mechanism actually complete for identity inputs; until cycle 3 it was
+not, and this document no longer calls the const list alone "exhaustive."
+
+### 4.4 Identity-bearing dimensions (cycle-3, critic BLOCKING-1)
+
+Some materializer fingerprints come not from a projection value column but from a projection
+**dimension key**. The one device-scoped case (verified: the ARP/Discovered dimension keys are IP
+join-filters, not fingerprints; the `Interface` key can be a synthetic `snmp-if-*` and is never
+promoted) is:
+
+- **`proj_dhcp_local_leases`, `Lease` dimension** — the `Lease` key **is a MAC address**, read as a
+  fingerprint by `GetNewDhcpLocalMacs.sql` (`DiscoveryMaterializer.cs:264` `DhcpLocalMacs` source)
+  and `GetKnownMacsForIp.sql`. Fact path family `Device[].Lease[<mac>].*`, `DimKey = "Device|Lease"`.
+
+This feature's multi-dimension generalization newly makes this reachable: an operator could author
+`Device[x].Lease[<any-mac>].Source = "manual"` — a catalog value const, key count valid — which
+upserts a `proj_dhcp_local_leases` row keyed by an arbitrary MAC on device `x`; the next materialize
+pass promotes that MAC as a fingerprint and risks a spurious merge. (An *arbitrary* attribute such as
+`Device[x].Lease[<mac>].Foo` does **not** route — `ProjectionRouter` matches on `(DimKey,
+Attribute)`, so an unrecognized attribute creates no projection row — so the reachable vector is the
+catalog value consts, `Source`/`Expires`/`IP`/`Hostname`.)
+
+**Why block at the dimension grain rather than just excluding those four consts.** A const-only
+exclusion happens to close today's vector, but it is fragile: adding a fifth value column to
+`proj_dhcp_local_leases` later would silently reopen the hole unless someone remembers to exclude the
+new const too. Blocking the whole `Device[].Lease[]` dimension is robust to that — no future column
+under the dimension can become authorable — and it is the honest expression of "this dimension's key
+is a fingerprint, so nothing under it is operator-authorable."
+
+**Fix — block at the dimension grain.** Declare `IdentityBearingDimensions = { "Device|Lease" }`.
+The write gate (§5.2) rejects any submission whose `DimKey ∈ IdentityBearingDimensions`, regardless
+of attribute or whether the path is catalog or arbitrary. This directly serves NFR-8's stated goal
+("device-identity resolution is never affected by an operator override or arbitrary fact") for the
+key-as-fingerprint case that the const list cannot express. `IdentityBearingDimensions` is a second
+documented artifact alongside `IdentityBearingFactPaths`, covered by the §4.3 key-column arm.
+
 ## 5. Write path — API
 
 All endpoints join the existing `/api/v1/admin` route group (verified `Program.cs:418` — already
@@ -282,7 +333,11 @@ PUT    /api/v1/admin/operator-facts/metadata                 path-level label/de
    key, from the route) → else `400` naming the mismatch (REQ-001/002). Holds for the device-only
    case too: `Device[].Rack.Position` has `bracketCount == 1`, so `keys == []`. (Redundant with
    `FillKeys`, but produces a clean domain error instead of an exception.)
-3. **Classify:**
+3. **Classify (in this order):**
+   - `DimKey(template) ∈ IdentityBearingDimensions` → `422` `{error:"identity_protected_dimension",
+     path}` (§4.4, NFR-8). Checked first, before catalog/arbitrary classification, so it covers the
+     whole `Device[].Lease[]` family — catalog value paths, `Expires`/`Source`, and arbitrary
+     attributes alike.
    - `template ∈ IdentityBearingFactPaths` → `422` `{error:"identity_protected", path}` (NFR-8,
      REQ-001).
    - `template ∈ FactPaths.Derived` **or** `template ∈ FactPaths.MetricPaths` → `422`
@@ -290,7 +345,13 @@ PUT    /api/v1/admin/operator-facts/metadata                 path-level label/de
      pipeline from other facts (a manual value would be clobbered on the next cycle and, worse, would
      be mislabeled "arbitrary/unprojected" when it actually routes to `proj_devices` etc.); metric
      paths route to `metrics_raw` as monotonic counters, where a hand-authored value is meaningless.
-     This mirrors the exclusions the current `ManualFactCatalog` already applies.
+     **This is genuinely new behavior, not a mirror of today's catalog.** The current
+     `ManualFactCatalog` reflects only over `typeof(FactPaths)`'s top-level string fields, so nested
+     `FactPaths.Derived.*` consts are never enumerated and are excluded only *implicitly* (they were
+     simply never offerable). `MetricPaths` it excludes explicitly. Free-form path entry now lets an
+     operator type a Derived path string directly, so an **explicit** Derived gate is required —
+     implementation builds the set from `typeof(FactPaths.Derived)`'s fields (plus the existing
+     `FactPaths.MetricPaths`).
    - `template ∈ FactPaths` catalog (any dimensionality; minus identity/Derived/Metric/Service) →
      **override**.
    - else run near-miss (§6): a unique catalog near-match and `!confirm_arbitrary` → `409`
@@ -468,7 +529,9 @@ requirement).
 `CustomFieldViewMerger.cs:12,40` (delete file), `DeviceFactsApi.cs:34,36,114–187` (delete endpoints),
 `DeviceDetail.cshtml:805,816,819,1056,1073` (delete markup/JS),
 `DeviceDetail.cshtml.cs:98,453,456` (remove property + population),
-`test/Unit/Server/CustomFieldViewMergerTests.cs:43` (delete with the merger). No reference is left
+`test/Unit/Server/CustomFieldViewMergerTests.cs:43` (delete with the merger). Also `FactViewDef.cs:25`
+carries a doc-comment cross-reference to `CustomFieldViewMerger` (comment-only, nothing breaks) —
+update/remove it when the merger is deleted so the mention doesn't dangle. No code reference is left
 dangling by the const deletion.
 
 **Deleted:** `CustomFieldViewMerger` (+ `CustomFieldViewMergerTests`), the baseline Custom Fields
@@ -498,10 +561,16 @@ custom-field endpoints on `DeviceFactsApi`, and `Pages/Admin/CustomFields.cshtml
 - **Unit:** disambiguation (override vs. arbitrary vs. near-miss); key-count validation (incl. the
   device-only `keys == []` case); path-bounds rejection; first-segment-must-be-`Device[]`-list
   rejection (S1); Derived/Metric-path rejection (S2); NFR-8 rejection for every excluded const +
-  `InterfaceSpeedBps` success; near-miss single-candidate rule (incl. the missing-`[]` case).
-- **Fitness (completeness):** exact set-equality of `IdentityBearingFactPaths` with the consts mapped
-  from `DiscoveryMaterializer.IdentityInputColumns` ∪ `{HwSystemSerial}` (§4.3) — catches both a
-  missing exclusion and a bogus one; plus `IdentityInputColumns` tables ⊆ `RelevantTables`.
+  `InterfaceSpeedBps` success; **dimension-block rejection** for `Device[x].Lease[<mac>].Source`,
+  `.Expires`, `.IP`, `.Hostname`, and an arbitrary `Device[x].Lease[<mac>].Foo` (§4.4); near-miss
+  single-candidate rule (incl. the missing-`[]` case).
+- **Fitness (completeness, two arms — §4.3):** exact set-equality of `IdentityBearingFactPaths` with
+  the **value**-tagged consts mapped from `DiscoveryMaterializer.IdentityInputColumns` ∪
+  `{HwSystemSerial}`; AND exact set-equality of `IdentityBearingDimensions` with the **key**-tagged
+  dimensions mapped from `IdentityInputColumns`. Plus `IdentityInputColumns` tables ⊆ `RelevantTables`.
+- **Integration:** an operator write of `Device[x].Lease[<novel-mac>].Source` is rejected, and (as a
+  regression guard) a test confirming no `proj_dhcp_local_leases` row and no `device_fingerprints`
+  MAC is created for `<novel-mac>` as a result.
 - **Integration (real Postgres):** Custom Fields migration count parity + value/label survival;
   revert/clear source-scoping (never deletes collector rows); an NFR-8 test that overrides an
   excluded const and confirms the projection column — and thus `DiscoveryMaterializer`'s resolution —
@@ -548,4 +617,55 @@ Derived/Metric paths outright — §5.2), **S3** (metadata "path alone" = device
 per-instance for child scope — §3.2), **S4** (per-device query served by id-prefix range on the
 existing index, no new index — §7.1). S5 was the already-agreed REQ-011 correction (no action).
 
-### Cycle 2 — verdict: *(pending re-run of the independent critic)*
+### Cycle 2 — verdict: needs_revision (independent critic; B1–B4 + S1/S3/S4 re-verified fixed)
+One new blocking finding, valid and now resolved:
+- **BLOCKING-1** — the `proj_dhcp_local_leases` `Lease` dimension *key* is a MAC fingerprint
+  (`GetNewDhcpLocalMacs`, `GetKnownMacsForIp`). The feature's multi-dimension generalization newly
+  lets an operator author `Device[x].Lease[<any-mac>].Source` and inject a fingerprint MAC → spurious
+  merge, which NFR-8's goal forbids. Root cause of the §4.3 test missing it: it mapped only value
+  columns, and a dimension key has no const. Fixed by dimension-grain blocking (§4.4,
+  `IdentityBearingDimensions`), a two-arm completeness test covering key columns (§4.3), the
+  ordered dimension check in §5.2, §4.2 correction, and dropping the "exhaustive const list" framing.
+
+### Cycle 3 — changes applied
+BLOCKING-1 fixed as above. Added §14 recording the two deliberate carve-out classes beyond NFR-8's
+const list (Derived/Metric rejection; identity-bearing dimensions) as flagged amendments to
+requirements §10, per the team lead's instruction. **Verdict: approved** (independent cycle-3 critic,
+no blocking issues). Followed by a wording/framing polish pass (no new cycle) folding 5 non-blocking
+suggestions: S-1 (§4.4 justification corrected — arbitrary attributes don't route; dimension-grain
+block is for robustness/future-proofing, not because arbitrary attributes leak), S-2 (§4 heading no
+longer says "exhaustive"), S-3 (count fixed to 28 consts + `HwSystemSerial`), S-4 (`FactViewDef.cs:25`
+doc-comment reference added to §9), S-5 (§5.2 + §14-A clarified that the explicit Derived gate is new
+behavior, since `ManualFactCatalog` excludes `Derived` only implicitly via reflection scope).
+Document status set to **approved**.
+
+## 14. Amendments to approved requirements (§10) — flagged, need Boss's ratification
+
+Requirements §10 states: *"The NFR-8 exclusion list is not negotiable within this feature's scope —
+it's the only carve-out from 'override any catalog fact.'"* This architecture introduces **two
+additional carve-out classes** beyond that const list. Both are surfaced here as deliberate,
+flagged deviations rather than silently folded in, because they contradict the literal "only
+carve-out" wording of an approved requirement.
+
+- **Amendment A — Derived and Metric paths are not authorable** (§5.2, critic S2). `FactPaths.Derived.*`
+  are recomputed every analysis cycle from other facts (a manual value would be silently clobbered,
+  and would be mislabeled "arbitrary/unprojected" when it actually routes to a projection like
+  `proj_devices`); `FactPaths.MetricPaths` route to `metrics_raw` as monotonic counters where a
+  hand-authored value is meaningless. This is a **correctness** carve-out, not an identity one. It is
+  *new* explicit behavior for the free-form mechanism: today `ManualFactCatalog` excludes `Derived`
+  only implicitly (its reflection never reaches nested `FactPaths.Derived.*`) and `MetricPaths`
+  explicitly — free-form path entry makes an explicit Derived gate necessary (§5.2). §10's wording
+  should be amended to name it.
+
+- **Amendment B — identity-bearing *dimensions* are blocked, not just consts** (§4.4, critic
+  BLOCKING-1). NFR-8 was expressed as a const *list*; the `Device[].Lease[]` case shows an identity
+  input can live in a dimension *key*, which no const can express. The exclusion mechanism is
+  therefore a const set **plus** a dimension set. This is squarely within NFR-8's stated *goal*
+  ("device-identity resolution is never affected by an operator override or arbitrary fact") — it is
+  a realization of that goal, not a new scope — but §10's "the exclusion *list* is the only carve-out"
+  wording should be amended to "the exclusion list **and identity-bearing dimension set**."
+
+Recommendation: Boss ratifies both as amendments to §10. Neither expands user-facing scope; both are
+protective. If Boss rejects Amendment A (wants Derived/Metric authorable), that is a real product
+change with the clobbering/mislabeling consequences noted — flag back to requirements, do not
+implement silently.

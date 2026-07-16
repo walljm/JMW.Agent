@@ -426,8 +426,18 @@ self-describing only by path string.
 - Fact ID length/segment bounds (`MaxIdLength=512`, `MaxSegments=32`) are inherited, not
   renegotiated, by this feature.
 - No new "audit log" concept — the existing fact-history mechanism is the audit trail (NFR-1).
-- The NFR-8 exclusion list is not negotiable within this feature's scope — it's the only carve-out
-  from "override any catalog fact."
+- The NFR-8 exclusion list is not negotiable within this feature's scope. It is **not** the only
+  carve-out from "override any catalog fact" — the architecture pass identified two further
+  carve-outs, both ratified by Boss (2026-07-16):
+  - **Amendment A:** `FactPaths.Derived`/`Metric` consts are non-authorable entirely (they are
+    recomputed by analysis; an override would be silently clobbered on the next pass). This matches
+    today's actual behavior — today's `ManualFactCatalog` already can't reach them — but is now made
+    an explicit, deliberate rule rather than an accident of reflection scope.
+  - **Amendment B:** the `Device[].Lease[]` dimension (backing `proj_dhcp_local_leases`) is
+    non-authorable in its entirety, not just at specific consts, because its dimension *key* is a
+    MAC address consumed as a device fingerprint by `DiscoveryMaterializer` — an operator-authored
+    key there could inject a false fingerprint and cause a spurious device merge. See NFR-8 and the
+    architecture doc (`docs/plans/architecture-operator-facts.md` §14) for the full derivation.
 
 ### Assumptions confirmed
 - **A-1 (confirmed):** Operator-authored values always take precedence over collector-observed

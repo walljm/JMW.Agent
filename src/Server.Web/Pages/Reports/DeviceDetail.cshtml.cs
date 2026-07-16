@@ -1,4 +1,3 @@
-using JMW.Discovery.Core.Analysis;
 using JMW.Discovery.Server;
 using JMW.Discovery.Server.Auth;
 using JMW.Discovery.Server.FactViews;
@@ -88,18 +87,11 @@ public sealed class DeviceDetailModel : PageModel
     public Section<IReadOnlyList<RenderedFactView>> FactViews { get; } = new([]);
     public Section<IReadOnlyList<HistoryRow>> History { get; } = new([]);
 
-    /// <summary>Existing fact paths an operator may set directly (docs/plans/user-provided.md).</summary>
-    public IReadOnlyList<string> EditablePaths => ManualFactCatalog.EditablePaths;
+    /// <summary>Overridable catalog offered by the fact-path combo box (docs/plans/architecture-operator-facts.md).</summary>
+    public IReadOnlyList<string> OverridablePaths => OperatorFactCatalog.OverridablePaths;
 
-    /// <summary>Custom field definitions (schema), for the per-device value-entry panel.</summary>
-    public IReadOnlyList<CustomFieldDefinition> CustomFieldDefinitions { get; private set; } = [];
-
-    /// <summary>This device's current value per custom field slug, derived from AllFacts.</summary>
-    public IReadOnlyDictionary<string, string?> CustomFieldValues { get; private set; } =
-        new Dictionary<string, string?>();
-
-    /// <summary>Existing-path facts this device currently has a manual (operator-set) value for.</summary>
-    public IReadOnlyList<(string Path, string? Value)> ManualOverrides { get; private set; } = [];
+    /// <summary>Every operator-authored (override or arbitrary) fact currently set for this device.</summary>
+    public IReadOnlyList<OperatorFactRow> OperatorFacts { get; private set; } = [];
 
     /// <summary>Grouped, data-only section nav for the detail page (built after all sections load).</summary>
     public IReadOnlyList<DeviceSectionGroup> NavGroups { get; private set; } = [];
@@ -172,16 +164,6 @@ public sealed class DeviceDetailModel : PageModel
         OsDistro = summary.OsDistro ?? summary.OsDistroGuess;
         OsDistroIsGuess = summary.OsDistro is null && summary.OsDistroGuess is not null;
         LastSeen = summary.LastSeen?.UtcDateTime;
-
-        await using (NpgsqlConnection customFieldConn = await _db.OpenConnectionAsync(ct))
-        {
-            CustomFieldDefinitions = await customFieldConn.ListCustomFieldDefinitionsAsync(ct)
-                .Select(r => new CustomFieldDefinition(r.Id, r.Label, r.Slug, r.TargetViewTitle, r.TargetViewGroup,
-                        r.IsNewView, r.CreatedAt, r.CreatedBy
-                    )
-                )
-                .ToListAsync(ct);
-        }
 
         await Task.WhenAll(
             LoadAsync<IReadOnlyList<HistoryRow>>(
@@ -446,39 +428,83 @@ public sealed class DeviceDetailModel : PageModel
                             )
                         )
                         .ToListAsync(ct);
-                    IReadOnlyList<FactViewDef> views =
-                        CustomFieldViewMerger.MergeDefs(FactViewLibrary.All, CustomFieldDefinitions);
-                    return CustomFieldViewMerger.FilterBaselineRows(
-                        FactViewRenderer.Render(facts, views),
-                        CustomFieldDefinitions
-                    );
+                    return FactViewRenderer.Render(facts, FactViewLibrary.All);
                 }
             )
         );
 
-        CustomFieldValues = CustomFieldDefinitions.ToDictionary(
-            d => d.Slug,
-            d => AllFacts.Data
-                .FirstOrDefault(f => f.AttributePath == FactPaths.CustomFieldValue && f.Key == d.Slug)
-                ?.Value,
-            StringComparer.Ordinal
-        );
-
-        ManualOverrides = ManualFactCatalog.EditablePaths
-            .Select(path => AllFacts.Data.FirstOrDefault(f => f.AttributePath == path
-             && f.SourceName is { Length: > 0 } sourceName
-             && sourceName.StartsWith("user:", StringComparison.Ordinal)
-            )
-            )
-            .OfType<FactRow>()
-            .Select(row => (row.AttributePath, row.Value))
-            .ToList();
+        if (User.IsInRole("admin"))
+        {
+            await using NpgsqlConnection operatorConn = await _db.OpenConnectionAsync(ct);
+            OperatorFacts = await operatorConn.GetDeviceOperatorFactsAsync(deviceId, ct)
+                .Select(r => new OperatorFactRow(
+                        r.AttributePath ?? "",
+                        FormatScope(r.KeyValues),
+                        ExtractKeys(r.KeyValues),
+                        OperatorFactCatalog.IsOverride(r.AttributePath ?? "") ? "Override" : "Arbitrary",
+                        r.Label,
+                        r.Value,
+                        r.SourceName,
+                        r.CollectedAt?.UtcDateTime
+                    )
+                )
+                .ToListAsync(ct);
+        }
 
         OpenIncidentCount = History.Data.Count(h => h.Kind == "open");
         BuildNav();
 
         return Page();
     }
+
+    /// <summary>
+    /// Compact display of an operator fact's non-device scope from its key_values JSON: "Device" for
+    /// a device-only fact, else the child-collection keys joined as "Interface[aa:bb:...]".
+    /// </summary>
+    private static string FormatScope(string? keyValuesJson)
+    {
+        if (string.IsNullOrEmpty(keyValuesJson))
+        {
+            return "Device";
+        }
+
+        using System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(keyValuesJson);
+        List<string> parts = [];
+        foreach (System.Text.Json.JsonProperty prop in doc.RootElement.EnumerateObject())
+        {
+            if (!string.Equals(prop.Name, "Device", StringComparison.Ordinal))
+            {
+                parts.Add($"{prop.Name}[{prop.Value.GetString()}]");
+            }
+        }
+
+        return parts.Count == 0 ? "Device" : string.Join(".", parts);
+    }
+
+    /// <summary>The non-device key values (path order) of an operator fact — the array the revert
+    /// call needs alongside the attribute-path template.</summary>
+    private static string[] ExtractKeys(string? keyValuesJson)
+    {
+        if (string.IsNullOrEmpty(keyValuesJson))
+        {
+            return [];
+        }
+
+        using System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(keyValuesJson);
+        List<string> keys = [];
+        foreach (System.Text.Json.JsonProperty prop in doc.RootElement.EnumerateObject())
+        {
+            if (!string.Equals(prop.Name, "Device", StringComparison.Ordinal))
+            {
+                keys.Add(prop.Value.GetString() ?? string.Empty);
+            }
+        }
+
+        return [.. keys];
+    }
+
+    /// <summary>The overridable catalog serialized for the fact-path combo box (read client-side).</summary>
+    public string CatalogJson => System.Text.Json.JsonSerializer.Serialize(OperatorFactCatalog.OverridablePaths);
 
     // Group display order + labels for the section nav. Matches FactViewGroup's declared order.
     private static readonly (FactViewGroup Group, string Label)[] GroupOrder =
@@ -522,7 +548,7 @@ public sealed class DeviceDetailModel : PageModel
             ("sources", "Discovery Sources", FactViewGroup.Discovery, Sources.Data.Count > 0, Sources.Data.Count),
             ("services", "Services", FactViewGroup.Discovery, Services.Data.Count > 0, Services.Data.Count),
             ("allfacts", "All Facts", FactViewGroup.Discovery, true, AllFacts.Data.Count),
-            ("manual-overrides", "Manual Overrides", FactViewGroup.Custom, User.IsInRole("admin"), null),
+            ("operator-facts", "Operator Facts", FactViewGroup.Custom, User.IsInRole("admin"), null),
         ];
 
         List<DeviceSectionGroup> groups = new(GroupOrder.Length);
@@ -763,6 +789,18 @@ public sealed record ComponentRow(
     string? Firmware,
     string? Status,
     bool? IsFru
+);
+
+/// <summary>One operator-authored fact (override or arbitrary) for the Operator Facts tab.</summary>
+public sealed record OperatorFactRow(
+    string AttributePath,
+    string Scope,
+    string[] Keys,
+    string Kind,
+    string? Label,
+    string? Value,
+    string? SetBy,
+    DateTime? SetAt
 );
 
 /// <summary>One current fact known about a device (for the All Facts tab).</summary>

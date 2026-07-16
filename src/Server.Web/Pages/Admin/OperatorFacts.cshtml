@@ -1,0 +1,332 @@
+@page "/admin/operator-facts"
+@using JMW.Discovery.Server.UI
+@model JMW.Discovery.Server.Pages.Admin.OperatorFactsModel
+@{
+    ViewData["Title"] = "Operator Facts — JMW Discovery";
+    ViewData["ActiveNav"] = "data";
+}
+
+<main class="main">
+    <div class="page-head">
+        <h1>Operator Facts</h1>
+        <span class="meta" id="resultMeta">Pick a fact path to see who has a value for it</span>
+    </div>
+
+    <partial name="_HubTabs" model="@(new HubTabsModel(HubTabSets.Data, "/admin/operator-facts", "Data views"))"/>
+
+    <div class="section">
+        <div id="ofData" data-catalog="@Model.CatalogJson" hidden></div>
+
+        <p class="prose text-dim" style="margin-bottom:var(--space-3)">
+            See which devices have an operator-authored value for a given fact path, or browse every
+            path currently in use across the fleet.
+        </p>
+
+        <div class="field" style="max-width:480px">
+            <label for="ofPath">Fact path</label>
+            <div class="combo">
+                <input class="input" id="ofPath" type="text" autocomplete="off" role="combobox"
+                       aria-expanded="false" aria-autocomplete="list" aria-controls="ofPathResults"
+                       placeholder="Search catalog paths or type an arbitrary fact ID…"
+                       oninput="ofOnPathInput()" onkeydown="ofComboKeydown(event)"/>
+                <div class="combo-results" id="ofPathResults" role="listbox" hidden></div>
+            </div>
+        </div>
+
+        <div style="display:flex;gap:var(--space-3);align-items:center;margin:var(--space-3) 0 var(--space-4)">
+            <span class="fs-sm text-dim" id="ofModeLabel">Showing devices for a chosen path.</span>
+            <a class="fs-sm" href="javascript:void(0)" id="ofModeToggle" onclick="ofToggleMode()">Browse all paths with values →</a>
+        </div>
+
+        <!-- Path-search mode -->
+        <div id="ofSearchMode">
+            <div class="empty" id="ofSearchEmpty">
+                Pick or type a fact path above to see which devices have an operator-authored value for it.
+            </div>
+            <div id="ofSearchWrap" hidden>
+                <table class="data">
+                    <thead>
+                    <tr>
+                        <th>Device</th>
+                        <th>Scope</th>
+                        <th>Value</th>
+                        <th>Label</th>
+                        <th>Set by / when</th>
+                        <th></th>
+                    </tr>
+                    </thead>
+                    <tbody id="ofSearchBody"></tbody>
+                </table>
+                <div class="pagination">
+                    <button class="btn btn-sm" id="ofSearchMore" hidden onclick="ofLoadMoreSearch()">Load more</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Browse-all-paths mode -->
+        <div id="ofBrowseMode" hidden>
+            <div id="ofBrowseWrap">
+                <table class="data">
+                    <thead>
+                    <tr>
+                        <th>Path</th>
+                        <th>Scope</th>
+                        <th>Devices</th>
+                        <th>Label</th>
+                        <th></th>
+                    </tr>
+                    </thead>
+                    <tbody id="ofBrowseBody"></tbody>
+                </table>
+                <div class="pagination">
+                    <button class="btn btn-sm" id="ofBrowseMore" hidden onclick="ofLoadMorePaths()">Load more</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+
+@section Scripts {
+    <script>
+        const CSRF = '@Model.AntiforgeryToken';
+        const ofCatalog = JSON.parse(document.getElementById('ofData').dataset.catalog);
+
+        function toast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.hidden = false;
+            setTimeout(() => t.hidden = true, 3000);
+        }
+
+        function escapeHtml(s) {
+            return (s == null ? '' : String(s)).replace(/[&<>"]/g, c =>
+                ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+        }
+
+        // ── Path combo ──────────────────────────────────────────────────────
+        function ofGroupLabel(path) {
+            var tail = path.indexOf('Device[].') === 0 ? path.slice('Device[].'.length) : path;
+            var m = /^([A-Za-z0-9]+)/.exec(tail);
+            return m ? m[1] : 'Other';
+        }
+
+        function ofOnPathInput() {
+            var q = document.getElementById('ofPath').value.trim().toLowerCase();
+            var results = document.getElementById('ofPathResults');
+            if (!q) { results.hidden = true; results.innerHTML = ''; return; }
+            var matches = ofCatalog.filter(function (p) { return p.toLowerCase().indexOf(q) !== -1; }).slice(0, 60);
+            if (matches.length === 0) {
+                results.innerHTML = '<div class="combo-empty">No catalog match — you can still search this as an arbitrary fact path.</div>';
+            } else {
+                var groups = {};
+                matches.forEach(function (p) { (groups[ofGroupLabel(p)] = groups[ofGroupLabel(p)] || []).push(p); });
+                results.innerHTML = Object.keys(groups).map(function (g) {
+                    return '<div class="combo-group-label">' + g + '</div>' + groups[g].map(function (p) {
+                        return '<div class="combo-option" role="option" data-path="' + escapeHtml(p) + '">' + escapeHtml(p) + '</div>';
+                    }).join('');
+                }).join('');
+            }
+            results.hidden = false;
+        }
+
+        function ofComboKeydown(e) {
+            var results = document.getElementById('ofPathResults');
+            if (results.hidden) { return; }
+            var options = Array.prototype.slice.call(results.querySelectorAll('.combo-option'));
+            var idx = options.findIndex(function (o) { return o.getAttribute('aria-selected') === 'true'; });
+            if (e.key === 'ArrowDown') { e.preventDefault(); idx = Math.min(idx + 1, options.length - 1); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); idx = Math.max(idx - 1, 0); }
+            else if (e.key === 'Escape') { results.hidden = true; return; }
+            else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (idx >= 0) { options[idx].click(); }
+                else { ofRunSearch(document.getElementById('ofPath').value.trim()); }
+                return;
+            }
+            else { return; }
+            options.forEach(function (o, i) { o.setAttribute('aria-selected', i === idx ? 'true' : 'false'); });
+        }
+
+        document.addEventListener('click', function (e) {
+            var opt = e.target.closest('#ofPathResults .combo-option');
+            if (opt && opt.dataset.path) {
+                document.getElementById('ofPath').value = opt.dataset.path;
+                document.getElementById('ofPathResults').hidden = true;
+                ofRunSearch(opt.dataset.path);
+                return;
+            }
+            if (!e.target.closest('.combo')) { document.getElementById('ofPathResults').hidden = true; }
+        });
+
+        // ── Path-search mode ────────────────────────────────────────────────
+        var ofSearchPath = null;
+        var ofSearchCursor = null;
+
+        async function ofRunSearch(path) {
+            if (!path) { return; }
+            ofSearchPath = path;
+            ofSearchCursor = null;
+            document.getElementById('ofSearchBody').innerHTML = '';
+            await ofFetchSearchPage(true);
+        }
+
+        async function ofFetchSearchPage(reset) {
+            var url = '/api/v1/admin/operator-facts?path=' + encodeURIComponent(ofSearchPath);
+            if (ofSearchCursor) { url += '&after=' + encodeURIComponent(ofSearchCursor); }
+            var resp = await fetch(url);
+            var empty = document.getElementById('ofSearchEmpty');
+            var wrap = document.getElementById('ofSearchWrap');
+            var meta = document.getElementById('resultMeta');
+            if (!resp.ok) {
+                empty.textContent = 'Search failed. Try again.';
+                empty.hidden = false;
+                wrap.hidden = true;
+                return;
+            }
+            var body = await resp.json();
+            var items = body.items || [];
+            if (reset && items.length === 0) {
+                empty.textContent = 'No device currently has an operator-authored value for this path.';
+                empty.hidden = false;
+                wrap.hidden = true;
+                meta.textContent = '0 devices for "' + ofSearchPath + '"';
+                return;
+            }
+            empty.hidden = true;
+            wrap.hidden = false;
+            var tbody = document.getElementById('ofSearchBody');
+            tbody.insertAdjacentHTML('beforeend', items.map(function (r) {
+                return '<tr>'
+                    + '<td><a href="/devices/' + encodeURIComponent(r.device_id) + '">' + escapeHtml(r.device_label || r.device_id) + '</a></td>'
+                    + '<td class="text-dim">' + escapeHtml(r.scope) + '</td>'
+                    + '<td>' + escapeHtml(r.value) + '</td>'
+                    + '<td class="text-dim">' + escapeHtml(r.label || '—') + '</td>'
+                    + '<td class="text-dim fs-xs">' + escapeHtml(r.source_name || '') + '</td>'
+                    + '<td><button class="btn btn-sm btn-danger" data-device="' + escapeHtml(r.device_id)
+                    + '" data-keys="' + escapeHtml(JSON.stringify(r.keys || [])) + '" onclick="ofRevertFleet(this)">Revert</button></td>'
+                    + '</tr>';
+            }).join(''));
+            ofSearchCursor = body.next_cursor;
+            document.getElementById('ofSearchMore').hidden = !ofSearchCursor;
+            meta.textContent = tbody.children.length + ' device(s) for "' + ofSearchPath + '"';
+        }
+
+        function ofLoadMoreSearch() { ofFetchSearchPage(false); }
+
+        async function ofRevertFleet(btn) {
+            var keys = JSON.parse(btn.dataset.keys || '[]');
+            if (!confirm('Revert this device\'s value for "' + ofSearchPath + '"? This restores whatever a collector '
+                + 'last reported, if anything. This can\'t be undone from here.')) {
+                return;
+            }
+            var resp = await fetch('/api/v1/admin/devices/' + encodeURIComponent(btn.dataset.device) + '/operator-facts', {
+                method: 'DELETE',
+                headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF},
+                body: JSON.stringify({attribute_path: ofSearchPath, keys: keys}),
+            });
+            if (resp.ok || resp.status === 204) {
+                btn.closest('tr').remove();
+                toast('Reverted.');
+            } else {
+                var err = await resp.json().catch(function () { return null; });
+                toast('Error: ' + (err && err.detail ? err.detail : resp.status));
+            }
+        }
+
+        // ── Browse-all-paths mode ───────────────────────────────────────────
+        var browsing = false;
+        var ofBrowseCursor = null;
+        var ofBrowseLoaded = false;
+
+        function ofToggleMode() {
+            browsing = !browsing;
+            document.getElementById('ofSearchMode').hidden = browsing;
+            document.getElementById('ofBrowseMode').hidden = !browsing;
+            document.getElementById('ofModeLabel').hidden = browsing;
+            document.getElementById('ofModeToggle').textContent = browsing
+                ? '← Back to path search'
+                : 'Browse all paths with values →';
+            document.getElementById('resultMeta').textContent = browsing
+                ? 'Every operator-authored path currently in use'
+                : 'Pick a fact path to see who has a value for it';
+            if (browsing && !ofBrowseLoaded) {
+                ofBrowseLoaded = true;
+                ofFetchPathsPage();
+            }
+        }
+
+        async function ofFetchPathsPage() {
+            var url = '/api/v1/admin/operator-facts/paths';
+            if (ofBrowseCursor) { url += '?after=' + encodeURIComponent(ofBrowseCursor); }
+            var resp = await fetch(url);
+            var tbody = document.getElementById('ofBrowseBody');
+            if (!resp.ok) { toast('Failed to load paths.'); return; }
+            var body = await resp.json();
+            var items = body.items || [];
+            if (tbody.children.length === 0 && items.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="empty">No operator-authored facts exist yet. '
+                    + 'Set one from any device\'s Operator Facts tab.</td></tr>';
+                return;
+            }
+            tbody.insertAdjacentHTML('beforeend', items.map(function (r) {
+                return '<tr>'
+                    + '<td class="mono">' + escapeHtml(r.attribute_path) + '</td>'
+                    + '<td class="text-dim">' + escapeHtml(r.scope) + '</td>'
+                    + '<td>' + r.device_count + '</td>'
+                    + '<td class="text-dim">' + escapeHtml(r.label || '—') + '</td>'
+                    + '<td style="display:flex;gap:var(--space-2)">'
+                    + '<a href="javascript:void(0)" data-path="' + escapeHtml(r.attribute_path) + '" onclick="ofSearchFromBrowse(this)">View devices →</a>'
+                    + '<a href="javascript:void(0)" data-path="' + escapeHtml(r.attribute_path)
+                    + '" data-keys="' + escapeHtml(JSON.stringify(deriveKeys(r.scope))) + '"'
+                    + ' data-label="' + escapeHtml(r.label || '') + '" onclick="ofEditLabel(this)">Edit label</a>'
+                    + '</td>'
+                    + '</tr>';
+            }).join(''));
+            ofBrowseCursor = body.next_cursor;
+            document.getElementById('ofBrowseMore').hidden = !ofBrowseCursor;
+        }
+
+        function ofLoadMorePaths() { ofFetchPathsPage(); }
+
+        // Scope like "Custom[warranty-expiry]" → its key values, in order, for the metadata call.
+        function deriveKeys(scope) {
+            if (!scope || scope === 'Device') { return []; }
+            var keys = [];
+            var re = /\[([^\]]*)\]/g, m;
+            while ((m = re.exec(scope)) !== null) { keys.push(m[1]); }
+            return keys;
+        }
+
+        function ofSearchFromBrowse(el) {
+            document.getElementById('ofPath').value = el.dataset.path;
+            ofToggleMode();
+            ofRunSearch(el.dataset.path);
+        }
+
+        async function ofEditLabel(el) {
+            var next = prompt('Edit label for "' + el.dataset.path + '" (path-level, independent of any device value):',
+                el.dataset.label || '');
+            if (next === null) { return; }
+            var resp = await fetch('/api/v1/admin/operator-facts/metadata', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF},
+                body: JSON.stringify({
+                    attribute_path: el.dataset.path,
+                    keys: JSON.parse(el.dataset.keys || '[]'),
+                    label: next || null,
+                    description: null,
+                }),
+            });
+            if (resp.ok) {
+                el.dataset.label = next;
+                el.closest('tr').children[3].textContent = next || '—';
+                toast('Label updated for this path.');
+            } else {
+                var err = await resp.json().catch(function () { return null; });
+                toast('Error: ' + (err && err.detail ? err.detail : resp.status));
+            }
+        }
+    </script>
+}
