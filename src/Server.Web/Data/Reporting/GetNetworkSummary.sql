@@ -1,5 +1,5 @@
 -- Network totals for the dashboard Network zone. Device counts exclude merged/alias
--- devices so they agree with the All Hosts report. Reporting(24h) = live devices with any
+-- devices so they agree with the Devices report. Reporting(24h) = live devices with any
 -- fingerprint seen in the last 24h; quiet = the remainder.
 WITH live AS (
     SELECT

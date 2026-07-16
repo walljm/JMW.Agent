@@ -23,15 +23,15 @@ namespace JMW.Discovery.Tests;
 // ═════════════════════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HostsApi
+// DeviceListApi
 // ─────────────────────────────────────────────────────────────────────────────
 
 [Collection("Integration")]
-public sealed class HostsApiTests : IAsyncLifetime
+public sealed class DeviceListApiTests : IAsyncLifetime
 {
     private readonly IntegrationFixture _fixture;
 
-    public HostsApiTests(IntegrationFixture fixture)
+    public DeviceListApiTests(IntegrationFixture fixture)
     {
         _fixture = fixture;
     }
@@ -54,7 +54,7 @@ public sealed class HostsApiTests : IAsyncLifetime
     [Fact]
     public async Task Query_NoDevices_ReturnsEmptyList()
     {
-        (List<HostListItem> items, string? next) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> items, string? next) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
             null,
@@ -79,7 +79,7 @@ public sealed class HostsApiTests : IAsyncLifetime
         // Vendor now comes from the best parsed source (hardware DMI), not proj_devices.
         await InsertHardwareVendorAsync(id, vendor: "Dell");
 
-        (List<HostListItem> items, string? next) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> items, string? next) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
             null,
@@ -95,7 +95,7 @@ public sealed class HostsApiTests : IAsyncLifetime
         Assert.Single(items);
         Assert.Null(next);
 
-        HostListItem h = items[0];
+        DeviceReportItem h = items[0];
         Assert.Equal(id.ToString(), h.DeviceId);
         Assert.Equal("web-01", h.Hostname);
         Assert.Equal("Linux", h.OsFamily);
@@ -115,7 +115,7 @@ public sealed class HostsApiTests : IAsyncLifetime
         await _fixture.InsertFingerprintAsync(id, "obscured-mac", "00e0bf1fc40*");
         await SeedOuiAsync("00e0bf", "Google Inc.");
 
-        (List<HostListItem> items, _) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
             null,
@@ -129,7 +129,7 @@ public sealed class HostsApiTests : IAsyncLifetime
         );
 
         Assert.Single(items);
-        HostListItem h = items[0];
+        DeviceReportItem h = items[0];
         Assert.Null(h.Mac);
         Assert.Equal("00e0bf1fc40*", h.ObscuredMac);
         Assert.Equal("Google Inc.", h.Oui);
@@ -148,7 +148,7 @@ public sealed class HostsApiTests : IAsyncLifetime
         await SeedOuiAsync("aabbcc", "Real Vendor Inc.");
         await SeedOuiAsync("00e0bf", "Google Inc.");
 
-        (List<HostListItem> items, _) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
             null,
@@ -162,7 +162,7 @@ public sealed class HostsApiTests : IAsyncLifetime
         );
 
         Assert.Single(items);
-        HostListItem h = items[0];
+        DeviceReportItem h = items[0];
         Assert.Equal("aabbcc112233", h.Mac);
         Assert.Equal("00e0bf1fc40*", h.ObscuredMac);
         Assert.Equal("Real Vendor Inc.", h.Oui);
@@ -182,7 +182,7 @@ public sealed class HostsApiTests : IAsyncLifetime
           + "VALUES ('observer-1', '192.168.1.211', 'd88c79420abf', 'Kitchen Audio', 'eureka', now())"
         );
 
-        (List<HostListItem> items, _) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
             null,
@@ -211,7 +211,7 @@ public sealed class HostsApiTests : IAsyncLifetime
           + "VALUES ('observer-1', '192.168.1.212', 'd88c79420abc', 'raw-mdns-name.local', 'Living Room Speaker', 'eureka', now())"
         );
 
-        (List<HostListItem> items, _) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
             null,
@@ -247,7 +247,7 @@ public sealed class HostsApiTests : IAsyncLifetime
           + "'Mother In Law Suite speaker', 'google-wifi', now())"
         );
 
-        (List<HostListItem> items, _) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
             null,
@@ -286,7 +286,7 @@ public sealed class HostsApiTests : IAsyncLifetime
         await InsertSystemAsync(managed, hostname: "managed-host");
         await InsertSystemAsync(discovered, hostname: "discovered-host");
 
-        (List<HostListItem> managed_items, _) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> managed_items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             "managed",
             null,
@@ -299,7 +299,7 @@ public sealed class HostsApiTests : IAsyncLifetime
             CancellationToken.None
         );
 
-        (List<HostListItem> discovered_items, _) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> discovered_items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             "discovered",
             null,
@@ -325,7 +325,7 @@ public sealed class HostsApiTests : IAsyncLifetime
         await InsertSystemAsync(linux, hostname: "linux-box", osFamily: "Linux");
         await InsertSystemAsync(windows, hostname: "win-box", osFamily: "Windows");
 
-        (List<HostListItem> items, _) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
             null,
@@ -352,7 +352,7 @@ public sealed class HostsApiTests : IAsyncLifetime
         await InsertHardwareVendorAsync(dell, vendor: "Dell");
         await InsertHardwareVendorAsync(hp, vendor: "HP");
 
-        (List<HostListItem> items, _) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
             null,
@@ -377,7 +377,7 @@ public sealed class HostsApiTests : IAsyncLifetime
         await InsertSystemAsync(match, hostname: "database-server-01");
         await InsertSystemAsync(noMatch, hostname: "webserver-01");
 
-        (List<HostListItem> items, _) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
             null,
@@ -406,7 +406,7 @@ public sealed class HostsApiTests : IAsyncLifetime
         await InsertSystemAsync(c, hostname: "gamma");
 
         // Page 1: limit=2 should return alpha+beta and a cursor.
-        (List<HostListItem> page1, string? cursor1) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> page1, string? cursor1) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
             null,
@@ -425,7 +425,7 @@ public sealed class HostsApiTests : IAsyncLifetime
         // Decode cursor and use it for page 2.
         Assert.True(KeysetCursor.TryDecode(cursor1, out string afterHostname, out string afterDeviceId));
 
-        (List<HostListItem> page2, string? cursor2) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> page2, string? cursor2) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
             null,
@@ -500,7 +500,7 @@ public sealed class HostsApiTests : IAsyncLifetime
           + "VALUES ('observer-1', '192.168.1.80', '001122334499', 'eth0', 'reachable', now())"
         );
 
-        (List<HostListItem> items, _) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
             null,
@@ -536,7 +536,7 @@ public sealed class HostsApiTests : IAsyncLifetime
           + $"('{id}', 'br-lan', '192.168.1.1', now() - interval '2 min')" // private LAN → the answer
         );
 
-        (List<HostListItem> items, _) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
             null,
@@ -567,7 +567,7 @@ public sealed class HostsApiTests : IAsyncLifetime
         await InsertSystemAsync(c, hostname: "gamma");
 
         // Full descending order → gamma, beta, alpha.
-        (List<HostListItem> all, _) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> all, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
             null,
@@ -592,7 +592,7 @@ public sealed class HostsApiTests : IAsyncLifetime
         );
 
         // Paged descending: page 1 (limit 2) → gamma, beta + cursor.
-        (List<HostListItem> page1, string? cursor1) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> page1, string? cursor1) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
             null,
@@ -618,7 +618,7 @@ public sealed class HostsApiTests : IAsyncLifetime
         Assert.True(KeysetCursor.TryDecode(cursor1, out string afterKey, out string afterDeviceId));
 
         // Page 2 via the cursor → alpha (paging continues in the DESC order).
-        (List<HostListItem> page2, _) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> page2, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
             null,
@@ -659,7 +659,7 @@ public sealed class HostsApiTests : IAsyncLifetime
             $"INSERT INTO proj_systems (device, hostname, last_seen_ip, updated_at) VALUES ('{c}', 'h100', '192.168.1.100', now())"
         );
 
-        (List<HostListItem> asc, _) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> asc, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
             null,
@@ -684,7 +684,7 @@ public sealed class HostsApiTests : IAsyncLifetime
         );
 
         // Descending is the exact reverse.
-        (List<HostListItem> desc, _) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> desc, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
             null,
@@ -735,7 +735,7 @@ public sealed class HostsApiTests : IAsyncLifetime
           + "VALUES ('observer-1', '192.168.1.10', '001122334455', 'SsdpScanner,MdnsScanner')"
         );
 
-        (List<HostListItem> items, _) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
             null,
@@ -775,7 +775,7 @@ public sealed class HostsApiTests : IAsyncLifetime
           + "VALUES ('observer-1', '192.168.1.11', '001122334466', 'BrandNewScanner')"
         );
 
-        (List<HostListItem> items, _) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
             null,
@@ -808,7 +808,7 @@ public sealed class HostsApiTests : IAsyncLifetime
         Guid noArp = await _fixture.InsertDeviceAsync(managementStatus: "managed");
         await _fixture.InsertFingerprintAsync(noArp, "mac", "aabbccddee02", source: "agent");
 
-        (List<HostListItem> items, _) = await HostsApi.QueryAsync(
+        (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
             "arp",

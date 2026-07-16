@@ -43,7 +43,7 @@ public sealed class DeviceDetailModel : PageModel
     private static readonly Dictionary<string, (string Label, string Href, string NavKey)> KnownOrigins =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            ["all-hosts"] = ("All Hosts", "/all-hosts", "all-hosts"),
+            ["devices"] = ("Devices", "/devices", "devices"),
             ["subnets"] = ("Subnets", "/subnets", "subnets"),
             ["agents"] = ("Agents", "/fleet/agents", "agents"),
             ["arp"] = ("ARP Table", "/arp", "arp"),
@@ -57,9 +57,9 @@ public sealed class DeviceDetailModel : PageModel
     public bool Found { get; private set; }
     public string DeviceId { get; private set; } = string.Empty;
     public string ManagementStatus { get; private set; } = string.Empty;
-    public string BreadcrumbLabel { get; private set; } = "All Hosts";
-    public string BreadcrumbHref { get; private set; } = "/all-hosts";
-    public string ActiveNavKey { get; private set; } = "all-hosts";
+    public string BreadcrumbLabel { get; private set; } = "Devices";
+    public string BreadcrumbHref { get; private set; } = "/devices";
+    public string ActiveNavKey { get; private set; } = "devices";
     public string? Hostname { get; private set; }
     public string? Vendor { get; private set; }
     public bool VendorIsGuess { get; private set; }
@@ -629,7 +629,7 @@ public sealed class DeviceDetailModel : PageModel
             }
         }
 
-        return KnownOrigins["all-hosts"];
+        return KnownOrigins["devices"];
     }
 }
 

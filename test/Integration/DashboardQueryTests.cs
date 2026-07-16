@@ -317,7 +317,7 @@ public sealed class DashboardQueryTests
             "INSERT INTO proj_systems (device, os_family, updated_at) VALUES (@d,'linux',now())",
             ("d", d2.ToString())
         );
-        // Vendor composition reads proj_hardware.system_vendor (the All Hosts device-maker source).
+        // Vendor composition reads proj_hardware.system_vendor (the Devices device-maker source).
         await ExecAsync(
             "INSERT INTO proj_hardware (device, system_vendor, updated_at) VALUES (@d,'Dell',now())",
             ("d", d1.ToString())

@@ -7,7 +7,7 @@ namespace JMW.Discovery.Server.Queries;
 public static partial class ReportingQueries
 {
     // ── Reporting: Hosts ────────────────────────────────────────────────────────
-    // The All Hosts list is hand-built in HostsApi.QueryAsync because its ORDER BY / keyset
+    // The Devices list is hand-built in DeviceListApi.QueryAsync because its ORDER BY / keyset
     // cursor are chosen dynamically from a sortable-column allowlist, which a static
     // [DatabaseCommand] cannot express (ORDER BY is not parameterizable).
 

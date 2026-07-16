@@ -1,4 +1,4 @@
--- Live-device counts by device-maker vendor. Vendor is derived exactly as on the All Hosts
+-- Live-device counts by device-maker vendor. Vendor is derived exactly as on the Devices
 -- report — the unified cross-protocol field (DeviceVendorDerivation fans in hardware/BACnet/
 -- Modbus/Google Wifi), falling back to proj_hardware.system_vendor for devices whose derivation
 -- hasn't re-run since this field was added, then to the inferred guess (VendorFromOsDistroDerivation

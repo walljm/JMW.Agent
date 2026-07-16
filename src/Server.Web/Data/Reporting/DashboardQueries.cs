@@ -10,7 +10,7 @@ namespace JMW.Discovery.Server.Queries;
 /// (e.g. <c>GetNetworkSummaryAsync</c> → <c>GetNetworkSummary.sql</c>) in this directory.
 /// Counts/sums/averages are typed nullable to match the validator's schema-only inference.
 /// Device counts exclude merged/alias devices (via <c>device_aliases</c>) so totals agree
-/// with the All Hosts report they link to.
+/// with the Devices report they link to.
 /// </summary>
 public static partial class DashboardQueries
 {
@@ -147,7 +147,7 @@ public static partial class DashboardQueries
 
     // ── Network composition breakdowns (device counts by dimension) ─────────────
 
-    /// <summary>Live-device counts by device-maker vendor (matches All Hosts vendor semantics), descending.</summary>
+    /// <summary>Live-device counts by device-maker vendor (matches Devices vendor semantics), descending.</summary>
     [DatabaseCommand]
     public static partial
         IAsyncEnumerable<(string? Vendor, long? Count)> GetCompositionByVendorAsync(

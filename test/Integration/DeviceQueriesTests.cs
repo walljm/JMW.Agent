@@ -6,7 +6,7 @@ namespace JMW.Discovery.Tests;
 
 // ═════════════════════════════════════════════════════════════════════════════
 // DeviceQueries integration tests — regression coverage for the obscured-MAC
-// identity-contamination bug class (see ReportingApiTests.HostsApiTests and
+// identity-contamination bug class (see ReportingApiTests.DeviceListApiTests and
 // DiscoveryMaterializerTests for the same guard applied to sibling queries).
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -35,7 +35,7 @@ public sealed class DeviceQueriesTests : IAsyncLifetime
     [Fact]
     public async Task GetDeviceAllFactsAsync_ObscuredMacReconstructedRow_NeverContaminatesSightingFacts()
     {
-        // Same contamination bug class already fixed in GetPromotionGapRows.sql / HostsApi.cs /
+        // Same contamination bug class already fixed in GetPromotionGapRows.sql / DeviceListApi.cs /
         // GetDeviceSummary.sql: a Google Wifi/OnHub row's `mac` can be a RECONSTRUCTED value
         // (obscured_mac IS NOT NULL) that happens to equal this device's real MAC fingerprint
         // without actually being the same physical device. The "sighting" CTE must exclude it.

@@ -5,7 +5,7 @@
     string? err = Model.PanelError("composition");
     CompositionVm? comp = Model.Composition;
 }
-<dash-panel panel-name="composition" title="Composition" refresh-seconds="300" action-href="/all-hosts"
+<dash-panel panel-name="composition" title="Composition" refresh-seconds="300" action-href="/devices"
             action-text="All hosts →">
     @if (err is not null)
     {

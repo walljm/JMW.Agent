@@ -81,7 +81,7 @@ FROM
     -- misses everything an observer recorded about it.
     -- d.obscured_mac IS NULL: exclude Google Wifi/OnHub rows whose mac was filled in
     -- by obscured-MAC reconstruction rather than direct observation — see the same
-    -- guard in HostsApi.cs's `disc` lateral / GetPromotionGapRows.sql for why matching
+    -- guard in DeviceListApi.cs's `disc` lateral / GetPromotionGapRows.sql for why matching
     -- on it here would smear a stale mDNS advertisement's facts onto this device.
     JOIN device_fingerprints f
 ON f.device_id = $1

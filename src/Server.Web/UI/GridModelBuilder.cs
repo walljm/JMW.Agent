@@ -8,7 +8,7 @@ public sealed record GridModel(GridState Grid, DataGridModel FilterBar, Paginati
 /// Builds the three pieces a data-grid page's view needs (<see cref="GridState" /> for sortable
 /// headers, <see cref="DataGridModel" /> for the filter bar, <see cref="PaginationLinks" /> for
 /// First/Next) from a page model's bound properties. Centralizes the <c>sortSuffix</c>-into-
-/// <c>FragmentUrl</c> logic that used to be hand-rolled per page (e.g. AllHosts.cshtml).
+/// <c>FragmentUrl</c> logic that used to be hand-rolled per page (e.g. Devices.cshtml).
 /// </summary>
 public static class GridModelBuilder
 {

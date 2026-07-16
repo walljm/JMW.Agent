@@ -1209,7 +1209,7 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
     public async Task MaterializeAsync_PromotionGap_ObscuredMacRow_NeverPromotesVendor()
     {
         // Same contamination bug class already guarded in GetDeviceAllFacts.sql /
-        // GetDeviceSightings.sql / HostsApi.cs / GetDeviceSummary.sql: a Google Wifi/OnHub row's
+        // GetDeviceSightings.sql / DeviceListApi.cs / GetDeviceSummary.sql: a Google Wifi/OnHub row's
         // `mac` can be a RECONSTRUCTED value that happens to equal this device's real MAC
         // without being the same physical device. The promotion-gap pass must not adopt that
         // row's vendor.

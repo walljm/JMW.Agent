@@ -17,7 +17,7 @@ WHERE
   -- Exclude Google Wifi/OnHub rows whose mac was filled in by obscured-MAC reconstruction
   -- (SetDiscoveredMac.sql) rather than direct observation — same guard every other consumer
   -- of proj_discovered.mac already applies (GetDeviceAllFacts.sql, GetDeviceSightings.sql,
-  -- HostsApi.cs, GetPromotionGapRows.sql). Without it, a reconstructed guess gets promoted
+  -- DeviceListApi.cs, GetPromotionGapRows.sql). Without it, a reconstructed guess gets promoted
   -- into device_fingerprints as an ordinary, trusted fp_type='mac' row — the fingerprinted_macs
   -- view (0049) only recognizes fp_type='mac', so MaterializeObscuredMacsAsync tagging this same
   -- value as FingerprintType.ObscuredMac first does NOT stop this anti-join from re-promoting

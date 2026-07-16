@@ -10,18 +10,18 @@ using Npgsql;
 namespace JMW.Discovery.Server.Pages.Reports;
 
 [Authorize(Policy = RbacPolicies.Authenticated)]
-public sealed class AllHostsModel : ReportPageModel
+public sealed class DevicesModel : ReportPageModel
 {
-    private readonly ILogger<AllHostsModel> _logger;
+    private readonly ILogger<DevicesModel> _logger;
     private readonly NpgsqlDataSource _db;
 
-    public AllHostsModel(NpgsqlDataSource db, ILogger<AllHostsModel> logger)
+    public DevicesModel(NpgsqlDataSource db, ILogger<DevicesModel> logger)
     {
         _db = db;
         _logger = logger;
     }
 
-    public IReadOnlyList<HostListItem> Hosts { get; private set; } = [];
+    public IReadOnlyList<DeviceListItem> Devices { get; private set; } = [];
     public string? NextCursor { get; private set; }
     public string? PrevCursor { get; private set; }
     public GridState Grid { get; private set; } = null!;
@@ -53,7 +53,7 @@ public sealed class AllHostsModel : ReportPageModel
     public string? Dir { get; set; }
 
     /// <summary>The active sort column, resolved to the default when unset/invalid.</summary>
-    public string ActiveSort => HostsApi.IsSortable(Sort) ? Sort! : HostsApi.DefaultSort;
+    public string ActiveSort => DeviceListApi.IsSortable(Sort) ? Sort! : DeviceListApi.DefaultSort;
 
     /// <summary>The active direction ("asc"/"desc"), defaulting to ascending.</summary>
     public string ActiveDir => string.Equals(Dir, "desc", StringComparison.OrdinalIgnoreCase) ? "desc" : "asc";
@@ -74,7 +74,7 @@ public sealed class AllHostsModel : ReportPageModel
         IActionResult result = await RunReportLoadAsync(
             async () =>
             {
-                (IReadOnlyList<HostListItem> items, string? next) = await HostsApi.QueryAsync(
+                (IReadOnlyList<DeviceListItem> items, string? next) = await DeviceListApi.QueryAsync(
                     _db,
                     Status,
                     Source,
@@ -83,17 +83,17 @@ public sealed class AllHostsModel : ReportPageModel
                     Q,
                     afterSortKey,
                     afterDeviceId,
-                    HostsApi.DefaultLimit,
+                    DeviceListApi.DefaultLimit,
                     ct,
                     ActiveSort,
                     ActiveDir
                 );
 
-                Hosts = items;
+                Devices = items;
                 NextCursor = next;
             },
-            ex => AllHostsModelLog.LoadFailed(_logger, ex),
-            "_HostsTable"
+            ex => DevicesModelLog.LoadFailed(_logger, ex),
+            "_DevicesTable"
         );
 
         Dictionary<string, string> activeFilters = new(StringComparer.Ordinal);
@@ -118,7 +118,7 @@ public sealed class AllHostsModel : ReportPageModel
         }
 
         GridModel grid = GridModelBuilder.Build(
-            "/all-hosts",
+            "/devices",
             [
                 new FilterSpec(
                     "status",
@@ -142,13 +142,13 @@ public sealed class AllHostsModel : ReportPageModel
             ],
             activeFilters,
             Q,
-            HostsApi.DefaultSort,
+            DeviceListApi.DefaultSort,
             Sort,
             Dir,
-            HostsApi.SortableColumns,
+            DeviceListApi.SortableColumns,
             After,
             NextCursor,
-            "#hosts-table"
+            "#devices-table"
         );
         Grid = grid.Grid;
         FilterBar = grid.FilterBar;
@@ -158,8 +158,8 @@ public sealed class AllHostsModel : ReportPageModel
     }
 }
 
-internal static partial class AllHostsModelLog
+internal static partial class DevicesModelLog
 {
-    [LoggerMessage(Level = LogLevel.Error, Message = "AllHosts page load failed.")]
+    [LoggerMessage(Level = LogLevel.Error, Message = "Devices page load failed.")]
     public static partial void LoadFailed(ILogger logger, Exception ex);
 }

@@ -27,7 +27,7 @@ FROM
     -- obscured-MAC reconstruction rather than direct observation — a stale mDNS
     -- advertisement can reconstruct to a totally different device's MAC, and that
     -- sighting belongs to the cast-id identity, not necessarily this one (same guard as
-    -- HostsApi.cs's `disc` lateral / GetPromotionGapRows.sql).
+    -- DeviceListApi.cs's `disc` lateral / GetPromotionGapRows.sql).
     JOIN device_fingerprints f
     ON f.fp_type = 'mac' AND f.fp_value = d.mac AND f.device_id = $1
     AND d.obscured_mac IS NULL

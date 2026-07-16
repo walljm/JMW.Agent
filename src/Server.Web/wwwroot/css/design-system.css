@@ -745,7 +745,7 @@ table.data tbody tr.row-warn td:first-child {
 .tags {
     display: inline-flex;
     gap: var(--space-2);
-    /* nowrap: table cells (e.g. All Hosts' Discovery Sources) must not grow tall when a
+    /* nowrap: table cells (e.g. Devices' Discovery Sources) must not grow tall when a
        row has many sources — the row scrolls horizontally with the rest of the table instead. */
     flex-wrap: nowrap;
 }

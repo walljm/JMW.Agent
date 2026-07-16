@@ -5,7 +5,7 @@ using Npgsql;
 
 namespace JMW.Discovery.Server.Reporting;
 
-public static class HostsApi
+public static class DeviceListApi
 {
     public const int DefaultLimit = 100;
     public const int MaxLimit = 500;
@@ -41,11 +41,11 @@ public static class HostsApi
 
     public static void Map(IEndpointRouteBuilder app)
     {
-        app.MapGet("/report/hosts", ListHosts)
+        app.MapGet("/report/devices", ListDevices)
             .RequireAuthorization(ReadPolicy.Name);
     }
 
-    private static async Task<IResult> ListHosts(
+    private static async Task<IResult> ListDevices(
         NpgsqlDataSource db,
         string? after,
         string? status,
@@ -74,7 +74,7 @@ public static class HostsApi
             afterDeviceId = deviceId;
         }
 
-        (List<HostListItem> items, string? nextCursor) = await QueryAsync(
+        (List<DeviceListItem> items, string? nextCursor) = await QueryAsync(
             db,
             status,
             source,
@@ -99,13 +99,13 @@ public static class HostsApi
     }
 
     /// <summary>
-    /// Shared query used by both the JSON endpoint and the All Hosts page model.
+    /// Shared query used by both the JSON endpoint and the Devices page model.
     /// Fetches limit+1 rows to determine whether a next page exists. The sort column is
     /// resolved from <see cref="SortExpressions" /> (default hostname); the keyset comparison
     /// and ORDER BY use that expression with device_id as a stable, unique tiebreaker so pages
     /// never skip or repeat rows. Descending flips both the tuple comparison and ORDER BY.
     /// </summary>
-    public static async Task<(List<HostListItem> Items, string? NextCursor)> QueryAsync(
+    public static async Task<(List<DeviceListItem> Items, string? NextCursor)> QueryAsync(
         NpgsqlDataSource db,
         string? status,
         string? source,
@@ -150,7 +150,7 @@ public static class HostsApi
         AddText(cmd, afterDeviceId);
         cmd.Parameters.Add(Param.Integer(limit + 1));
 
-        List<HostListItem> items = new();
+        List<DeviceListItem> items = new();
         // sort_key[i] is the SQL-computed sort expression for items[i] — used verbatim for the
         // cursor so it always matches the keyset comparison (no C#-side re-derivation to drift).
         List<string> sortKeys = new();
@@ -159,7 +159,7 @@ public static class HostsApi
             while (await reader.ReadAsync(ct))
             {
                 items.Add(
-                    new HostListItem(
+                    new DeviceListItem(
                         DeviceId: reader.GetGuid(0).ToString(),
                         Hostname: GetStr(reader, 1),
                         Ip: GetStr(reader, 2),
@@ -379,7 +379,7 @@ public static class HostsApi
         """;
 }
 
-public sealed record HostListItem(
+public sealed record DeviceListItem(
     string DeviceId,
     string? Hostname,
     string? Ip,

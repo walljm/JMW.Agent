@@ -5,7 +5,7 @@
     ActivityCountsVm? counts = Model.ActivityCounts;
 }
 <dash-panel panel-name="new-devices" title="New devices" refresh-seconds="30"
-            action-href="/all-hosts?added=recent" action-text="View →">
+            action-href="/devices?added=recent" action-text="View →">
     @if (err is not null)
     {
         <partial name="_SectionError" model="err"/>

@@ -39,7 +39,7 @@
         double quietPct = Pct(t.Quiet24h, reportDenom);
 
         <div class="stat">
-            <a class="stat-head" href="/all-hosts">
+            <a class="stat-head" href="/devices">
                 <div class="label">Total devices</div>
                 <div class="value">@t.TotalDevices</div>
             </a>
@@ -50,9 +50,9 @@
                       style="width:@(discoveredPct.ToString("0.#", CultureInfo.InvariantCulture))%"></span>
             </div>
             <div class="pw-cap">
-                <span class="sw sw-1"></span><a href="/all-hosts?status=managed">@t.ManagedDevices managed</a>
+                <span class="sw sw-1"></span><a href="/devices?status=managed">@t.ManagedDevices managed</a>
                 <span class="sw sw-2" style="margin-left:var(--space-3)"></span><a
-                    href="/all-hosts?status=discovered">@t.DiscoveredDevices discovered</a>
+                    href="/devices?status=discovered">@t.DiscoveredDevices discovered</a>
             </div>
         </div>
 
@@ -100,7 +100,7 @@
         </div>
 
         <div class="stat">
-            <a class="stat-head" href="/all-hosts?status=reporting">
+            <a class="stat-head" href="/devices?status=reporting">
                 <div class="label">Reporting (24h)</div>
                 <div class="value">@t.Reporting24h</div>
             </a>
@@ -111,9 +111,9 @@
                       style="width:@(quietPct.ToString("0.#", CultureInfo.InvariantCulture))%"></span>
             </div>
             <div class="pw-cap">
-                <span class="sw sw-ok"></span><a href="/all-hosts?status=reporting">@t.Reporting24h reporting</a>
+                <span class="sw sw-ok"></span><a href="/devices?status=reporting">@t.Reporting24h reporting</a>
                 <span class="sw sw-quiet" style="margin-left:var(--space-3)"></span><a
-                    href="/all-hosts?status=stale">@t.Quiet24h quiet</a>
+                    href="/devices?status=stale">@t.Quiet24h quiet</a>
             </div>
         </div>
 

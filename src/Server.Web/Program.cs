@@ -455,7 +455,7 @@ CustomFieldsApi.Map(adminGroup);
 RouteGroupBuilder reportGroup = v1.MapGroup("")
     .RequireAuthorization(ReadPolicy.Name);
 DevicesApi.Map(reportGroup);
-HostsApi.Map(reportGroup);
+DeviceListApi.Map(reportGroup);
 DashboardApi.Map(reportGroup);
 ServicesApi.Map(reportGroup);
 StorageApi.Map(reportGroup);

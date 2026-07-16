@@ -5,7 +5,7 @@
     ActivityCountsVm? counts = Model.ActivityCounts;
 }
 <dash-panel panel-name="not-seen" title="Not seen recently" refresh-seconds="30"
-            action-href="/all-hosts?status=stale" action-text="View →">
+            action-href="/devices?status=stale" action-text="View →">
     @if (err is not null)
     {
         <partial name="_SectionError" model="err"/>

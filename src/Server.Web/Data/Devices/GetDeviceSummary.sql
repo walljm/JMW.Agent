@@ -10,7 +10,7 @@ SELECT
         (
             -- pd_disc.obscured_mac IS NULL: exclude Google Wifi/OnHub rows whose mac was filled
             -- in by obscured-MAC reconstruction rather than direct observation — see the same
-            -- guard in HostsApi.cs's `disc` lateral for why matching those here would smear a
+            -- guard in DeviceListApi.cs's `disc` lateral for why matching those here would smear a
             -- stale mDNS advertisement's name onto whatever device the MAC actually resolves to.
             SELECT COALESCE(pd_disc.friendly_name, pd_disc.hostname)
             FROM device_fingerprints fp

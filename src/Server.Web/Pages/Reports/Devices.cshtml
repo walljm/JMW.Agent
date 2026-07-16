@@ -1,0 +1,16 @@
+@page "/devices"
+@model JMW.Discovery.Server.Pages.Reports.DevicesModel
+@{
+    ViewData["Title"] = "Devices — JMW Discovery";
+    ViewData["ActiveNav"] = "devices";
+}
+<main class="main data-grid-page">
+    <div class="page-head">
+        <h1>Devices</h1>
+        <span class="meta">@Model.Devices.Count devices shown</span>
+    </div>
+
+    <partial name="_FilterBar" model="Model.FilterBar"/>
+
+    <partial name="_DevicesTable" model="Model"/>
+</main>

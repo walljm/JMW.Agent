@@ -1,0 +1,87 @@
+@using JMW.Discovery.Server.Reporting
+@model JMW.Discovery.Server.Pages.Reports.DevicesModel
+
+<div id="devices-table" class="grid-panel">
+    <partial name="_SectionError" model="Model.LoadError"/>
+
+    @if (Model.LoadError is null && Model.Devices.Count == 0)
+    {
+        <div class="empty">No devices match the current filters.</div>
+    }
+    else if (Model.LoadError is null)
+    {
+        <div class="grid-scroll">
+            <table class="data" aria-label="Devices">
+                <thead>
+                <tr>
+                    <th sort-key="hostname" sort-grid="Model.Grid" sort-target="#devices-table">Hostname</th>
+                    <th sort-key="ip" sort-grid="Model.Grid" sort-target="#devices-table">IP Address</th>
+                    <th sort-key="mac" sort-grid="Model.Grid" sort-target="#devices-table">MAC</th>
+                    <th style="cursor:default">OUI</th>
+                    <th sort-key="vendor" sort-grid="Model.Grid" sort-target="#devices-table">Vendor</th>
+                    <th sort-key="os" sort-grid="Model.Grid" sort-target="#devices-table">OS</th>
+                    <th sort-key="status" sort-grid="Model.Grid" sort-target="#devices-table">Status</th>
+                    <th style="cursor:default">Discovery Sources</th>
+                    <th sort-key="last_seen" sort-grid="Model.Grid" sort-target="#devices-table">Last Seen</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (DeviceListItem device in Model.Devices)
+                {
+                    <tr data-href="/devices/@device.DeviceId?from=devices" style="cursor:pointer">
+                        <td>@(string.IsNullOrEmpty(device.Hostname) ? "—" : device.Hostname)</td>
+                        <td class="mono">@(string.IsNullOrEmpty(device.Ip) ? "—" : device.Ip)</td>
+                        <td class="mono">
+                            @if (!string.IsNullOrEmpty(device.Mac))
+                            {
+                                @ViewFormat.FormatMac(device.Mac)
+                            }
+                            else if (!string.IsNullOrEmpty(device.ObscuredMac))
+                            {
+                                <span class="text-dim" title="Obscured MAC (Google Wifi/OnHub) — firmware masks the device bytes; no unique ARP/DHCP match was found to reconstruct the full address, but the OUI prefix is still reliable">@device.ObscuredMac</span>
+                            }
+                            else
+                            {
+                                @:—
+                            }
+                        </td>
+                        <td class="text-dim" title="NIC manufacturer from MAC OUI">@ViewFormat.FormatOui(device.Oui, device.OuiCountry)</td>
+                        <td>@(device.Vendor ?? "—")</td>
+                        <td>@(ViewFormat.FormatOs(device.OsFamily, device.OsDistro))</td>
+                        <td>
+                            @if (device.ManagementStatus == "managed")
+                            {
+                                <span class="badge-managed">Managed</span>
+                            }
+                            else
+                            {
+                                <span class="badge-discovered">Discovered</span>
+                            }
+                        </td>
+                        <td style="white-space:nowrap">
+              <span class="tags">
+                @foreach (string src in device.Sources)
+                  {
+                      <span class="tag">@src</span>
+                  }
+              </span>
+                        </td>
+                        <td>
+                            @if (device.LastSeen.HasValue)
+                            {
+                                <time data-utc="@ViewFormat.IsoUtc(device.LastSeen.Value)">@device.LastSeen.Value.ToString("yyyy-MM-dd HH:mm") UTC</time>
+                            }
+                            else
+                            {
+                                @:—
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+
+        <partial name="_Pagination" model="Model.Pagination"/>
+    }
+</div>
