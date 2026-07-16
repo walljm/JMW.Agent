@@ -264,8 +264,9 @@ projections, prior non-obscured discovery); `ObscuredMac.Pick` keeps only a cand
 whose **OUI matches** the obscured OUI (guarding against a stale ARP entry / reassigned
 IP) and accepts it only when unique. The match is written back as the row's `mac`, the
 device is resolved, and the intrinsic attributes are **promoted** onto the resolved
-`Device[]` (hostname → `OS.Hostname`, model → `Hardware.SystemModel`, device-type →
-`Kind`). Promotion runs every cycle (not only at the reconstruction instant, via
+`Device[]` (mDNS hostname → `OS.Hostname`, mDNS/UPnP friendly name → the separate
+`OS.FriendlyName` display rollup — never conflated with the real hostname, model →
+`Hardware.SystemModel`, device-type → `Kind`). Promotion runs every cycle (not only at the reconstruction instant, via
 `GetObscuredMacRowsAsync` over all obscured rows), so late-arriving enrichment still
 graduates; the COALESCE upserts make re-promotion a no-op. Per-row work is wrapped so a
 **locally-administered / randomized MAC** (common on phones/tablets — rejected as a
@@ -335,6 +336,20 @@ appended as another source for those paths: a guess re-derived every cycle (fres
 `collected_at` each time) could otherwise silently outrace and clobber an
 already-authoritative device-reported value through plain last-write-wins projection.
 Reporting only ever consults a `*Guess` path when its canonical counterpart is empty.
+
+**`hostname` vs `friendly_name` are different columns on `proj_systems`, never conflated.**
+`hostname` (`FactPaths.SystemHostname`, `Device[].OS.Hostname`) is the real, agent-/mDNS-reported
+OS hostname only — null when unknown, never backfilled from anything else. `friendly_name`
+(`FactPaths.SystemFriendlyName`, `Device[].OS.FriendlyName`) is a display-name rollup: mDNS/UPnP
+friendly name (OnHub stations) or a Home Assistant registry device name (these have no OS, so
+there's no real hostname to report), and — since it's an ordinary single-`Device[]`-dimension
+fact path — automatically operator-editable through the existing manual-fact mechanism
+(`ManualFactCatalog`) with no extra UI. `DiscoveryMaterializer`'s promotion writes (see
+`UpsertDeviceSystem.sql`) pass friendly-name-ish sources to the `friendly_name` param, never the
+`hostname` param. Reporting's display-name rollup is priority custom/promoted `friendly_name` >
+a live `proj_discovered` friendly-name join (agentless devices not yet promoted) > `hostname` —
+see `DeviceListApi.cs`'s `filtered` CTE and `GetDeviceSummary.sql`. List/report tables that show a
+per-row device label expose both `Hostname` (genuine) and `FriendlyName` (rollup) columns.
 
 **Device vs service identity.** Devices are identified by hardware fingerprints
 (`DeviceRegistry`); services (Technitium DNS, Home Assistant) are their own

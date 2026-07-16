@@ -256,10 +256,10 @@ public sealed class DashboardModel : PageModel
         try
         {
             List<NotSeenRow> rows = [];
-            await foreach ((Guid DeviceId, string? Hostname, DateTimeOffset? LastSeen) r in
+            await foreach ((Guid DeviceId, string? FriendlyName, DateTimeOffset? LastSeen) r in
                 conn.GetNotSeenDevicesAsync(NotSeenDays, NotSeenCap, ct))
             {
-                rows.Add(new NotSeenRow(r.DeviceId, Display(r.Hostname), r.LastSeen));
+                rows.Add(new NotSeenRow(r.DeviceId, Display(r.FriendlyName), r.LastSeen));
             }
 
             Cache("dash_not_seen", rows, FastTtl);
@@ -279,11 +279,11 @@ public sealed class DashboardModel : PageModel
         try
         {
             List<NewDeviceRow> rows = [];
-            await foreach ((Guid DeviceId, string? Hostname, string ManagementStatus, DateTimeOffset CreatedAt) r in
-                conn.GetNewDevicesAsync(NewDeviceDays, NewDeviceCap, ct))
+            await foreach ((Guid DeviceId, string? FriendlyName, string ManagementStatus, DateTimeOffset CreatedAt) r
+                in conn.GetNewDevicesAsync(NewDeviceDays, NewDeviceCap, ct))
             {
                 rows.Add(
-                    new NewDeviceRow(r.DeviceId, Display(r.Hostname), r.ManagementStatus, r.CreatedAt)
+                    new NewDeviceRow(r.DeviceId, Display(r.FriendlyName), r.ManagementStatus, r.CreatedAt)
                 );
             }
 

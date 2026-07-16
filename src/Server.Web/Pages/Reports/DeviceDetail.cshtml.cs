@@ -61,6 +61,7 @@ public sealed class DeviceDetailModel : PageModel
     public string BreadcrumbHref { get; private set; } = "/devices";
     public string ActiveNavKey { get; private set; } = "devices";
     public string? Hostname { get; private set; }
+    public string? FriendlyName { get; private set; }
     public string? Vendor { get; private set; }
     public bool VendorIsGuess { get; private set; }
     public string? VendorSourceName { get; private set; }
@@ -135,7 +136,8 @@ public sealed class DeviceDetailModel : PageModel
         DeviceId = deviceId.ToString();
         string deviceKey = DeviceId;
 
-        (Guid DeviceId, string ManagementStatus, string? Hostname, string? OsFamily, string? OsDistro,
+        (Guid DeviceId, string ManagementStatus, string? Hostname, string? FriendlyName, string? OsFamily, string?
+            OsDistro,
             string? OsDistroGuess, DateTimeOffset? LastSeen, string? Vendor, string? VendorGuess, string?
             VendorSourceName,
             string? Kind, string? CpuModel, long? CpuCores, long? TotalMemBytes, string? SystemVendor, string?
@@ -154,6 +156,7 @@ public sealed class DeviceDetailModel : PageModel
         Found = true;
         ManagementStatus = summary.ManagementStatus;
         Hostname = summary.Hostname;
+        FriendlyName = summary.FriendlyName;
         Vendor = summary.Vendor ?? summary.VendorGuess;
         VendorIsGuess = summary.Vendor is null && summary.VendorGuess is not null;
         VendorSourceName = summary.VendorSourceName;

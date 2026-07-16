@@ -74,7 +74,8 @@ public static class HardwareApi
                 h.device, s.hostname, h.system_vendor, h.system_model, h.system_serial,
                 h.bios_version, h.virtualization, h.cpu_model, h.cpu_vendor, h.cpu_cores,
                 h.cpu_logical_cores, h.cpu_mhz, h.total_mem_bytes, disks.total_bytes,
-                {sortKeyCol} AS sort_key
+                {sortKeyCol} AS sort_key,
+                COALESCE(s.friendly_name, s.hostname) AS friendly_name
             FROM proj_hardware h
                 LEFT JOIN proj_systems s ON s.device = h.device
                 LEFT JOIN LATERAL (
@@ -117,7 +118,8 @@ public static class HardwareApi
                         CpuLogicalCores: reader.IsDBNull(10) ? null : reader.GetInt64(10),
                         CpuMhz: reader.IsDBNull(11) ? null : reader.GetDouble(11),
                         TotalMemBytes: reader.IsDBNull(12) ? null : reader.GetInt64(12),
-                        TotalStorageBytes: reader.IsDBNull(13) ? null : reader.GetInt64(13)
+                        TotalStorageBytes: reader.IsDBNull(13) ? null : reader.GetInt64(13),
+                        FriendlyName: GetStr(reader, 15)
                     )
                 );
                 sortKeys.Add(GetStr(reader, 14) ?? string.Empty);
@@ -153,5 +155,6 @@ public sealed record HardwareListItem(
     long? CpuLogicalCores,
     double? CpuMhz,
     long? TotalMemBytes,
-    long? TotalStorageBytes
+    long? TotalStorageBytes,
+    string? FriendlyName
 );

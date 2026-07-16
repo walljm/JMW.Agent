@@ -31,7 +31,9 @@ public static partial class DeviceQueries
     /// Returns no rows if the device id is unknown.
     /// </summary>
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<(Guid DeviceId, string ManagementStatus, string? Hostname, string? OsFamily,
+    public static partial IAsyncEnumerable<(Guid DeviceId, string ManagementStatus, string? Hostname, string?
+        FriendlyName,
+        string? OsFamily,
         string? OsDistro, string? OsDistroGuess, DateTimeOffset? LastSeen, string?
         Vendor, string? VendorGuess, string? VendorSourceName, string? Kind, string? CpuModel, long? CpuCores, long?
         TotalMemBytes, string?

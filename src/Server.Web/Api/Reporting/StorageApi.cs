@@ -57,7 +57,8 @@ public static class StorageApi
         await using NpgsqlConnection conn = await db.OpenConnectionAsync(ct);
 
         List<(string Device, string? Hostname, string Disk, string? Name, string? Model, string? Type, string?
-            SmartHealth, double? SmartTempC, double? SmartWearPct, long? SmartPowerOnHours, long? SizeBytes)> rows =
+            SmartHealth, double? SmartTempC, double? SmartWearPct, long? SmartPowerOnHours, long? SizeBytes, string?
+            FriendlyName)> rows =
             await conn.ListStorageDisksAsync(afterDevice, afterDisk, limit + 1, ct)
                 .ToListAsync(ct);
 
@@ -74,7 +75,8 @@ public static class StorageApi
                     SmartTempC: r.SmartTempC,
                     SmartWearPct: r.SmartWearPct,
                     SmartPowerOnHours: r.SmartPowerOnHours,
-                    SizeBytes: r.SizeBytes
+                    SizeBytes: r.SizeBytes,
+                    FriendlyName: r.FriendlyName
                 )
             )
             .ToList();
@@ -93,7 +95,7 @@ public static class StorageApi
         await using NpgsqlConnection conn = await db.OpenConnectionAsync(ct);
 
         List<(string Device, string? Hostname, string Filesystem, string? FsType, long? TotalBytes, long? UsedBytes,
-            long? FreeBytes, double? UsedPct)> rows = await conn
+            long? FreeBytes, double? UsedPct, string? FriendlyName)> rows = await conn
             .ListStorageFilesystemsAsync(afterDevice, afterFilesystem, limit + 1, ct)
             .ToListAsync(ct);
 
@@ -107,7 +109,8 @@ public static class StorageApi
                     TotalBytes: r.TotalBytes,
                     UsedBytes: r.UsedBytes,
                     FreeBytes: r.FreeBytes,
-                    UsedPct: r.UsedPct
+                    UsedPct: r.UsedPct,
+                    FriendlyName: r.FriendlyName
                 )
             )
             .ToList();
@@ -127,7 +130,8 @@ public sealed record DiskListItem(
     double? SmartTempC,
     double? SmartWearPct,
     long? SmartPowerOnHours,
-    long? SizeBytes
+    long? SizeBytes,
+    string? FriendlyName
 );
 
 public sealed record FilesystemListItem(
@@ -138,5 +142,6 @@ public sealed record FilesystemListItem(
     long? TotalBytes,
     long? UsedBytes,
     long? FreeBytes,
-    double? UsedPct
+    double? UsedPct,
+    string? FriendlyName
 );

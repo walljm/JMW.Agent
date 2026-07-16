@@ -77,7 +77,8 @@ public static class ArpApi
                 CASE WHEN df.device_id IS NULL THEN NULL ELSE d.device_id END AS resolved_device_id,
                 rs.hostname AS resolved_hostname,
                 oui_vendor(a.mac) AS oui, oui_country(a.mac) AS oui_country,
-                {sortKeyCol} AS sort_key
+                {sortKeyCol} AS sort_key,
+                COALESCE(rs.friendly_name, rs.hostname) AS resolved_friendly_name
             FROM proj_device_arp a
                 LEFT JOIN proj_systems s ON s.device = a.device
                 LEFT JOIN device_fingerprints df ON df.fp_type = 'mac' AND df.fp_value = a.mac
@@ -119,7 +120,8 @@ public static class ArpApi
                         ResolvedDeviceId: reader.IsDBNull(6) ? null : reader.GetGuid(6).ToString(),
                         ResolvedHostname: GetStr(reader, 7),
                         Oui: GetStr(reader, 8),
-                        OuiCountry: GetStr(reader, 9)
+                        OuiCountry: GetStr(reader, 9),
+                        ResolvedFriendlyName: GetStr(reader, 11)
                     )
                 );
                 sortKeys.Add(GetStr(reader, 10) ?? string.Empty);
@@ -154,5 +156,6 @@ public sealed record ArpListItem(
     string? ResolvedDeviceId,
     string? ResolvedHostname,
     string? Oui,
-    string? OuiCountry
+    string? OuiCountry,
+    string? ResolvedFriendlyName
 );

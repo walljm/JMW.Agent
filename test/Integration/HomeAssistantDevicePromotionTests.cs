@@ -74,9 +74,12 @@ public sealed class HomeAssistantDevicePromotionTests : IAsyncLifetime
             await ReadScalarAsync($"SELECT system_model FROM proj_hardware WHERE device = '{deviceId}'")
         );
         Assert.Equal("Signify", await ReadScalarAsync($"SELECT vendor FROM proj_devices WHERE device = '{deviceId}'"));
+        // entry.Name is HA's registry display name, not a real OS hostname — promoted as
+        // friendly_name only; hostname stays null (HA entities have no OS to report one).
+        Assert.Null(await ReadScalarAsync($"SELECT hostname FROM proj_systems WHERE device = '{deviceId}'"));
         Assert.Equal(
             "Living Room Lamp",
-            await ReadScalarAsync($"SELECT hostname FROM proj_systems WHERE device = '{deviceId}'")
+            await ReadScalarAsync($"SELECT friendly_name FROM proj_systems WHERE device = '{deviceId}'")
         );
     }
 

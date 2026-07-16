@@ -14,6 +14,7 @@
             <table class="data" aria-label="Containers">
                 <thead>
                 <tr>
+                    <th style="cursor:default">Friendly Name</th>
                     <th sort-key="device" sort-grid="Model.Grid" sort-target="#containers-table">Hostname</th>
                     <th style="cursor:default">Name</th>
                     <th style="cursor:default">Container ID</th>
@@ -30,6 +31,7 @@
                 @foreach (ContainerListItem c in Model.Containers)
                 {
                     <tr class="@RowClass(c)" data-href="/devices/@c.Device?from=containers" style="cursor:pointer">
+                        <td>@(string.IsNullOrEmpty(c.FriendlyName) ? "—" : c.FriendlyName)</td>
                         <td>@(string.IsNullOrEmpty(c.Hostname) ? c.Device : c.Hostname)</td>
                         <td>@(c.Name ?? c.Container)</td>
                         <td class="mono">@c.Container</td>

@@ -560,7 +560,8 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
             )
         );
 
-        // The cast-id device exists and carries the friendly name.
+        // The cast-id device exists and carries the friendly name (not a real hostname — the
+        // mDNS friendly name is display-only).
         Assert.Equal(
             1,
             await _fixture.CountAsync("device_fingerprints", $"fp_type = 'cast-id' AND fp_value = '{castId}'")
@@ -569,7 +570,7 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
             "Mother In Law Suite speaker",
             await ReadScalarAsync(
                 $"""
-            SELECT s.hostname FROM proj_systems s
+            SELECT s.friendly_name FROM proj_systems s
             JOIN device_fingerprints f ON f.device_id = s.device::uuid
             WHERE f.fp_type = 'cast-id' AND f.fp_value = '{castId}'
             """
@@ -652,7 +653,7 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
             "Mother In Law Suite speaker",
             await ReadScalarAsync(
                 $"""
-            SELECT s.hostname FROM proj_systems s
+            SELECT s.friendly_name FROM proj_systems s
             JOIN device_fingerprints f ON f.device_id = s.device::uuid
             WHERE f.fp_type = 'cast-id' AND f.fp_value = '{castId}'
             """
@@ -716,7 +717,7 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
             "Mother In Law Suite speaker",
             await ReadScalarAsync(
                 $"""
-            SELECT s.hostname FROM proj_systems s
+            SELECT s.friendly_name FROM proj_systems s
             JOIN device_fingerprints f ON f.device_id = s.device::uuid
             WHERE f.fp_type = 'cast-id' AND f.fp_value = '{castId}'
             """
@@ -755,7 +756,7 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
         Assert.Equal(
             "Kitchen Audio",
             await ReadScalarAsync(
-                "SELECT hostname FROM proj_systems WHERE device = '" + viaMac + "'"
+                "SELECT friendly_name FROM proj_systems WHERE device = '" + viaMac + "'"
             )
         );
         Assert.Equal(

@@ -51,7 +51,7 @@ public static partial class DashboardQueries
     /// <summary>Newest devices first observed within <paramref name="days" /> days, newest first.</summary>
     [DatabaseCommand]
     public static partial
-        IAsyncEnumerable<(Guid DeviceId, string? Hostname, string ManagementStatus, DateTimeOffset CreatedAt)>
+        IAsyncEnumerable<(Guid DeviceId, string? FriendlyName, string ManagementStatus, DateTimeOffset CreatedAt)>
         GetNewDevicesAsync(
             this NpgsqlConnection connection,
             int days,
@@ -65,7 +65,7 @@ public static partial class DashboardQueries
     /// </summary>
     [DatabaseCommand]
     public static partial
-        IAsyncEnumerable<(Guid DeviceId, string? Hostname, DateTimeOffset? LastSeen)>
+        IAsyncEnumerable<(Guid DeviceId, string? FriendlyName, DateTimeOffset? LastSeen)>
         GetNotSeenDevicesAsync(
             this NpgsqlConnection connection,
             int days,

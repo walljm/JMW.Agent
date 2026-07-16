@@ -4,7 +4,7 @@
 -- known subnet) — the "Internet" node.
 SELECT
     r.device
-  , s.hostname AS hostname
+  , COALESCE(s.friendly_name, s.hostname) AS hostname
   , r.gateway
 FROM
     proj_device_routes    r

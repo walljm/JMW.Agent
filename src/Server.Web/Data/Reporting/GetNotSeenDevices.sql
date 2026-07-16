@@ -1,8 +1,9 @@
 -- Devices whose newest fingerprint last_seen is older than $1 days (gone quiet), oldest
--- first, capped at $2. Excludes merged/alias devices. Hostname best-effort from proj_systems.
+-- first, capped at $2. Excludes merged/alias devices. Friendly name best-effort from
+-- proj_systems (falls back to the real hostname when no friendly name is known).
 SELECT
     d.device_id
-  , s.hostname
+  , COALESCE(s.friendly_name, s.hostname) AS friendly_name
   , mx.last_seen
 FROM
     devices                d

@@ -76,7 +76,8 @@ public static class ComponentsApi
             SELECT
                 c.device, s.hostname, c.hwcomponent, c.class, c.slot, c.description, c.vendor,
                 c.model, c.serial, c.firmware, c.status, c.is_fru,
-                {sortKeyCol} AS sort_key
+                {sortKeyCol} AS sort_key,
+                COALESCE(s.friendly_name, s.hostname) AS friendly_name
             FROM proj_hardware_inventory c
                 LEFT JOIN proj_systems s ON s.device = c.device
             WHERE ($1::text IS NULL OR COALESCE(s.hostname, '') ILIKE '%' || $1 || '%'
@@ -119,7 +120,8 @@ public static class ComponentsApi
                         Serial: GetStr(reader, 8),
                         Firmware: GetStr(reader, 9),
                         Status: GetStr(reader, 10),
-                        IsFru: reader.IsDBNull(11) ? null : reader.GetBoolean(11)
+                        IsFru: reader.IsDBNull(11) ? null : reader.GetBoolean(11),
+                        FriendlyName: GetStr(reader, 13)
                     )
                 );
                 sortKeys.Add(GetStr(reader, 12) ?? string.Empty);
@@ -155,5 +157,6 @@ public sealed record ComponentListItem(
     string? Serial,
     string? Firmware,
     string? Status,
-    bool? IsFru
+    bool? IsFru,
+    string? FriendlyName
 );

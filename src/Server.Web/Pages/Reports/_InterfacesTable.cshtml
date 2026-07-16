@@ -14,6 +14,7 @@
             <table class="data" aria-label="Network interfaces">
                 <thead>
                 <tr>
+                    <th style="cursor:default">Friendly Name</th>
                     <th sort-key="hostname" sort-grid="Model.Grid" sort-target="#interfaces-table">Hostname</th>
                     <th sort-key="name" sort-grid="Model.Grid" sort-target="#interfaces-table">Interface</th>
                     <th style="cursor:default">MAC</th>
@@ -33,6 +34,7 @@
                 {
                     (string Label, string Title, string Css) flag = ViewFormat.MacFlag(i.MacAddress ?? i.ObscuredMac);
                     <tr data-href="/devices/@i.Device?from=interfaces" style="cursor:pointer">
+                        <td>@(string.IsNullOrEmpty(i.FriendlyName) ? "—" : i.FriendlyName)</td>
                         <td>@(string.IsNullOrEmpty(i.Hostname) ? i.Device : i.Hostname)</td>
                         <td>@(i.Name ?? "—")</td>
                         <td class="mono">

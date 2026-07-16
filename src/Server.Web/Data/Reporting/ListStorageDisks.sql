@@ -10,6 +10,7 @@ SELECT
   , d.smart_wear_pct
   , d.smart_power_on_hours
   , d.size_bytes
+  , COALESCE(s.friendly_name, s.hostname) AS friendly_name
 FROM
     proj_disks             d
     LEFT JOIN proj_systems s

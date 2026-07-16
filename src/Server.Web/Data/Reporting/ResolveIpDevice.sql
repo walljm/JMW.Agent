@@ -7,7 +7,7 @@ SELECT
             THEN NULL
         ELSE d.device_id
     END               AS resolved_device_id
-  , rs.hostname       AS resolved_hostname
+  , COALESCE(rs.friendly_name, rs.hostname) AS resolved_hostname
   , oui_vendor(a.mac) AS oui
 FROM
     proj_device_arp               a

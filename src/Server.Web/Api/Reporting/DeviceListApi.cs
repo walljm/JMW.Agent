@@ -21,6 +21,7 @@ public static class DeviceListApi
         new(StringComparer.Ordinal)
         {
             ["hostname"] = "coalesce(hostname, '')",
+            ["friendly_name"] = "coalesce(friendly_name, '')",
             // ip_sort_key makes lexical text order match numeric IP order (192.168.1.9 < .10 < .100).
             ["ip"] = "ip_sort_key(ip)",
             ["mac"] = "coalesce(mac, '')",
@@ -130,7 +131,8 @@ public static class DeviceListApi
         string sql = $"""
             {BaseCte}
             SELECT
-                device_id, hostname, ip, mac, obscured_mac, vendor, oui, oui_country, os_family, os_distro,
+                device_id, hostname, friendly_name, ip, mac, obscured_mac, vendor, oui, oui_country, os_family,
+                os_distro,
                 management_status, sources, last_seen,
                 {sortKeyCol} AS sort_key
             FROM decorated
@@ -162,20 +164,21 @@ public static class DeviceListApi
                     new DeviceReportItem(
                         DeviceId: reader.GetGuid(0).ToString(),
                         Hostname: GetStr(reader, 1),
-                        Ip: GetStr(reader, 2),
-                        Mac: GetStr(reader, 3),
-                        ObscuredMac: GetStr(reader, 4),
-                        Vendor: GetStr(reader, 5),
-                        Oui: GetStr(reader, 6),
-                        OuiCountry: GetStr(reader, 7),
-                        OsFamily: GetStr(reader, 8),
-                        OsDistro: GetStr(reader, 9),
-                        ManagementStatus: reader.GetString(10),
-                        Sources: SplitSources(GetStr(reader, 11)),
-                        LastSeen: reader.IsDBNull(12) ? null : reader.GetFieldValue<DateTimeOffset>(12).UtcDateTime
+                        FriendlyName: GetStr(reader, 2),
+                        Ip: GetStr(reader, 3),
+                        Mac: GetStr(reader, 4),
+                        ObscuredMac: GetStr(reader, 5),
+                        Vendor: GetStr(reader, 6),
+                        Oui: GetStr(reader, 7),
+                        OuiCountry: GetStr(reader, 8),
+                        OsFamily: GetStr(reader, 9),
+                        OsDistro: GetStr(reader, 10),
+                        ManagementStatus: reader.GetString(11),
+                        Sources: SplitSources(GetStr(reader, 12)),
+                        LastSeen: reader.IsDBNull(13) ? null : reader.GetFieldValue<DateTimeOffset>(13).UtcDateTime
                     )
                 );
-                sortKeys.Add(GetStr(reader, 13) ?? string.Empty);
+                sortKeys.Add(GetStr(reader, 14) ?? string.Empty);
             }
         }
 
@@ -279,11 +282,14 @@ public static class DeviceListApi
         filtered AS (
             SELECT
                 d.device_id,
-                -- proj_systems.hostname only exists for agent-managed devices (self-reported OS
-                -- hostname). A passively-discovered device (no agent) never gets one, even when
-                -- other observers already know its name via mDNS/Cast/SSDP — fall back to the
-                -- best name any observer has recorded for this device's MAC in proj_discovered.
-                COALESCE(s.hostname, disc.name) AS hostname,
+                -- The real, agent-reported OS hostname only — null for a passively-discovered
+                -- device with no agent. Never backfilled from friendly-name-ish sources.
+                s.hostname,
+                -- Display rollup, in priority order: an operator-set/promoted friendly name
+                -- (proj_systems.friendly_name), else the best friendly-name-ish value any
+                -- observer has recorded for this device's MAC in proj_discovered (agentless
+                -- devices not yet promoted), else the real hostname above.
+                COALESCE(s.friendly_name, disc.name, s.hostname) AS friendly_name,
                 lower(dmac.fp_value) AS mac,
                 lower(dmac_obs.fp_value) AS obscured_mac,
                 -- pdv.vendor is the unified cross-protocol vendor (DeviceVendorDerivation fans in
@@ -326,7 +332,7 @@ public static class DeviceListApi
                     SELECT 1 FROM device_sources ds WHERE ds.device_id = d.device_id AND ds.source = $2))
               AND ($3::text IS NULL OR s.os_family = $3)
               AND ($4::text IS NULL OR COALESCE(pdv.vendor, hw.system_vendor) = $4)
-              AND ($5::text IS NULL OR COALESCE(s.hostname, disc.name, '') ILIKE '%' || $5 || '%'
+              AND ($5::text IS NULL OR COALESCE(s.friendly_name, disc.name, s.hostname, '') ILIKE '%' || $5 || '%'
                     OR EXISTS (SELECT 1 FROM device_fingerprints qf
                                WHERE qf.device_id = d.device_id AND qf.fp_value ILIKE '%' || $5 || '%'))
         ),
@@ -334,6 +340,7 @@ public static class DeviceListApi
             SELECT
                 f.device_id,
                 f.hostname,
+                f.friendly_name,
                 ip_best.ip,
                 f.mac,
                 f.obscured_mac,
@@ -382,6 +389,7 @@ public static class DeviceListApi
 public sealed record DeviceReportItem(
     string DeviceId,
     string? Hostname,
+    string? FriendlyName,
     string? Ip,
     string? Mac,
     string? ObscuredMac,

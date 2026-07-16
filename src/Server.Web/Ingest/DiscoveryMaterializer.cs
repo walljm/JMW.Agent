@@ -77,11 +77,12 @@ public sealed class DiscoveryMaterializer
 
     private static async Task MaterializePromotionGapsAsync(NpgsqlConnection conn, CancellationToken ct)
     {
-        List<(string? Device, string? Vendor, string? Model, string? Os, string? Hostname)> rows =
-            await conn.GetPromotionGapRowsAsync(ct).ToListAsync(ct);
+        List<(string? Device, string? Vendor, string? Model, string? Os, string? Hostname, string? FriendlyName)>
+            rows = await conn.GetPromotionGapRowsAsync(ct).ToListAsync(ct);
         // Reader closed — conn is free for the upserts below.
 
-        foreach ((string? device, string? vendor, string? model, string? os, string? hostname) in rows)
+        foreach ((string? device, string? vendor, string? model, string? os, string? hostname, string? friendlyName)
+            in rows)
         {
             if (device is null)
             {
@@ -104,9 +105,10 @@ public sealed class DiscoveryMaterializer
                 await conn.UpsertDeviceSummaryAsync(device, vendor, kind: null, ct).ExecuteAsync(ct);
             }
 
-            if (os is not null || hostname is not null)
+            if (os is not null || hostname is not null || friendlyName is not null)
             {
-                await conn.UpsertDeviceSystemAsync(device, hostname, lastSeenIp: null, os, ct).ExecuteAsync(ct);
+                await conn.UpsertDeviceSystemAsync(device, hostname, friendlyName, lastSeenIp: null, os, ct)
+                    .ExecuteAsync(ct);
             }
         }
     }
@@ -312,7 +314,10 @@ public sealed class DiscoveryMaterializer
             string? ip = src.PromoteIp ? row.Ip : null;
             if (row.Hostname is not null || ip is not null || row.Os is not null)
             {
-                await conn.UpsertDeviceSystemAsync(deviceId, row.Hostname, ip, row.Os, ct).ExecuteAsync(ct);
+                // No friendly-name-ish source available on this row (proj_discovered.friendly_name
+                // isn't selected here) — MaterializePromotionGapsAsync fills it in on a later pass.
+                await conn.UpsertDeviceSystemAsync(deviceId, row.Hostname, friendlyName: null, ip, row.Os, ct)
+                    .ExecuteAsync(ct);
             }
 
             if (src.PromoteHardware)
@@ -547,11 +552,22 @@ public sealed class DiscoveryMaterializer
             }
 
             // The sighting/link telemetry stays on the observation in proj_discovered.
-            // Prefer the mDNS hostname; fall back to the mDNS friendly name.
-            string? cleanHostname = NullIfBlank(r.Hostname) ?? NullIfBlank(r.FriendlyName);
-            if (cleanHostname != null)
+            // Hostname and friendly name are genuinely distinct here — never conflated: the mDNS
+            // hostname (if reported) is the real hostname; the mDNS/UPnP friendly name (e.g. "Kitchen
+            // Audio") is display-only.
+            string? cleanHostname = NullIfBlank(r.Hostname);
+            string? cleanFriendlyName = NullIfBlank(r.FriendlyName);
+            if (cleanHostname != null || cleanFriendlyName != null)
             {
-                await conn.UpsertDeviceSystemAsync(deviceId, cleanHostname, NullIfBlank(r.Ip), osFamily: null, ct).ExecuteAsync(ct);
+                await conn.UpsertDeviceSystemAsync(
+                        deviceId,
+                        cleanHostname,
+                        cleanFriendlyName,
+                        NullIfBlank(r.Ip),
+                        osFamily: null,
+                        ct
+                    )
+                    .ExecuteAsync(ct);
             }
 
             // Model → Hardware.SystemModel. Vendor is intentionally not set: the

@@ -40,6 +40,7 @@ public static class ProjectionLibrary
             ["Device"],
             [
                 new(FactPaths.SystemHostname, "hostname", NpgsqlDbType.Text),
+                new(FactPaths.SystemFriendlyName, "friendly_name", NpgsqlDbType.Text),
                 new(FactPaths.SystemOsFamily, "os_family", NpgsqlDbType.Text),
                 new(FactPaths.SystemOsDistro, "os_distro", NpgsqlDbType.Text),
                 // Inferred guess (VendorOsFromDeviceBannerDerivation) — reporting should only
@@ -56,6 +57,7 @@ public static class ProjectionLibrary
             [
                 new("proj_systems_hostname_idx", ["hostname", "device"]),
                 new("ix_proj_systems_hostname_trgm", ["hostname"], ProjectionIndexMethod.GinTrgm),
+                new("ix_proj_systems_friendly_name_trgm", ["friendly_name"], ProjectionIndexMethod.GinTrgm),
             ],
         },
 

@@ -77,7 +77,8 @@ public static class PortsApi
             SELECT
                 p.device, s.hostname, p.listeningport, p.protocol, p.address, p.port,
                 p.process_name, p.pid,
-                {sortKeyCol} AS sort_key
+                {sortKeyCol} AS sort_key,
+                COALESCE(s.friendly_name, s.hostname) AS friendly_name
             FROM proj_ports p
                 LEFT JOIN proj_systems s ON s.device = p.device
             WHERE ($1::integer IS NULL OR p.port = $1)
@@ -115,7 +116,8 @@ public static class PortsApi
                         Address: GetStr(reader, 4),
                         Port: reader.IsDBNull(5) ? null : reader.GetInt32(5),
                         ProcessName: GetStr(reader, 6),
-                        Pid: reader.IsDBNull(7) ? null : reader.GetInt64(7)
+                        Pid: reader.IsDBNull(7) ? null : reader.GetInt64(7),
+                        FriendlyName: GetStr(reader, 9)
                     )
                 );
                 sortKeys.Add(GetStr(reader, 8) ?? string.Empty);
@@ -147,5 +149,6 @@ public sealed record PortListItem(
     string? Address,
     int? Port,
     string? ProcessName,
-    long? Pid
+    long? Pid,
+    string? FriendlyName
 );

@@ -40,6 +40,7 @@ gapped_devices AS (
        OR h.system_model IS NULL
        OR s.os_family IS NULL
        OR s.hostname IS NULL
+       OR s.friendly_name IS NULL
 )
 SELECT
     gd.device_id::text AS device
@@ -47,6 +48,7 @@ SELECT
   , sightings.model
   , sightings.os
   , COALESCE(sightings.hostname, dhcp.hostname) AS hostname
+  , sightings.friendly_name
 FROM gapped_devices gd
     LEFT JOIN LATERAL (
         -- d.obscured_mac IS NULL excludes Google Wifi/OnHub rows whose `mac` was filled in by
@@ -57,12 +59,15 @@ FROM gapped_devices gd
         -- keys off the reconstructed MAC for exactly this reason. Matching on it again here
         -- would smear that row's name/model onto whatever device the MAC actually resolves to.
         --
-        -- One scan of proj_discovered instead of four: each column independently needs "the
+        -- One scan of proj_discovered instead of five: each column independently needs "the
         -- most recent candidate row where THAT column is non-null" (a single most-recent-row
         -- pick would wrongly return null for a field the freshest row happens to lack, even
         -- when an older row has it) — array_agg(...) FILTER (WHERE col IS NOT NULL) ORDER BY
         -- updated_at DESC keeps that per-column semantics; [1] takes the freshest surviving
         -- element. The obscured_mac guard is written once here instead of once per column.
+        -- hostname is the genuine mDNS/DHCP-observed hostname only — friendly_name (mDNS fn=/
+        -- UPnP friendlyName) is kept separate and promoted to proj_systems.friendly_name, never
+        -- folded into the real hostname.
         SELECT
             (array_agg(d.vendor ORDER BY d.updated_at DESC)
                 FILTER (WHERE d.vendor IS NOT NULL))[1] AS vendor
@@ -70,8 +75,10 @@ FROM gapped_devices gd
                 FILTER (WHERE d.model IS NOT NULL))[1] AS model
           , (array_agg(d.os ORDER BY d.updated_at DESC)
                 FILTER (WHERE d.os IS NOT NULL))[1] AS os
+          , (array_agg(d.hostname ORDER BY d.updated_at DESC)
+                FILTER (WHERE d.hostname IS NOT NULL))[1] AS hostname
           , (array_agg(COALESCE(d.friendly_name, d.hostname) ORDER BY d.updated_at DESC)
-                FILTER (WHERE COALESCE(d.friendly_name, d.hostname) IS NOT NULL))[1] AS hostname
+                FILTER (WHERE COALESCE(d.friendly_name, d.hostname) IS NOT NULL))[1] AS friendly_name
         FROM proj_discovered d
         WHERE d.obscured_mac IS NULL
           AND (d.mac = gd.mac OR d.onvif_serial = gd.serial OR d.roku_serial = gd.serial

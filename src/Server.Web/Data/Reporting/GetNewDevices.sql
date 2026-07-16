@@ -1,8 +1,9 @@
 -- Newest devices first observed within $1 days, newest first, capped at $2.
--- Excludes merged/alias devices. Hostname is best-effort from proj_systems.
+-- Excludes merged/alias devices. Friendly name is best-effort from proj_systems
+-- (falls back to the real hostname when no friendly name is known).
 SELECT
     d.device_id
-  , s.hostname
+  , COALESCE(s.friendly_name, s.hostname) AS friendly_name
   , d.management_status
   , d.created_at
 FROM

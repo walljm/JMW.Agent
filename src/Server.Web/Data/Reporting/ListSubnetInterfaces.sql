@@ -1,6 +1,6 @@
 SELECT
     i.device
-  , s.hostname AS hostname
+  , COALESCE(s.friendly_name, s.hostname) AS hostname
   , i.name
   , i.ipv4
   , i.ipv4_prefix_length

@@ -83,7 +83,8 @@ public static class InterfacesApi
                 ) AS oui_country,
                 i.ipv4, i.ipv6, i.mtu, i.up, i.loopback, i.speed_bps, i.duplex, i.type,
                 i.interface,
-                {sortKeyCol} AS sort_key
+                {sortKeyCol} AS sort_key,
+                COALESCE(s.friendly_name, s.hostname) AS friendly_name
             FROM proj_interfaces i
                 LEFT JOIN proj_systems s ON s.device = i.device
             WHERE ($1::text IS NULL OR COALESCE(s.hostname, '') ILIKE '%' || $1 || '%'
@@ -127,7 +128,8 @@ public static class InterfacesApi
                         Loopback: reader.IsDBNull(11) ? null : reader.GetBoolean(11),
                         SpeedBps: reader.IsDBNull(12) ? null : reader.GetInt64(12),
                         Duplex: GetStr(reader, 13),
-                        Type: GetStr(reader, 14)
+                        Type: GetStr(reader, 14),
+                        FriendlyName: GetStr(reader, 17)
                     )
                 );
                 sortKeys.Add(GetStr(reader, 16) ?? string.Empty);
@@ -167,5 +169,6 @@ public sealed record InterfaceListItem(
     bool? Loopback,
     long? SpeedBps,
     string? Duplex,
-    string? Type
+    string? Type,
+    string? FriendlyName
 );

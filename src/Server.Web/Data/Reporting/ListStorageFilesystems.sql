@@ -7,6 +7,7 @@ SELECT
   , f.used_bytes
   , f.free_bytes
   , f.used_pct
+  , COALESCE(s.friendly_name, s.hostname) AS friendly_name
 FROM
     proj_filesystems       f
     LEFT JOIN proj_systems s

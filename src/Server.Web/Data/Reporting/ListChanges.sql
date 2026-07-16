@@ -8,6 +8,7 @@ SELECT
   , fh.value_double
   , fh.collected_at
   , s.hostname
+  , COALESCE(s.friendly_name, s.hostname) AS friendly_name
 FROM
     facts_history          fh
     LEFT JOIN proj_systems s

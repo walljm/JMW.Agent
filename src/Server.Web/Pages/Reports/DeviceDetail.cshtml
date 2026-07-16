@@ -5,7 +5,7 @@
 @using JMW.Discovery.Server.Reporting
 @model JMW.Discovery.Server.Pages.Reports.DeviceDetailModel
 @{
-    string displayName = string.IsNullOrEmpty(Model.Hostname) ? "—" : Model.Hostname;
+    string displayName = string.IsNullOrEmpty(Model.FriendlyName) ? "—" : Model.FriendlyName;
     ViewData["Title"] = displayName + " — JMW Discovery";
     ViewData["ActiveNav"] = Model.ActiveNavKey;
 
@@ -1113,7 +1113,7 @@
         }
 
         async function runMergeDeviceSearch(q) {
-            var resp = await fetch('/api/v1/report/hosts?limit=10&q=' + encodeURIComponent(q));
+            var resp = await fetch('/api/v1/report/devices?limit=10&q=' + encodeURIComponent(q));
             var results = document.getElementById('mergeDeviceResults');
             if (!resp.ok) {
                 results.innerHTML = '<p class="text-dim">Search failed.</p>';
@@ -1126,7 +1126,7 @@
                 return;
             }
             results.replaceChildren.apply(results, items.map(function (h) {
-                var label = (h.hostname || h.device_id) + ' \u2014 ' + [h.ip, h.mac, h.vendor].filter(Boolean).join(' \u00b7 ');
+                var label = (h.friendly_name || h.hostname || h.device_id) + ' \u2014 ' + [h.ip, h.mac, h.vendor].filter(Boolean).join(' \u00b7 ');
                 var div = document.createElement('div');
                 div.className = 'js-merge-device-pick';
                 div.dataset.deviceId = h.device_id;

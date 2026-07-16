@@ -121,7 +121,7 @@ public static partial class ReportingQueries
     public static partial
         IAsyncEnumerable<(string Id, string AttributePath, string? KeyValues, short Kind, string? ValueStr, long?
             ValueLong,
-            double? ValueDouble, DateTimeOffset CollectedAt, string? Hostname)> ListChangesAsync(
+            double? ValueDouble, DateTimeOffset CollectedAt, string? Hostname, string? FriendlyName)> ListChangesAsync(
             this NpgsqlConnection connection,
             DateTimeOffset? since,
             string? deviceId,
@@ -140,7 +140,7 @@ public static partial class ReportingQueries
     [DatabaseCommand]
     public static partial IAsyncEnumerable<(string Device, string? Hostname, string Disk, string? Name, string? Model,
         string? Type, string? SmartHealth, double? SmartTempC, double? SmartWearPct, long? SmartPowerOnHours, long?
-        SizeBytes)> ListStorageDisksAsync(
+        SizeBytes, string? FriendlyName)> ListStorageDisksAsync(
         this NpgsqlConnection connection,
         string? afterDevice,
         string? afterDisk,
@@ -155,7 +155,7 @@ public static partial class ReportingQueries
     [DatabaseCommand]
     public static partial
         IAsyncEnumerable<(string Device, string? Hostname, string Filesystem, string? FsType, long? TotalBytes, long?
-            UsedBytes, long? FreeBytes, double? UsedPct)> ListStorageFilesystemsAsync(
+            UsedBytes, long? FreeBytes, double? UsedPct, string? FriendlyName)> ListStorageFilesystemsAsync(
             this NpgsqlConnection connection,
             string? afterDevice,
             string? afterFilesystem,

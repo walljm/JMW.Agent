@@ -169,12 +169,13 @@ public sealed class DeviceListApiTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Query_NoProjSystemsRow_FallsBackToDiscoveredNameForHostname()
+    public async Task Query_NoProjSystemsRow_FallsBackToDiscoveredNameForFriendlyName()
     {
         // A passively-discovered device (e.g. a smart speaker found via mDNS/Cast scan) has no
-        // agent, so it never gets a proj_systems row. Its name is only known through another
-        // observer's proj_discovered sighting — that must still surface as the shown hostname
-        // rather than "—". Regression guard for the agentless-device hostname gap.
+        // agent, so it never gets a proj_systems row — Hostname stays null (there's no real OS
+        // hostname to report). Its name is only known through another observer's proj_discovered
+        // sighting — that must still surface as the shown FriendlyName rather than "—".
+        // Regression guard for the agentless-device display-name gap.
         Guid id = await _fixture.InsertDeviceAsync(managementStatus: "discovered");
         await _fixture.InsertFingerprintAsync(id, "mac", "d88c79420abf");
         await ExecuteAsync(
@@ -196,7 +197,8 @@ public sealed class DeviceListApiTests : IAsyncLifetime
         );
 
         Assert.Single(items);
-        Assert.Equal("Kitchen Audio", items[0].Hostname);
+        Assert.Null(items[0].Hostname);
+        Assert.Equal("Kitchen Audio", items[0].FriendlyName);
     }
 
     [Fact]
@@ -225,7 +227,8 @@ public sealed class DeviceListApiTests : IAsyncLifetime
         );
 
         Assert.Single(items);
-        Assert.Equal("Living Room Speaker", items[0].Hostname);
+        Assert.Null(items[0].Hostname);
+        Assert.Equal("Living Room Speaker", items[0].FriendlyName);
     }
 
     [Fact]

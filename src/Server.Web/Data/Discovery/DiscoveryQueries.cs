@@ -173,14 +173,16 @@ public static partial class DiscoveryQueries
     );
 
     /// <summary>
-    /// Upserts hostname, last-seen IP, and OS family into proj_systems. COALESCE ensures
-    /// agent-supplied values are never overwritten. Returns the device ID.
+    /// Upserts hostname, friendly name, last-seen IP, and OS family into proj_systems. COALESCE
+    /// ensures a value already set (agent-reported hostname, or a prior promotion/operator
+    /// edit of friendly_name) is never overwritten by this path. Returns the device ID.
     /// </summary>
     [DatabaseCommand]
     public static partial IAsyncEnumerable<DeviceRefResult> UpsertDeviceSystemAsync(
         this NpgsqlConnection connection,
         string device,
         string? hostname,
+        string? friendlyName,
         string? lastSeenIp,
         string? osFamily,
         CancellationToken cancellationToken
@@ -213,12 +215,13 @@ public static partial class DiscoveryQueries
 
     /// <summary>
     /// Returns already-registered devices whose proj_hardware/proj_systems intrinsic fields
-    /// (vendor, model, os, hostname) are still null, alongside the best available proj_discovered
-    /// value for each — re-evaluated every pass, not just on first mint. See GetPromotionGapRows.sql.
+    /// (vendor, model, os, hostname, friendly_name) are still null, alongside the best available
+    /// proj_discovered value for each — re-evaluated every pass, not just on first mint. See
+    /// GetPromotionGapRows.sql.
     /// </summary>
     [DatabaseCommand]
     public static partial IAsyncEnumerable<(string? Device, string? Vendor, string? Model, string? Os, string?
-        Hostname)> GetPromotionGapRowsAsync(
+        Hostname, string? FriendlyName)> GetPromotionGapRowsAsync(
         this NpgsqlConnection connection,
         CancellationToken cancellationToken
     );

@@ -14,6 +14,7 @@
             <table class="data" aria-label="Open ports">
                 <thead>
                 <tr>
+                    <th style="cursor:default">Friendly Name</th>
                     <th sort-key="device" sort-grid="Model.Grid" sort-target="#ports-table">Hostname</th>
                     <th style="cursor:default">Protocol</th>
                     <th style="cursor:default">Address</th>
@@ -26,6 +27,7 @@
                 @foreach (PortListItem p in Model.Ports)
                 {
                     <tr data-href="/devices/@p.Device?from=ports" style="cursor:pointer">
+                        <td>@(string.IsNullOrEmpty(p.FriendlyName) ? "—" : p.FriendlyName)</td>
                         <td>@(string.IsNullOrEmpty(p.Hostname) ? p.Device : p.Hostname)</td>
                         <td>@(p.Protocol ?? "—")</td>
                         <td class="mono">@(p.Address ?? "—")</td>

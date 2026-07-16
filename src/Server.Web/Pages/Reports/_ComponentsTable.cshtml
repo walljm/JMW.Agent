@@ -14,6 +14,7 @@
             <table class="data" aria-label="Hardware components">
                 <thead>
                 <tr>
+                    <th style="cursor:default">Friendly Name</th>
                     <th sort-key="hostname" sort-grid="Model.Grid" sort-target="#components-table">Hostname</th>
                     <th sort-key="class" sort-grid="Model.Grid" sort-target="#components-table">Class</th>
                     <th style="cursor:default">Slot</th>
@@ -30,6 +31,7 @@
                 @foreach (ComponentListItem c in Model.Components)
                 {
                     <tr data-href="/devices/@c.Device?from=components" style="cursor:pointer">
+                        <td>@(string.IsNullOrEmpty(c.FriendlyName) ? "—" : c.FriendlyName)</td>
                         <td>@(string.IsNullOrEmpty(c.Hostname) ? c.Device : c.Hostname)</td>
                         <td>@(c.Class ?? "—")</td>
                         <td>@(c.Slot ?? "—")</td>

@@ -84,9 +84,12 @@ public static class HomeAssistantDevicePromotion
                 await conn.UpsertDeviceSummaryAsync(deviceId, cleanManufacturer, kind: null, ct).ExecuteAsync(ct);
             }
 
+            // entry.Name is Home Assistant's user-configured registry display name (e.g. "Kitchen
+            // Light") — never a real OS hostname (these are smart-home entities, not hosts) — so
+            // it's promoted as friendly_name only.
             if (NullIfBlank(entry.Name) is { } cleanName)
             {
-                await conn.UpsertDeviceSystemAsync(deviceId, cleanName, lastSeenIp: null, osFamily: null, ct)
+                await conn.UpsertDeviceSystemAsync(deviceId, hostname: null, cleanName, lastSeenIp: null, osFamily: null, ct)
                     .ExecuteAsync(ct);
             }
         }

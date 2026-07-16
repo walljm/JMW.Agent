@@ -2,7 +2,7 @@
 -- neighbor's remote identity is only a chassis MAC (no management IP was advertised).
 SELECT
     d.device_id AS resolved_device_id
-  , rs.hostname AS resolved_hostname
+  , COALESCE(rs.friendly_name, rs.hostname) AS resolved_hostname
 FROM
     device_fingerprints            df
     JOIN devices                   d

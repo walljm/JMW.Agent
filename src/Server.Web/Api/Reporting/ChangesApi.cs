@@ -80,7 +80,7 @@ public static class ChangesApi
         await using NpgsqlConnection conn = await db.OpenConnectionAsync(ct);
 
         List<(string Id, string AttributePath, string? KeyValues, short Kind, string? ValueStr, long? ValueLong, double?
-            ValueDouble, DateTimeOffset CollectedAt, string? Hostname)> rows = await conn.ListChangesAsync(
+            ValueDouble, DateTimeOffset CollectedAt, string? Hostname, string? FriendlyName)> rows = await conn.ListChangesAsync(
                 sinceTs,
                 string.IsNullOrWhiteSpace(deviceId) ? null : deviceId,
                 afterCollectedAt,
@@ -103,7 +103,8 @@ public static class ChangesApi
                     Kind: r.Kind,
                     Value: RenderValue(r.Kind, r.ValueStr, r.ValueLong, r.ValueDouble),
                     CollectedAt: r.CollectedAt.UtcDateTime,
-                    Hostname: r.Hostname
+                    Hostname: r.Hostname,
+                    FriendlyName: r.FriendlyName
                 )
             )
             .ToList();
@@ -182,7 +183,8 @@ public sealed record ChangeListItem(
     short Kind,
     string Value,
     DateTime CollectedAt,
-    string? Hostname
+    string? Hostname,
+    string? FriendlyName
 )
 {
     /// <summary>

@@ -122,7 +122,8 @@ public static class DevicesApi
 
         await using NpgsqlConnection conn = await db.OpenConnectionAsync(ct);
 
-        (Guid DeviceId, string ManagementStatus, string? Hostname, string? OsFamily, string? OsDistro,
+        (Guid DeviceId, string ManagementStatus, string? Hostname, string? FriendlyName, string? OsFamily, string?
+            OsDistro,
             string? OsDistroGuess, DateTimeOffset? LastSeen, string? Vendor, string? VendorGuess, string?
             VendorSourceName,
             string? Kind, string? CpuModel, long? CpuCores, long? TotalMemBytes, string? SystemVendor, string?
@@ -142,6 +143,7 @@ public static class DevicesApi
             DeviceId: summary.DeviceId.ToString(),
             ManagementStatus: summary.ManagementStatus,
             Hostname: summary.Hostname,
+            FriendlyName: summary.FriendlyName,
             OsFamily: summary.OsFamily,
             OsDistro: summary.OsDistro ?? summary.OsDistroGuess,
             LastSeen: summary.LastSeen?.UtcDateTime,
@@ -363,6 +365,7 @@ public sealed record DeviceDetailResponse(
     string DeviceId,
     string ManagementStatus,
     string? Hostname,
+    string? FriendlyName,
     string? OsFamily,
     string? OsDistro,
     DateTime? LastSeen,

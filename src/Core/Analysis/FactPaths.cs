@@ -33,6 +33,12 @@ public static class FactPaths
 
     // ── OS info (Inventory.OS) ────────────────────────────────────────────────
     public const string SystemHostname = "Device[].OS.Hostname";
+    // Display rollup for proj_systems.friendly_name — NOT the real OS hostname. Populated by
+    // DiscoveryMaterializer promotion (mDNS/UPnP friendly name, Home Assistant registry name)
+    // and directly operator-editable (single Device[] dimension → ManualFactCatalog picks it
+    // up automatically). Reporting's display-name rollup is
+    // COALESCE(friendly_name, <live proj_discovered friendly name>, hostname) — see DeviceListApi.
+    public const string SystemFriendlyName = "Device[].OS.FriendlyName";
     public const string SystemOsFamily = "Device[].OS.Family";
     public const string SystemOsDistro = "Device[].OS.Distro";
     public const string SystemOsVersion = "Device[].OS.Version";

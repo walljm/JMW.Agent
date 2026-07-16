@@ -14,6 +14,7 @@
             <table class="data" aria-label="Devices">
                 <thead>
                 <tr>
+                    <th sort-key="friendly_name" sort-grid="Model.Grid" sort-target="#devices-table">Friendly Name</th>
                     <th sort-key="hostname" sort-grid="Model.Grid" sort-target="#devices-table">Hostname</th>
                     <th sort-key="ip" sort-grid="Model.Grid" sort-target="#devices-table">IP Address</th>
                     <th sort-key="mac" sort-grid="Model.Grid" sort-target="#devices-table">MAC</th>
@@ -29,6 +30,7 @@
                 @foreach (DeviceReportItem device in Model.Devices)
                 {
                     <tr data-href="/devices/@device.DeviceId?from=devices" style="cursor:pointer">
+                        <td>@(string.IsNullOrEmpty(device.FriendlyName) ? "—" : device.FriendlyName)</td>
                         <td>@(string.IsNullOrEmpty(device.Hostname) ? "—" : device.Hostname)</td>
                         <td class="mono">@(string.IsNullOrEmpty(device.Ip) ? "—" : device.Ip)</td>
                         <td class="mono">

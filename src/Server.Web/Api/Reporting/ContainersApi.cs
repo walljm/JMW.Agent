@@ -77,7 +77,8 @@ public static class ContainersApi
             SELECT
                 c.device, s.hostname, c.container, c.name, c.image, c.state, c.health, c.cpu_pct,
                 c.mem_usage_bytes, c.restart_count, c.compose_project, c.compose_service, c.restart_policy,
-                {sortKeyCol} AS sort_key
+                {sortKeyCol} AS sort_key,
+                COALESCE(s.friendly_name, s.hostname) AS friendly_name
             FROM proj_containers c
                 LEFT JOIN proj_systems s ON s.device = c.device
             WHERE ($1::text IS NULL OR c.state = $1)
@@ -121,7 +122,8 @@ public static class ContainersApi
                         RestartCount: reader.IsDBNull(9) ? null : reader.GetInt64(9),
                         ComposeProject: GetStr(reader, 10),
                         ComposeService: GetStr(reader, 11),
-                        RestartPolicy: GetStr(reader, 12)
+                        RestartPolicy: GetStr(reader, 12),
+                        FriendlyName: GetStr(reader, 14)
                     )
                 );
                 sortKeys.Add(GetStr(reader, 13) ?? string.Empty);
@@ -159,5 +161,6 @@ public sealed record ContainerListItem(
     long? RestartCount,
     string? ComposeProject,
     string? ComposeService,
-    string? RestartPolicy
+    string? RestartPolicy,
+    string? FriendlyName
 );

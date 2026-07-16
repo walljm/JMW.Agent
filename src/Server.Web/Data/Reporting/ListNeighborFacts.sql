@@ -21,7 +21,7 @@ WITH latest AS (
 SELECT
     l.key_values ->> 'Device'   AS device
   , l.key_values ->> 'Neighbor' AS neighbor_key
-  , s.hostname                  AS hostname
+  , COALESCE(s.friendly_name, s.hostname) AS hostname
   , MAX (CASE WHEN l.attribute_path = 'Device[].Neighbor[].LocalPort' THEN l.value END)        AS local_port
   , MAX (CASE WHEN l.attribute_path = 'Device[].Neighbor[].RemoteChassisId' THEN l.value END)   AS remote_chassis_id
   , MAX (CASE WHEN l.attribute_path = 'Device[].Neighbor[].RemotePortId' THEN l.value END)      AS remote_port_id
@@ -36,4 +36,5 @@ FROM
 GROUP BY
     l.key_values ->> 'Device'
   , l.key_values ->> 'Neighbor'
+  , s.friendly_name
   , s.hostname

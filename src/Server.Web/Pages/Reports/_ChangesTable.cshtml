@@ -15,6 +15,7 @@
                 <thead>
                 <tr>
                     <th>Time</th>
+                    <th>Friendly Name</th>
                     <th>Device</th>
                     <th>Fact Path</th>
                     <th>Value</th>
@@ -25,6 +26,7 @@
                 {
                     <tr>
                         <td title="@(c.CollectedAt.ToString("yyyy-MM-dd HH:mm:ss")) UTC">@ViewFormat.RelativeTime(c.CollectedAt)</td>
+                        <td>@(string.IsNullOrEmpty(c.FriendlyName) ? "—" : c.FriendlyName)</td>
                         <td>@(string.IsNullOrEmpty(c.Hostname) ? "—" : c.Hostname)</td>
                         <td class="mono">@c.FullPath</td>
                         <td class="mono">@c.Value</td>

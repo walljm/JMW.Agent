@@ -2,6 +2,7 @@ INSERT INTO proj_systems
 (
       device
     , hostname
+    , friendly_name
     , last_seen_ip
     , os_family
     , updated_at
@@ -12,10 +13,15 @@ VALUES
         , $2
         , $3
         , $4
+        , $5
         , now()
     ) ON CONFLICT (device) DO
 UPDATE set
     hostname = COALESCE (proj_systems.hostname, EXCLUDED.hostname),
+    -- Same first-write-wins rule as hostname: once a promotion (or an operator edit routed
+    -- through the normal fact pipeline) sets this, this raw-SQL promotion path never reclobbers
+    -- it. friendly_name is display-only — never the real OS hostname.
+    friendly_name = COALESCE (proj_systems.friendly_name, EXCLUDED.friendly_name),
     -- Track the CURRENT IP: a fresh sighting's IP wins so the value follows DHCP
     -- moves. Only keep the prior IP when this sighting carries none (e.g. a
     -- hostname-only bootstrap passes last_seen_ip = NULL).

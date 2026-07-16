@@ -74,6 +74,7 @@
                 <table class="data" aria-label="Disks">
                     <thead>
                     <tr>
+                        <th>Friendly Name</th>
                         <th>Hostname</th>
                         <th>Disk</th>
                         <th>Model</th>
@@ -89,6 +90,7 @@
                     @foreach (DiskListItem d in Model.Disks)
                     {
                         <tr class="@DiskRowClass(d.SmartHealth)" data-href="/devices/@d.Device" style="cursor:pointer">
+                            <td>@(string.IsNullOrEmpty(d.FriendlyName) ? d.Device : d.FriendlyName)</td>
                             <td>@(string.IsNullOrEmpty(d.Hostname) ? d.Device : d.Hostname)</td>
                             <td>@(d.Name ?? d.Disk)</td>
                             <td>@(d.Model ?? "—")</td>
@@ -122,6 +124,7 @@
                 <table class="data" aria-label="Filesystems">
                     <thead>
                     <tr>
+                        <th>Friendly Name</th>
                         <th>Hostname</th>
                         <th>Mount</th>
                         <th>Type</th>
@@ -135,6 +138,7 @@
                     @foreach (FilesystemListItem f in Model.Filesystems)
                     {
                         <tr class="@FsRowClass(f.UsedPct)" data-href="/devices/@f.Device" style="cursor:pointer">
+                            <td>@(string.IsNullOrEmpty(f.FriendlyName) ? f.Device : f.FriendlyName)</td>
                             <td>@(string.IsNullOrEmpty(f.Hostname) ? f.Device : f.Hostname)</td>
                             <td class="mono">@f.Filesystem</td>
                             <td>@(f.FsType ?? "—")</td>

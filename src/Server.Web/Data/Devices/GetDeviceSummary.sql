@@ -1,12 +1,16 @@
 SELECT
     d.device_id
   , d.management_status
-    -- proj_systems.hostname only exists for agent-managed devices (self-reported OS
-    -- hostname). A passively-discovered device (no agent) never gets one, even when
-    -- other observers already know its name via mDNS/Cast/SSDP — fall back to the best
-    -- name any observer has recorded for this device's MAC in proj_discovered.
+    -- The real, agent-reported OS hostname only — null for a passively-discovered device with
+    -- no agent. Never backfilled from friendly-name-ish sources; see friendly_name below for the
+    -- display rollup.
+  , s.hostname
+    -- Display rollup, in priority order: an operator-set/promoted friendly name
+    -- (proj_systems.friendly_name — mDNS/UPnP/Home-Assistant name or a manual override), else
+    -- the best friendly-name-ish value any observer has recorded for this device's MAC in
+    -- proj_discovered (agentless devices not yet promoted), else the real hostname above.
   , COALESCE(
-        s.hostname,
+        s.friendly_name,
         (
             -- pd_disc.obscured_mac IS NULL: exclude Google Wifi/OnHub rows whose mac was filled
             -- in by obscured-MAC reconstruction rather than direct observation — see the same
@@ -20,8 +24,9 @@ SELECT
               AND COALESCE(pd_disc.friendly_name, pd_disc.hostname) IS NOT NULL
             ORDER BY pd_disc.updated_at DESC
             LIMIT 1
-        )
-    ) AS hostname
+        ),
+        s.hostname
+    ) AS friendly_name
   , s.os_family
   , s.os_distro
     -- Inferred OS-distro guess (VendorOsFromDeviceBannerDerivation) — surfaced separately so
