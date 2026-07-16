@@ -604,12 +604,15 @@ public sealed class DeviceRegistry
     ///    outright — this is the common case (e.g. the survivor never had its own hardware row).
     /// 2. Rows that collide with an existing survivor row (same secondary key on both sides,
     ///    which happens when the same physical device was independently tracked under both
-    ///    identities) are resolved by freshness: the loser's data overwrites the survivor's row
-    ///    only when the loser was confirmed more recently (updated_at). Column-level splicing
-    ///    isn't attempted — mixing columns from two independently-aged snapshots has no
-    ///    principled tie-break, so the whole row from the fresher side wins.
-    /// 3. Whatever remains under a loser id afterward (moved, or lost the freshness compare) is
-    ///    dropped.
+    ///    identities) are merged per-column: each column keeps the fresher side's value
+    ///    (updated_at), but a NULL never erases a non-null — a column the fresher side left
+    ///    empty is filled from the other side. This fixes the whole-row-freshness defect where
+    ///    a loser's authoritative value (e.g. vendor) was dropped whenever the survivor's row
+    ///    happened to be touched more recently with that column still NULL (promotion bumps
+    ///    updated_at every cycle while leaving vendor NULL), and the delta-tracked source fact
+    ///    never resends to refill it.
+    /// 3. Whatever remains under a loser id afterward (moved, or already spliced into the
+    ///    survivor) is dropped.
     /// </summary>
     private static async Task RepointDeviceDimensionedProjectionAsync(
         NpgsqlConnection conn,
@@ -632,9 +635,18 @@ public sealed class DeviceRegistry
         string joinSecondaryMatch = secondaryCols.Length == 0
             ? ""
             : " AND " + string.Join(" AND ", secondaryCols.Select(c => $"tgt.{c} = src.{c}"));
+        // Per-column merge: keep the fresher side's value, but never let a NULL erase a
+        // non-null — fill each column from whichever side has it. (Projections carry a single
+        // row-level updated_at, so freshness is decided per row, then applied column-wise.)
         string setClause = dataCols.Length == 0
             ? ""
-            : string.Join(", ", dataCols.Select(c => $"{c} = src.{c}"));
+            : string.Join(
+                ", ",
+                dataCols.Select(c =>
+                    $"{c} = CASE WHEN src.updated_at > tgt.updated_at "
+                  + $"THEN COALESCE(src.{c}, tgt.{c}) ELSE COALESCE(tgt.{c}, src.{c}) END"
+                )
+            );
 
         // One loser at a time, not batched: a second loser's row must see the first loser's
         // row already settled onto the survivor, otherwise two different losers both claiming
@@ -665,12 +677,11 @@ public sealed class DeviceRegistry
                 overwriteCmd.Transaction = tx;
                 overwriteCmd.CommandText = $"""
                     UPDATE {table} AS tgt
-                    SET {setClause}, updated_at = src.updated_at
+                    SET {setClause}, updated_at = GREATEST(tgt.updated_at, src.updated_at)
                     FROM {table} AS src
                     WHERE tgt.{deviceCol} = $2
                       AND src.{deviceCol} = $1
                       {joinSecondaryMatch}
-                      AND src.updated_at > tgt.updated_at
                     """;
                 overwriteCmd.Parameters.Add(Param.Text(loser));
                 overwriteCmd.Parameters.Add(Param.Text(survivor));

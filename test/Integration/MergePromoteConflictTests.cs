@@ -193,6 +193,38 @@ public sealed class MergePromoteConflictTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ManualMerge_ConflictingSingleDimProjection_SurvivorNewerButNullColumn_FilledFromLoser()
+    {
+        // The vendor-loss bug (2026-07-16): a Google Wifi AP's promotion bumped the survivor's
+        // proj_devices.updated_at every cycle while leaving vendor NULL, so whole-row freshness
+        // dropped the loser's authoritative vendor on merge — and because the source fact is
+        // delta-tracked, it never resent to refill it. Per-column COALESCE must fill the
+        // survivor's NULL column from the loser even when the survivor row is newer, without
+        // clobbering the survivor's own non-null columns.
+        Guid survivor = await _fixture.InsertDeviceAsync("managed");
+        Guid loser = await _fixture.InsertDeviceAsync("managed");
+
+        // Survivor: fresher, but vendor NULL (only a model was promoted onto it).
+        await InsertProjHardwareFullAsync(
+            survivor, vendor: null, model: "SurvivorModel", updatedAt: DateTimeOffset.UtcNow);
+        // Loser: staler, but carries the authoritative vendor.
+        await InsertProjHardwareFullAsync(
+            loser, vendor: "RealVendor", model: null, updatedAt: DateTimeOffset.UtcNow.AddHours(-2));
+
+        await _registry.ManualMergeAsync(loser.ToString(), survivor.ToString(), actor: "test");
+
+        // vendor filled from the (older) loser; survivor's own model preserved.
+        long merged = await _fixture.CountAsync(
+            "proj_hardware",
+            $"device = '{survivor}' AND system_vendor = 'RealVendor' AND system_model = 'SurvivorModel'"
+        );
+        Assert.Equal(1, merged);
+
+        long loserCount = await _fixture.CountAsync("proj_hardware", $"device = '{loser}'");
+        Assert.Equal(0, loserCount);
+    }
+
+    [Fact]
     public async Task ManualMerge_CompositeKeyProjection_DifferentInterfaces_BothSurvive()
     {
         Guid survivor = await _fixture.InsertDeviceAsync("managed");
@@ -259,6 +291,20 @@ public sealed class MergePromoteConflictTests : IAsyncLifetime
         );
         cmd.Parameters.AddWithValue("d", device.ToString());
         cmd.Parameters.AddWithValue("i", interfaceName);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private async Task InsertProjHardwareFullAsync(Guid device, string? vendor, string? model, DateTimeOffset updatedAt)
+    {
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        await using NpgsqlCommand cmd = new(
+            "INSERT INTO proj_hardware (device, system_vendor, system_model, updated_at) VALUES (@d, @v, @m, @u)",
+            conn
+        );
+        cmd.Parameters.AddWithValue("d", device.ToString());
+        cmd.Parameters.AddWithValue("v", (object?)vendor ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("m", (object?)model ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("u", updatedAt);
         await cmd.ExecuteNonQueryAsync();
     }
 
