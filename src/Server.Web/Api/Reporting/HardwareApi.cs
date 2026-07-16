@@ -24,7 +24,10 @@ public static class HardwareApi
         new(StringComparer.Ordinal)
         {
             ["hostname"] = "coalesce(s.hostname, '')",
-            ["vendor"] = VendorExpr,
+            // Null-safe form for the keyset sort key: a NULL sort key silently drops rows from
+            // keyset pagination. The SELECT below shows the raw (nullable) VendorExpr so an absent
+            // vendor renders as "—"; sorting treats it as ''.
+            ["vendor"] = "COALESCE(" + VendorExpr + ", '')",
             ["cpu"] = "coalesce(h.cpu_model, '')",
         };
 
