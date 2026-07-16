@@ -29,6 +29,7 @@ public static class HubTabSets
         new HubTab("DHCP Leases", "/terrain/dhcp"),
         new HubTab("DNS Records", "/terrain/dns"),
         new HubTab("Certificate Authorities", "/terrain/ca"),
+        new HubTab("CA Services", "/terrain/ca-services"),
     ];
 
     public static readonly IReadOnlyList<HubTab> Fleet =

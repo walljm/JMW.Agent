@@ -1,0 +1,89 @@
+@model JMW.Discovery.Server.Pages.Reports.TerrainCaServicesModel
+@{
+    static bool IsExpiringSoon(DateTime? notAfter) =>
+        notAfter is not null && notAfter.Value <= DateTime.UtcNow.AddDays(30);
+
+    static string ExpiryText(DateTime? notAfter) => notAfter?.ToString("yyyy-MM-dd") ?? "—";
+}
+
+<div id="ca-services-table" class="grid-panel">
+    <partial name="_SectionError" model="Model.LoadError"/>
+
+    @if (Model.LoadError is null)
+    {
+        @if (Model.Cas.Count == 0)
+        {
+            <div class="empty">No certificate authority services found in the network.</div>
+        }
+        else
+        {
+            <div class="grid-scroll">
+                <table class="data" aria-label="CA services">
+                    <thead>
+                    <tr>
+                        <th>Host</th>
+                        <th>Status</th>
+                        <th>Root CA</th>
+                        <th>Root Expires</th>
+                        <th>Intermediate</th>
+                        <th>Int. Expires</th>
+                        <th>Fingerprint</th>
+                        <th>Provisioners</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (JMW.Discovery.Server.Pages.Reports.CaServiceItem ca in Model.Cas)
+                    {
+                        <tr>
+                            <td>
+                                @if (!string.IsNullOrEmpty(ca.HostName))
+                                {
+                                    <a href="/devices/@ca.ServiceRef">@ca.HostName</a>
+                                }
+                                else
+                                {
+                                    <span class="text-dim mono" title="@ca.ServiceRef">@ca.ServiceRef</span>
+                                }
+                            </td>
+                            <td>
+                                @if (!string.IsNullOrEmpty(ca.Status))
+                                {
+                                    <span class="status @(string.Equals(ca.Status, "running", StringComparison.OrdinalIgnoreCase) ? "ok" : "info")">@ca.Status</span>
+                                }
+                                else
+                                {
+                                    @:—
+                                }
+                            </td>
+                            <td>@(ca.RootSubjectDn ?? "—")</td>
+                            <td>
+                                @if (IsExpiringSoon(ca.RootNotAfter))
+                                {
+                                    <span class="status warn" title="Expires @ExpiryText(ca.RootNotAfter)">@ExpiryText(ca.RootNotAfter)</span>
+                                }
+                                else
+                                {
+                                    @ExpiryText(ca.RootNotAfter)
+                                }
+                            </td>
+                            <td>@(ca.IntSubjectDn ?? "—")</td>
+                            <td>
+                                @if (IsExpiringSoon(ca.IntNotAfter))
+                                {
+                                    <span class="status warn" title="Expires @ExpiryText(ca.IntNotAfter)">@ExpiryText(ca.IntNotAfter)</span>
+                                }
+                                else
+                                {
+                                    @ExpiryText(ca.IntNotAfter)
+                                }
+                            </td>
+                            <td class="mono">@(ca.RootFingerprint is { Length: > 0 } fp ? fp[..Math.Min(16, fp.Length)] + "…" : "—")</td>
+                            <td>@(ca.ProvisionerCount is { } pc && pc > 0 ? pc.ToString() : "—")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+</div>

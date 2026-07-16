@@ -1,0 +1,18 @@
+@page "/terrain/ca-services"
+@model JMW.Discovery.Server.Pages.Reports.TerrainCaServicesModel
+@{
+    ViewData["Title"] = "CA Services — JMW Discovery";
+    ViewData["ActiveNav"] = "network";
+}
+<main class="main data-grid-page">
+    <div class="page-head">
+        <h1>CA Services</h1>
+        <span class="meta">@Model.Cas.Count shown</span>
+    </div>
+
+    <partial name="_HubTabs" model="@(new HubTabsModel(HubTabSets.Network, "/terrain/ca-services", "Network views"))"/>
+
+    <partial name="_FilterBar" model="Model.FilterBar"/>
+
+    <partial name="_CaServicesTable" model="Model"/>
+</main>

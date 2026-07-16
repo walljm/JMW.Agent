@@ -253,6 +253,25 @@ public static partial class ReportingQueries
             CancellationToken cancellationToken
         );
 
+    /// <summary>
+    /// The Certificate Authority services operating in the network — one row per CA service
+    /// (proj_service_ca), resolved to its host device. See ListCaServices.sql. Narrower than
+    /// <see cref="ListTerrainCaInventoryAsync" /> (which lists every CA certificate anywhere):
+    /// this is the actual CAs we run/observe as services. Optional search over subject DN,
+    /// status, or host name.
+    /// </summary>
+    [DatabaseCommand]
+    public static partial
+        IAsyncEnumerable<(string ServiceRef, string? HostName, string? Status, string? Address,
+            string? RootSubjectDn, DateTimeOffset? RootNotBefore, DateTimeOffset? RootNotAfter,
+            string? RootFingerprint, string? IntSubjectDn, DateTimeOffset? IntNotBefore,
+            DateTimeOffset? IntNotAfter, long? ProvisionerCount)>
+        ListCaServicesAsync(
+            this NpgsqlConnection connection,
+            string? search,
+            CancellationToken cancellationToken
+        );
+
     // ── Reporting: Dashboard ────────────────────────────────────────────────────
 
     /// <summary>
