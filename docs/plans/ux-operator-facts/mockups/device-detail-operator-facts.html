@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup — Device Detail: Operator Facts tab</title>
+<link rel="stylesheet" href="../../../../src/Server.Web/wwwroot/css/design-system.css">
+<style>
+    /* ===== PROPOSED ADDITION to design-system.css — see ux-operator-facts.md §4 =====
+       Not yet in the shipped stylesheet. Uses only existing custom properties. */
+    .combo { position: relative; }
+
+    .combo-results {
+        position: absolute;
+        top: calc(100% + var(--space-1));
+        left: 0;
+        right: 0;
+        max-height: 280px;
+        overflow-y: auto;
+        background: var(--surface);
+        border: var(--border-hair);
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-md);
+        z-index: 50;
+    }
+
+    .combo-group-label {
+        padding: var(--space-1) var(--space-3);
+        font-size: var(--fs-xs);
+        color: var(--text-faint);
+        text-transform: uppercase;
+        letter-spacing: .06em;
+    }
+
+    .combo-option {
+        padding: var(--space-2) var(--space-3);
+        cursor: pointer;
+        font-size: var(--fs-sm);
+    }
+
+    .combo-option:hover, .combo-option[aria-selected="true"] {
+        background: var(--surface-hover);
+    }
+
+    .combo-empty {
+        padding: var(--space-3);
+        font-size: var(--fs-sm);
+        color: var(--text-dim);
+    }
+
+    /* Mockup-only scaffolding — not part of the proposed CSS addition */
+    .mockup-banner {
+        background: var(--surface-2);
+        border: var(--border-hair);
+        border-radius: var(--radius-md);
+        padding: var(--space-2) var(--space-3);
+        font-size: var(--fs-xs);
+        color: var(--text-dim);
+        margin-bottom: var(--space-4);
+    }
+
+    .disclosure-body { margin-top: var(--space-3); padding: var(--space-3); border: 1px dashed var(--border-strong); border-radius: var(--radius-md); }
+    .form-row { display: flex; gap: var(--space-3); align-items: flex-start; flex-wrap: wrap; }
+    .scope-toggle-row { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); font-size: var(--fs-sm); }
+</style>
+</head>
+<body class="dark-mode">
+<div style="position:fixed;top:0;left:0;right:0;z-index:500;background:#7a5b00;color:#fff;
+    padding:6px 16px;font:12px system-ui,sans-serif;text-align:center">
+    MOCKUP CAVEAT — the near-miss banner, the child-key/path live-suggestion behavior, and label/description
+    metadata shown here are <strong>speculative</strong>, built on requirements-doc decisions that turned out to
+    be fabricated and are now open questions again. See the integrity note at the top of
+    <code>../ux-operator-facts.md</code> before treating any of this as settled. Core override/create/revert
+    behavior is unaffected.
+</div>
+<div style="height:40px"></div>
+<div class="app">
+    <button class="btn sidebar-toggle" aria-label="Collapse navigation" aria-expanded="true">‹</button>
+    <nav class="sidebar" aria-label="Primary">
+        <a class="brand" href="#">◆ JMW Discovery</a>
+        <a class="nav-item" href="#">Dashboard</a>
+        <a class="nav-item active" href="#">All Hosts</a>
+        <a class="nav-item" href="#">Services</a>
+        <a class="nav-item" href="#">Inventory</a>
+        <a class="nav-item" href="#">Network</a>
+        <a class="nav-item" href="#">Terrain</a>
+        <div class="nav-group"><span class="group-label">Admin</span>
+            <a class="nav-item" href="#">Fleet</a>
+            <a class="nav-item" href="#">System</a>
+            <a class="nav-item" href="#">Data</a>
+        </div>
+        <div class="nav-user">
+            <span>boss</span>
+            <span class="role-badge">admin</span>
+        </div>
+    </nav>
+
+    <main class="main">
+        <div class="page-head">
+            <h1>switch01.core.home</h1>
+            <span class="meta">10.0.4.12 · aa:bb:cc:dd:ee:01</span>
+        </div>
+
+        <nav class="section-nav" role="tablist" aria-label="Device sections">
+            <button type="button" class="section-nav-item" role="tab" data-tab="hardware">System Specs</button>
+            <button type="button" class="section-nav-item" role="tab" data-tab="allfacts">All Facts</button>
+            <button type="button" class="section-nav-item active" role="tab" aria-selected="true" data-tab="operator-facts">Operator Facts</button>
+            <button type="button" class="section-nav-item" role="tab" data-tab="history">History</button>
+        </nav>
+
+        <div class="tabpanel" role="tabpanel" data-panel="operator-facts">
+
+            <div class="banner info">
+                Arbitrary facts (not in the catalog) never appear in reports or dashboards — they're
+                visible and editable here and in the fleet-wide <a href="admin-operator-facts.html">Operator Facts browse</a>, nowhere else.
+            </div>
+
+            <h3>Set an override or create a fact</h3>
+
+            <div class="form-row">
+                <div class="field" style="min-width:280px;flex:1">
+                    <label for="pathInput">Fact path</label>
+                    <div class="combo">
+                        <input class="input" id="pathInput" type="text" autocomplete="off"
+                               role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="pathResults"
+                               placeholder="Search catalog paths or type a new fact ID…"
+                               oninput="onPathInput()" onkeydown="onComboKeydown(event,'path')">
+                        <div class="combo-results" id="pathResults" role="listbox" hidden></div>
+                    </div>
+                    <span class="help" id="pathStatus"></span>
+                </div>
+            </div>
+
+            <div id="nearMissBanner" class="banner stale" hidden style="margin-top:var(--space-2)">
+                This looks similar to catalog fact <code class="mono">Interface[].SpeedBps</code>. Did you
+                mean to override that instead?
+                <div style="margin-top:var(--space-2);display:flex;gap:var(--space-2)">
+                    <button class="btn btn-sm btn-primary" onclick="useCatalogPath()">Use catalog path</button>
+                    <button class="btn btn-sm" onclick="dismissNearMiss()">No, create new fact as typed</button>
+                </div>
+            </div>
+
+            <div id="childKeyRow" class="form-row" style="margin-top:var(--space-3)">
+                <div class="field" style="min-width:280px">
+                    <label for="keyInput">MAC address</label>
+                    <div class="combo">
+                        <input class="input" id="keyInput" type="text" autocomplete="off"
+                               role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="keyResults"
+                               placeholder="Pick or type an interface key…" value="aa:bb:cc:dd:ee:01"
+                               oninput="onKeyInput()" onkeydown="onComboKeydown(event,'key')">
+                        <div class="combo-results" id="keyResults" role="listbox" hidden></div>
+                    </div>
+                    <span class="help">Suggests this device's currently-observed interfaces. Typing an unmatched value is still accepted.</span>
+                </div>
+            </div>
+
+            <div class="scope-toggle-row" id="scopeToggleRow" hidden>
+                <label style="display:flex;align-items:center;gap:var(--space-2)">
+                    <span class="switch"><input type="checkbox" id="scopeToggle" onchange="onScopeToggle()"><span class="slider"></span></span>
+                    Scope: Device + collection instance
+                </label>
+            </div>
+
+            <div class="form-row">
+                <div class="field" style="min-width:200px">
+                    <label for="valueInput">Value</label>
+                    <input class="input" id="valueInput" type="text" placeholder="1000000000">
+                </div>
+                <div class="field" style="align-self:flex-end">
+                    <button class="btn btn-primary btn-sm" onclick="submitFact()">Set</button>
+                </div>
+            </div>
+
+            <details style="margin-bottom:var(--space-4)">
+                <summary style="cursor:pointer;color:var(--text-dim);font-size:var(--fs-sm)">Add label &amp; description (optional)</summary>
+                <div class="disclosure-body">
+                    <div class="form-row">
+                        <div class="field" style="flex:1">
+                            <label for="labelInput">Label</label>
+                            <input class="input" id="labelInput" type="text" placeholder="Uplink port label">
+                        </div>
+                        <div class="field" style="flex:2">
+                            <label for="descInput">Description</label>
+                            <input class="input" id="descInput" type="text" placeholder="Human-readable note about this fact">
+                        </div>
+                    </div>
+                </div>
+            </details>
+
+            <h3>Operator-authored facts for this device</h3>
+            <div class="detail-table-scroll">
+                <table class="data" id="factsTable">
+                    <thead>
+                    <tr>
+                        <th>Path</th>
+                        <th>Scope</th>
+                        <th>Kind</th>
+                        <th>Label</th>
+                        <th>Value</th>
+                        <th>Set by / when</th>
+                        <th></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr data-row="1">
+                        <td class="mono">DeviceVendor</td>
+                        <td class="text-dim">Device</td>
+                        <td><span class="status ok">Override</span></td>
+                        <td class="text-dim">—</td>
+                        <td>Cisco Systems (corrected)</td>
+                        <td class="text-dim" style="font-size:var(--fs-sm)">boss · 3 days ago</td>
+                        <td><button class="btn btn-sm btn-danger" onclick="revertRow(this)">Revert</button></td>
+                    </tr>
+                    <tr data-row="2">
+                        <td class="mono">Interface[].SpeedBps</td>
+                        <td class="text-dim">Interface[aa:bb:cc:dd:ee:02]</td>
+                        <td><span class="status ok">Override</span></td>
+                        <td class="text-dim">—</td>
+                        <td>10000000000</td>
+                        <td class="text-dim" style="font-size:var(--fs-sm)">boss · 1 day ago</td>
+                        <td><button class="btn btn-sm btn-danger" onclick="revertRow(this)">Revert</button></td>
+                    </tr>
+                    <tr data-row="3">
+                        <td class="mono">SwitchPortLabel</td>
+                        <td class="text-dim">Device</td>
+                        <td>
+                            <span class="status info" title="Not shown in reports or dashboards">Arbitrary ⓘ</span>
+                        </td>
+                        <td>Uplink port label</td>
+                        <td>Uplink to core01, Gi1/0/24</td>
+                        <td class="text-dim" style="font-size:var(--fs-sm)">boss · 6 hours ago</td>
+                        <td><button class="btn btn-sm btn-danger" onclick="revertRow(this)">Revert</button></td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+</div>
+<button class="btn mode-toggle" aria-label="Toggle light/dark mode"
+        onclick="document.body.classList.toggle('dark-mode');document.body.classList.toggle('light-mode')">◐ Mode</button>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+    function toast(msg) {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.hidden = false;
+        setTimeout(() => t.hidden = true, 3000);
+    }
+
+    // Mockup-scale catalog — a representative slice of the real 448-constant FactPaths
+    // catalog, grouped the same way the real page would group its (much longer) list.
+    const CATALOG = [
+        {group: 'Device identity', path: 'DeviceVendor'},
+        {group: 'Device identity', path: 'DeviceKind'},
+        {group: 'Hardware', path: 'BoardVendor'},
+        {group: 'Hardware', path: 'BiosVendor'},
+        {group: 'Hardware', path: 'ChassisType'},
+        {group: 'Interface — static config', path: 'Interface[].SpeedBps'},
+        {group: 'Interface — static config', path: 'Interface[].Mtu'},
+        {group: 'Interface — static config', path: 'Interface[].ObscuredMAC'},
+        {group: 'Disk', path: 'Disk[].SerialNumber'},
+        {group: 'Disk', path: 'Disk[].ModelName'},
+        {group: 'Docker engine', path: 'Docker.Version'},
+        {group: 'Container', path: 'Container[].ImageName'},
+        {group: 'Security', path: 'Security.FirewallEnabled'},
+    ];
+
+    let pathState = 'idle'; // idle | override | arbitrary | near-miss
+    let dismissedNearMiss = false;
+
+    function renderPathResults(query) {
+        const results = document.getElementById('pathResults');
+        if (!query) { results.hidden = true; results.innerHTML = ''; return; }
+        const q = query.toLowerCase();
+        const matches = CATALOG.filter(c => c.path.toLowerCase().includes(q));
+        if (matches.length === 0) {
+            results.innerHTML = '<div class="combo-empty">No catalog match — this will create a new arbitrary fact.</div>';
+            results.hidden = false;
+            return;
+        }
+        const groups = {};
+        matches.forEach(m => { (groups[m.group] = groups[m.group] || []).push(m); });
+        results.innerHTML = Object.keys(groups).map(g =>
+            '<div class="combo-group-label">' + g + '</div>' +
+            groups[g].map(m => '<div class="combo-option" role="option" onclick="pickPath(\'' + m.path + '\')">' + m.path + '</div>').join('')
+        ).join('');
+        results.hidden = false;
+    }
+
+    function pickPath(path) {
+        document.getElementById('pathInput').value = path;
+        document.getElementById('pathResults').hidden = true;
+        dismissedNearMiss = false;
+        evaluatePathState(path);
+    }
+
+    function onPathInput() {
+        const path = document.getElementById('pathInput').value;
+        renderPathResults(path);
+        evaluatePathState(path);
+    }
+
+    function evaluatePathState(path) {
+        const exact = CATALOG.find(c => c.path === path);
+        const nearMissBanner = document.getElementById('nearMissBanner');
+        const status = document.getElementById('pathStatus');
+        const childKeyRow = document.getElementById('childKeyRow');
+        const scopeRow = document.getElementById('scopeToggleRow');
+
+        if (exact) {
+            pathState = 'override';
+            nearMissBanner.hidden = true;
+            status.textContent = 'Overriding catalog fact.';
+            const hasCollection = exact.path.includes('[].');
+            childKeyRow.hidden = !hasCollection;
+            scopeRow.hidden = true;
+            return;
+        }
+
+        // Mockup-only near-miss stand-in: anything starting with "Interfac" that isn't
+        // the exact catalog path is treated as a near-miss of Interface[].SpeedBps.
+        if (!dismissedNearMiss && path.length > 3 && /^interfac/i.test(path)) {
+            pathState = 'near-miss';
+            nearMissBanner.hidden = false;
+            status.textContent = '';
+            childKeyRow.hidden = true;
+            scopeRow.hidden = true;
+            return;
+        }
+
+        nearMissBanner.hidden = true;
+        if (path.length === 0) {
+            pathState = 'idle';
+            status.textContent = '';
+            childKeyRow.hidden = true;
+            scopeRow.hidden = true;
+            return;
+        }
+        pathState = 'arbitrary';
+        status.textContent = 'Creating new fact — not in catalog. Never appears in reports or dashboards.';
+        childKeyRow.hidden = true;
+        scopeRow.hidden = false;
+    }
+
+    function useCatalogPath() {
+        pickPath('Interface[].SpeedBps');
+    }
+
+    function dismissNearMiss() {
+        dismissedNearMiss = true;
+        document.getElementById('nearMissBanner').hidden = true;
+        evaluatePathState(document.getElementById('pathInput').value);
+    }
+
+    function onScopeToggle() {
+        document.getElementById('childKeyRow').hidden = !document.getElementById('scopeToggle').checked;
+    }
+
+    const OBSERVED_KEYS = [
+        {key: 'aa:bb:cc:dd:ee:01', label: 'eth0'},
+        {key: 'aa:bb:cc:dd:ee:02', label: 'eth1'},
+    ];
+
+    function onKeyInput() {
+        const q = document.getElementById('keyInput').value.toLowerCase();
+        const results = document.getElementById('keyResults');
+        const matches = OBSERVED_KEYS.filter(k => k.key.includes(q) || k.label.toLowerCase().includes(q));
+        if (matches.length === 0) {
+            results.innerHTML = '<div class="combo-empty">No currently-observed interfaces match — you can still type a key.</div>';
+        } else {
+            results.innerHTML = matches.map(m =>
+                '<div class="combo-option" role="option" onclick="pickKey(\'' + m.key + '\')">' + m.key + ' — ' + m.label + '</div>'
+            ).join('');
+        }
+        results.hidden = false;
+    }
+
+    function pickKey(key) {
+        document.getElementById('keyInput').value = key;
+        document.getElementById('keyResults').hidden = true;
+    }
+
+    function onComboKeydown(e, which) {
+        const resultsId = which === 'path' ? 'pathResults' : 'keyResults';
+        const results = document.getElementById(resultsId);
+        if (results.hidden) return;
+        const options = Array.from(results.querySelectorAll('.combo-option'));
+        let idx = options.findIndex(o => o.getAttribute('aria-selected') === 'true');
+        if (e.key === 'ArrowDown') { e.preventDefault(); idx = Math.min(idx + 1, options.length - 1); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); idx = Math.max(idx - 1, 0); }
+        else if (e.key === 'Escape') { results.hidden = true; return; }
+        else if (e.key === 'Enter') { if (idx >= 0) { e.preventDefault(); options[idx].click(); } return; }
+        else return;
+        options.forEach((o, i) => o.setAttribute('aria-selected', i === idx ? 'true' : 'false'));
+    }
+
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('.combo')) {
+            document.getElementById('pathResults').hidden = true;
+            document.getElementById('keyResults').hidden = true;
+        }
+    });
+
+    function submitFact() {
+        if (!document.getElementById('valueInput').value) {
+            toast('Error: value is required.');
+            return;
+        }
+        toast(pathState === 'arbitrary' ? 'Fact created (mockup — no backend).' : 'Override saved (mockup — no backend).');
+    }
+
+    function revertRow(btn) {
+        const row = btn.closest('tr');
+        const path = row.querySelector('.mono').textContent;
+        if (!confirm('Revert "' + path + '" for this device? This restores whatever a collector last reported, if anything. This can\'t be undone from here.')) {
+            return;
+        }
+        row.remove();
+        toast('Reverted.');
+    }
+</script>
+</body>
+</html>
