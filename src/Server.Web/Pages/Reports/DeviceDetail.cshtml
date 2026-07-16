@@ -21,6 +21,7 @@
         @if (User.IsInRole("admin"))
         {
             <button class="btn btn-sm" onclick="openMergeDevice()">Merge into…</button>
+            <button class="btn btn-sm btn-danger" onclick="openDeleteDevice()">Delete…</button>
         }
     </div>
 
@@ -962,6 +963,32 @@
             </footer>
         </div>
     </div>
+
+    <!-- Delete-device confirmation -->
+    <div class="modal-scrim" id="deleteDeviceModal" hidden role="dialog" aria-modal="true" aria-labelledby="deleteDeviceTitle">
+        <div class="modal">
+            <header>
+                <h3 id="deleteDeviceTitle">Delete Device</h3>
+                <button class="btn btn-sm" onclick="closeDeleteDevice()" aria-label="Close">✕</button>
+            </header>
+            <div class="body">
+                <p class="prose">
+                    Permanently delete <strong>@displayName</strong> and everything associated with it —
+                    fingerprints, current-state projections, fact and metric history, incidents, and change
+                    events. <strong>This cannot be undone.</strong>
+                </p>
+                <p class="prose text-dim">
+                    If this device is still on the network it will reappear as a brand-new device the next
+                    time it's observed. To stop a bad auto-merge from recurring, exclude the offending
+                    fingerprint after deleting.
+                </p>
+            </div>
+            <footer>
+                <button class="btn" onclick="closeDeleteDevice()">Cancel</button>
+                <button class="btn btn-danger" id="deleteDeviceConfirm" onclick="doDeleteDevice()">Delete device</button>
+            </footer>
+        </div>
+    </div>
 }
 
 @section Scripts {
@@ -1411,6 +1438,36 @@
             } else {
                 var errBody = await resp.json();
                 alert('Error: ' + (errBody.detail || resp.status));
+            }
+        }
+
+        // ── Delete device ──────────────────────────────────────────────────
+        function openDeleteDevice() {
+            document.getElementById('deleteDeviceModal').hidden = false;
+        }
+
+        function closeDeleteDevice() {
+            document.getElementById('deleteDeviceModal').hidden = true;
+        }
+
+        async function doDeleteDevice() {
+            var btn = document.getElementById('deleteDeviceConfirm');
+            btn.disabled = true;
+            try {
+                var resp = await fetch('/api/v1/devices/' + encodeURIComponent(mergeCurrentDeviceId), {
+                    method: 'DELETE',
+                    headers: {'X-CSRF-TOKEN': mergeCsrfToken},
+                });
+                if (resp.ok) {
+                    location.href = '@Model.BreadcrumbHref';
+                } else {
+                    var errBody = await resp.json().catch(function () { return {}; });
+                    alert('Error: ' + (errBody.detail || resp.status));
+                    btn.disabled = false;
+                }
+            } catch (e) {
+                alert('Error: ' + e);
+                btn.disabled = false;
             }
         }
     </script>
