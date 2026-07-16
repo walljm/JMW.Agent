@@ -39,7 +39,9 @@ public sealed class MergePromoteConflictTests : IAsyncLifetime
             "proj_hardware",
             "proj_interfaces",
             "proj_services",
-            "facts_history"
+            "facts_history",
+            "change_events",
+            "incidents"
         );
     }
 
@@ -298,6 +300,164 @@ public sealed class MergePromoteConflictTests : IAsyncLifetime
         Assert.True(await reader.ReadAsync());
         Assert.Equal($"Device[{survivor}].Interface[eth0].Speed", reader.GetString(0));
         Assert.Equal(survivor.ToString(), reader.GetString(1));
+    }
+
+    [Fact]
+    public async Task ManualMerge_RepointsAgentsDeviceId()
+    {
+        Guid survivor = await _fixture.InsertDeviceAsync("managed");
+        Guid loser = await _fixture.InsertDeviceAsync("managed");
+        Guid agentId = await _fixture.InsertAgentAsync();
+
+        await using (NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync())
+        await using (NpgsqlCommand cmd = new("UPDATE agents SET device_id = @d WHERE agent_id = @a", conn))
+        {
+            cmd.Parameters.AddWithValue("d", loser);
+            cmd.Parameters.AddWithValue("a", agentId);
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        await _registry.ManualMergeAsync(loser.ToString(), survivor.ToString(), actor: "test");
+
+        // agents.device_id is FK'd ON DELETE SET NULL — without an explicit repoint, deleting
+        // the loser's devices row would silently sever the agent's link to its own host device.
+        long repointed = await _fixture.CountAsync("agents", $"agent_id = '{agentId}' AND device_id = '{survivor}'");
+        Assert.Equal(1, repointed);
+    }
+
+    [Fact]
+    public async Task ManualMerge_RepointsChangeEventsEntityId()
+    {
+        Guid survivor = await _fixture.InsertDeviceAsync("managed");
+        Guid loser = await _fixture.InsertDeviceAsync("managed");
+
+        await using (NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync())
+        await using (NpgsqlCommand cmd = new(
+            "INSERT INTO change_events (event_type, entity_kind, entity_id) VALUES ('discovered', 'device', @d)",
+            conn
+        ))
+        {
+            cmd.Parameters.AddWithValue("d", loser.ToString());
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        await _registry.ManualMergeAsync(loser.ToString(), survivor.ToString(), actor: "test");
+
+        long repointed = await _fixture.CountAsync(
+            "change_events",
+            $"entity_kind = 'device' AND entity_id = '{survivor}' AND event_type = 'discovered'"
+        );
+        Assert.Equal(1, repointed);
+
+        long orphaned = await _fixture.CountAsync("change_events", $"entity_id = '{loser}'");
+        Assert.Equal(0, orphaned);
+    }
+
+    [Fact]
+    public async Task ManualMerge_WritesMergedChangeEvent()
+    {
+        Guid survivor = await _fixture.InsertDeviceAsync("managed");
+        Guid loser = await _fixture.InsertDeviceAsync("managed");
+
+        await _registry.ManualMergeAsync(loser.ToString(), survivor.ToString(), actor: "test");
+
+        // Previously only the ConflictsApi manual-merge path wrote this; DevicesApi's merge
+        // endpoint and ingest-time auto-merge never did. It now comes from ManualMergeAsync
+        // itself so every entry point gets it.
+        long count = await _fixture.CountAsync(
+            "change_events",
+            $"event_type = 'merged' AND entity_kind = 'device' AND entity_id = '{survivor}'"
+        );
+        Assert.Equal(1, count);
+    }
+
+    [Fact]
+    public async Task ManualMerge_RepointsClosedIncident()
+    {
+        Guid survivor = await _fixture.InsertDeviceAsync("managed");
+        Guid loser = await _fixture.InsertDeviceAsync("managed");
+
+        await InsertIncidentAsync(loser, "smart_failing", resolved: true);
+
+        await _registry.ManualMergeAsync(loser.ToString(), survivor.ToString(), actor: "test");
+
+        long repointed = await _fixture.CountAsync(
+            "incidents",
+            $"entity_kind = 'device' AND entity_id = '{survivor}' AND incident_type = 'smart_failing'"
+        );
+        Assert.Equal(1, repointed);
+    }
+
+    [Fact]
+    public async Task ManualMerge_RepointsOpenIncident_NoCollision()
+    {
+        Guid survivor = await _fixture.InsertDeviceAsync("managed");
+        Guid loser = await _fixture.InsertDeviceAsync("managed");
+
+        await InsertIncidentAsync(loser, "smart_failing", resolved: false);
+
+        await _registry.ManualMergeAsync(loser.ToString(), survivor.ToString(), actor: "test");
+
+        // Survivor had no open incident of this type — the loser's should move over and stay open.
+        long stillOpen = await _fixture.CountAsync(
+            "incidents",
+            $"entity_kind = 'device' AND entity_id = '{survivor}' AND incident_type = 'smart_failing' " +
+            "AND resolved_at IS NULL"
+        );
+        Assert.Equal(1, stillOpen);
+    }
+
+    [Fact]
+    public async Task ManualMerge_CollidingOpenIncidents_LoserResolvedAsMergedNotDeleted()
+    {
+        Guid survivor = await _fixture.InsertDeviceAsync("managed");
+        Guid loser = await _fixture.InsertDeviceAsync("managed");
+
+        await InsertIncidentAsync(survivor, "agent_offline", resolved: false);
+        await InsertIncidentAsync(loser, "agent_offline", resolved: false);
+
+        await _registry.ManualMergeAsync(loser.ToString(), survivor.ToString(), actor: "test");
+
+        // incidents_open_uq forbids two open rows for the same (entity, type) — survivor keeps
+        // exactly one open incident of this type after the merge.
+        long openCount = await _fixture.CountAsync(
+            "incidents",
+            $"entity_kind = 'device' AND entity_id = '{survivor}' AND incident_type = 'agent_offline' " +
+            "AND resolved_at IS NULL"
+        );
+        Assert.Equal(1, openCount);
+
+        // The loser's incident isn't deleted — it's repointed and resolved as superseded, so its
+        // history is still visible on the survivor rather than silently vanishing.
+        long resolvedAsMerged = await _fixture.CountAsync(
+            "incidents",
+            $"entity_kind = 'device' AND entity_id = '{survivor}' AND incident_type = 'agent_offline' " +
+            "AND resolution = 'merged' AND resolved_at IS NOT NULL"
+        );
+        Assert.Equal(1, resolvedAsMerged);
+
+        // Total incidents of this type under the survivor: the one still-open plus the one
+        // resolved-as-merged.
+        long total = await _fixture.CountAsync(
+            "incidents",
+            $"entity_kind = 'device' AND entity_id = '{survivor}' AND incident_type = 'agent_offline'"
+        );
+        Assert.Equal(2, total);
+    }
+
+    private async Task InsertIncidentAsync(Guid device, string incidentType, bool resolved)
+    {
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        await using NpgsqlCommand cmd = new(
+            resolved
+                ? "INSERT INTO incidents (incident_type, entity_kind, entity_id, resolved_at, resolution) " +
+                  "VALUES (@t, 'device', @d, now(), 'auto')"
+                : "INSERT INTO incidents (incident_type, entity_kind, entity_id) VALUES (@t, 'device', @d)",
+            conn
+        );
+        cmd.Parameters.AddWithValue("t", incidentType);
+        cmd.Parameters.AddWithValue("d", device.ToString());
+        await cmd.ExecuteNonQueryAsync();
     }
 
     [Fact]

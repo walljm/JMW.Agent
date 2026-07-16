@@ -27,7 +27,13 @@ public sealed class DeviceRegistryTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        await _fixture.TruncateAsync("device_aliases", "device_fingerprints", "devices", "proj_interfaces");
+        await _fixture.TruncateAsync(
+            "device_aliases",
+            "device_fingerprints",
+            "devices",
+            "proj_interfaces",
+            "change_events"
+        );
     }
 
     // ── Create ────────────────────────────────────────────────────────────────
@@ -205,6 +211,33 @@ public sealed class DeviceRegistryTests : IAsyncLifetime
         cmd.Parameters.AddWithValue("n", name);
         cmd.Parameters.AddWithValue("u", updatedAt);
         await cmd.ExecuteNonQueryAsync();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_TwoMatchingDevices_WritesMergedChangeEvent()
+    {
+        Guid olderId = await _fixture.InsertDeviceAsync("managed", createdAt: DateTimeOffset.UtcNow.AddHours(-2));
+        Guid newerId = await _fixture.InsertDeviceAsync("managed", createdAt: DateTimeOffset.UtcNow.AddHours(-1));
+
+        await _fixture.InsertFingerprintAsync(olderId, FingerprintType.Mac, "00aabbcc1010");
+        await _fixture.InsertFingerprintAsync(newerId, FingerprintType.Mac, "00aabbcc2020");
+
+        List<Fingerprint> fps =
+        [
+            new(FingerprintType.Mac, "00aabbcc1010"),
+            new(FingerprintType.Mac, "00aabbcc2020"),
+        ];
+
+        (string survivorId, bool _) = await _registry.ResolveAsync(fps, source: "merge-event-test");
+
+        // Ingest-time auto-merge is the dominant merge path (no operator involved) — it must
+        // record a "merged" change_event just like manual merge does, or Recent Activity/Device
+        // History silently omit the majority of real-world merges.
+        long count = await _fixture.CountAsync(
+            "change_events",
+            $"event_type = 'merged' AND entity_kind = 'device' AND entity_id = '{survivorId}'"
+        );
+        Assert.Equal(1, count);
     }
 
     // ── Alias resolution ──────────────────────────────────────────────────────

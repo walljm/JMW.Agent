@@ -235,17 +235,14 @@ public static class ConflictsApi
         {
             try
             {
+                // ManualMergeAsync records its own "merged" change_event after committing, so
+                // no separate write is needed here.
                 await registry.ManualMergeAsync(loserId: loser, survivorId: winnerDeviceId, actor: actor, ct: ct);
             }
             catch (DeviceMergeConflictException ex)
             {
                 return ApiError.Conflict(ex.Message);
             }
-
-            // ManualMergeAsync commits its own transaction before returning, so this write is
-            // safely outside it.
-            await conn.InsertChangeEventAsync("merged", "device", winnerDeviceId, $"absorbed {loser}", ct)
-                .ExecuteAsync(ct);
         }
 
         // Resolve immediately rather than waiting for FingerprintConflictSweepService's next tick.

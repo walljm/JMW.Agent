@@ -39,6 +39,9 @@ public static class DevicesApi
         app.MapPost("/devices/{id}/merge", MergeDevice)
             .RequireAuthorization(RbacPolicies.Admin);
 
+        app.MapDelete("/devices/{id}", DeleteDevice)
+            .RequireAuthorization(RbacPolicies.Admin);
+
         app.MapPost("/devices/{id}/promote", PromoteDevice)
             .RequireAuthorization(RbacPolicies.Admin);
     }
@@ -245,6 +248,39 @@ public static class DevicesApi
                 survivor_device_id = body.IntoDeviceId,
             }
         );
+    }
+
+    /// <summary>
+    /// Manual fallback for a bad auto-merge (or any device an operator wants gone) — hard-deletes
+    /// the device and everything associated with it (fingerprints, projections, history, incidents,
+    /// change events). Does not attempt a re-split: there's nothing to reconstruct a merge from
+    /// (see DeviceRegistry.DeleteDeviceAsync). The next time this physical entity is observed it
+    /// resolves as a brand-new device rather than joining stale state.
+    /// </summary>
+    private static async Task<IResult> DeleteDevice(
+        string id,
+        DeviceRegistry registry,
+        HttpContext context,
+        CancellationToken ct
+    )
+    {
+        if (!Guid.TryParse(id, out _))
+        {
+            return ApiError.InvalidId("Invalid device id.");
+        }
+
+        string actor = context.User.Identity?.Name ?? "unknown";
+
+        try
+        {
+            await registry.DeleteDeviceAsync(id, actor, ct);
+        }
+        catch (ArgumentException ex)
+        {
+            return ApiError.NotFound(ex.Message);
+        }
+
+        return Results.Ok(new { deleted_device_id = id });
     }
 
     private static async Task<IResult> PromoteDevice(

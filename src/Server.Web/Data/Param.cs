@@ -22,6 +22,9 @@ public static class Param
     public static NpgsqlParameter Integer(int value) =>
         new() { Value = value, NpgsqlDbType = NpgsqlDbType.Integer };
 
+    public static NpgsqlParameter Bigint(long value) =>
+        new() { Value = value, NpgsqlDbType = NpgsqlDbType.Bigint };
+
     public static NpgsqlParameter NullableInteger(int? value) =>
         new() { Value = (object?)value ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Integer };
 
