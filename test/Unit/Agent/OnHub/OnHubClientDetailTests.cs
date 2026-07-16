@@ -200,6 +200,60 @@ public sealed class OnHubClientDetailTests
     }
 
     [Fact]
+    public void CastFriendlyName_WithoutCorroboratingCastId_IsDropped()
+    {
+        // Regression (2026-07-16): the OnHub's dns_sd cache attributes an advert to whatever
+        // station held the advertised IP when it was cached, smearing a cast fn= onto an
+        // unrelated station. A live Home Assistant host picked up a Nest speaker's
+        // "fn=Guest Room Audio" with no cast id or device type of its own, and that name then
+        // promoted onto the host device as its display name. A cast friendly name must be
+        // dropped unless the same station also resolved a stable Cast id.
+        const string state =
+            """
+            network_service_state {
+              station_state_updates {
+                station_state_update {
+                  station_info {
+                    station_id: "EE55"
+                    connected: true
+                    ip_addresses: "192.168.1.237"
+                    wireless: false
+                    oui: "20f83b"
+                    dns_sd_features {
+                      key: "GuestRoomSpeaker._googlecast._tcp.local"
+                      value: "fn=Guest Room Audio"
+                    }
+                  }
+                }
+              }
+            }
+            """;
+        const string apShow =
+            """
+            station_info {
+              mac_address: "20f83be2130*"
+              ipv4_addresses: "192.168.1.237"
+            }
+            """;
+
+        OnHubStation s = OnHubStations.Extract(
+            DiagnosticReport.Parser.ParseFrom(
+                OnHubTestData.BuildReport(
+                    "ADEC2AD4",
+                    state,
+                    (OnHubTestData.ApShowCommand, apShow)
+                )
+            )
+        ).Single(x => x.Ip == "192.168.1.237");
+
+        // The smeared cast name is dropped (no CastId anchor); the station still surfaces via
+        // its MAC so it isn't silently lost.
+        Assert.Null(s.CastId);
+        Assert.Null(s.FriendlyName);
+        Assert.Equal("20f83be2130*", s.Mac);
+    }
+
+    [Fact]
     public void RaopAirplay_FriendlyNameFromKey_AndMdIsNotAModel()
     {
         // A device advertising only AirPlay/RAOP: the friendly name lives in the key

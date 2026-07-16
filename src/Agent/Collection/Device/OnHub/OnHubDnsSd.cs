@@ -120,8 +120,18 @@ public static class OnHubDnsSd
             deviceType = "apple-device";
         }
 
+        // A cast fn= friendly name is only trustworthy when this same station also resolved a
+        // stable Cast id. The OnHub's dns_sd cache attributes an advertisement to whatever
+        // station held the advertised IP when it was cached, so it smears a cast fn= onto an
+        // unrelated station — verified live: a Home Assistant host station picked up a Nest
+        // speaker's "fn=Guest Room Audio" with no cast id or device type of its own, which then
+        // promoted onto the host device as its display name. The AirPlay/RAOP `friendly` is
+        // taken from this station's own service-instance label (not a cross-referenced TXT
+        // value), so it is self-contained and kept regardless.
+        string? trustedCastFriendly = castId is not null ? castFriendly : null;
+
         return new OnHubDnsSdResult(
-            Clean(castFriendly ?? friendly),
+            Clean(trustedCastFriendly ?? friendly),
             Clean(model),
             deviceType,
             castId,
