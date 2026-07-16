@@ -5,7 +5,7 @@
 @using JMW.Discovery.Server.Reporting
 @model JMW.Discovery.Server.Pages.Reports.DeviceDetailModel
 @{
-    string displayName = string.IsNullOrEmpty(Model.Hostname) ? Model.DeviceId : Model.Hostname;
+    string displayName = string.IsNullOrEmpty(Model.Hostname) ? "—" : Model.Hostname;
     ViewData["Title"] = displayName + " — JMW Discovery";
     ViewData["ActiveNav"] = Model.ActiveNavKey;
 
@@ -15,7 +15,7 @@
         || string.Equals(status, "healthy", StringComparison.OrdinalIgnoreCase) ? "status ok"
         : "status warn";
 }
-<main class="main">
+<main class="main data-grid-page">
     <div class="page-head">
         <h1><a href="@Model.BreadcrumbHref" style="color:var(--text-dim)">@Model.BreadcrumbLabel</a> / @displayName</h1>
         @if (User.IsInRole("admin"))
@@ -75,6 +75,38 @@
                 </dd>
             </dl>
         </div>
+        @if (Model.Interfaces.Data.Count > 0 || Model.Ports.Data.Count > 0 || Model.Services.Data.Count > 0)
+        {
+            <div class="identity-stats stat-row">
+                @if (Model.Interfaces.Data.Count > 0)
+                {
+                    <div class="stat">
+                        <a class="stat-head" href="#" onclick="switchTab('interfaces'); return false;">
+                            <div class="label">Interfaces</div>
+                            <div class="value">@Model.Interfaces.Data.Count</div>
+                        </a>
+                    </div>
+                }
+                @if (Model.Ports.Data.Count > 0)
+                {
+                    <div class="stat">
+                        <a class="stat-head" href="#" onclick="switchTab('ports'); return false;">
+                            <div class="label">Open Ports</div>
+                            <div class="value">@Model.Ports.Data.Count</div>
+                        </a>
+                    </div>
+                }
+                @if (Model.Services.Data.Count > 0)
+                {
+                    <div class="stat">
+                        <a class="stat-head" href="#" onclick="switchTab('services'); return false;">
+                            <div class="label">Services</div>
+                            <div class="value">@Model.Services.Data.Count</div>
+                        </a>
+                    </div>
+                }
+            </div>
+        }
     </div>
 
     @* Sections are grouped in a vertical nav; only sections with data are rendered (built in
@@ -315,7 +347,19 @@
                     else
                     {
                         <div class="detail-table-scroll">
-                            <table class="data">
+                            <table class="data" style="table-layout:fixed;width:100%">
+                                <colgroup>
+                                    <col style="width:110px">
+                                    <col style="width:130px">
+                                    <col style="width:210px">
+                                    <col style="width:150px">
+                                    <col>
+                                    <col style="width:100px">
+                                    <col style="width:70px">
+                                    <col style="width:70px">
+                                    <col style="width:100px">
+                                    <col style="width:90px">
+                                </colgroup>
                                 <thead>
                                 <tr>
                                     <th>Name</th>

@@ -27,7 +27,7 @@ public sealed class DeviceRegistryTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        await _fixture.TruncateAsync("device_aliases", "device_fingerprints", "devices");
+        await _fixture.TruncateAsync("device_aliases", "device_fingerprints", "devices", "proj_interfaces");
     }
 
     // ── Create ────────────────────────────────────────────────────────────────
@@ -152,6 +152,59 @@ public sealed class DeviceRegistryTests : IAsyncLifetime
             $"device_id::text = '{olderId}' AND fp_type = 'mac'"
         );
         Assert.Equal(2, fpCount);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ThreeWayMerge_CollidingInterfaceRows_KeepsFreshestOnly()
+    {
+        // Three devices merge in one shot (all share overlapping fingerprints via a single
+        // incoming batch). Two of the losers each independently tracked an "eth0" interface
+        // row for what turns out to be the same physical device — the survivor has neither.
+        // A batched (non-sequential) repoint would try to move both losers' eth0 rows onto
+        // the survivor in one UPDATE and hit a primary-key violation.
+        Guid survivorId = await _fixture.InsertDeviceAsync("managed", createdAt: DateTimeOffset.UtcNow.AddHours(-3));
+        Guid loserAId = await _fixture.InsertDeviceAsync("managed", createdAt: DateTimeOffset.UtcNow.AddHours(-2));
+        Guid loserBId = await _fixture.InsertDeviceAsync("managed", createdAt: DateTimeOffset.UtcNow.AddHours(-1));
+
+        await _fixture.InsertFingerprintAsync(survivorId, FingerprintType.Mac, "00aabbccdd01");
+        await _fixture.InsertFingerprintAsync(loserAId, FingerprintType.Mac, "00aabbccdd02");
+        await _fixture.InsertFingerprintAsync(loserBId, FingerprintType.Mac, "00aabbccdd03");
+
+        await InsertProjInterfaceAsync(loserAId, "eth0", name: "stale-eth0", updatedAt: DateTimeOffset.UtcNow.AddHours(-2));
+        await InsertProjInterfaceAsync(loserBId, "eth0", name: "fresh-eth0", updatedAt: DateTimeOffset.UtcNow);
+
+        List<Fingerprint> fps =
+        [
+            new(FingerprintType.Mac, "00aabbccdd01"),
+            new(FingerprintType.Mac, "00aabbccdd02"),
+            new(FingerprintType.Mac, "00aabbccdd03"),
+        ];
+
+        (string resolvedSurvivor, bool _) = await _registry.ResolveAsync(fps, source: "3way-merge-test");
+        Assert.Equal(survivorId.ToString(), resolvedSurvivor);
+
+        long ifaceRowCount = await _fixture.CountAsync("proj_interfaces", $"device = '{survivorId}'");
+        Assert.Equal(1, ifaceRowCount);
+
+        long freshRowCount = await _fixture.CountAsync(
+            "proj_interfaces",
+            $"device = '{survivorId}' AND name = 'fresh-eth0'"
+        );
+        Assert.Equal(1, freshRowCount);
+    }
+
+    private async Task InsertProjInterfaceAsync(Guid device, string interfaceKey, string name, DateTimeOffset updatedAt)
+    {
+        await using Npgsql.NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        await using Npgsql.NpgsqlCommand cmd = new(
+            "INSERT INTO proj_interfaces (device, interface, name, updated_at) VALUES (@d, @i, @n, @u)",
+            conn
+        );
+        cmd.Parameters.AddWithValue("d", device.ToString());
+        cmd.Parameters.AddWithValue("i", interfaceKey);
+        cmd.Parameters.AddWithValue("n", name);
+        cmd.Parameters.AddWithValue("u", updatedAt);
+        await cmd.ExecuteNonQueryAsync();
     }
 
     // ── Alias resolution ──────────────────────────────────────────────────────

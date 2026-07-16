@@ -49,7 +49,7 @@
                             @if (!string.IsNullOrEmpty(a.ResolvedDeviceId))
                             {
                                 <a href="/devices/@a.ResolvedDeviceId?from=arp">
-                                    @(string.IsNullOrEmpty(a.ResolvedHostname) ? a.ResolvedDeviceId : a.ResolvedHostname)
+                                    @(string.IsNullOrEmpty(a.ResolvedHostname) ? "—" : a.ResolvedHostname)
                                 </a>
                             }
                             else

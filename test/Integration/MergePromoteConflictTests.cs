@@ -38,6 +38,7 @@ public sealed class MergePromoteConflictTests : IAsyncLifetime
             "agents",
             "proj_hardware",
             "proj_interfaces",
+            "proj_services",
             "facts_history"
         );
     }
@@ -128,6 +129,135 @@ public sealed class MergePromoteConflictTests : IAsyncLifetime
         long ifaceCount = await _fixture.CountAsync("proj_interfaces", $"device = '{loser}'");
         Assert.Equal(0, hwCount);
         Assert.Equal(0, ifaceCount);
+    }
+
+    [Fact]
+    public async Task ManualMerge_RepointsSingleDimProjection_WhenSurvivorHasNone()
+    {
+        Guid survivor = await _fixture.InsertDeviceAsync("managed");
+        Guid loser = await _fixture.InsertDeviceAsync("managed");
+
+        await InsertProjHardwareAsync(loser, vendor: "Ghost", updatedAt: DateTimeOffset.UtcNow);
+
+        await _registry.ManualMergeAsync(loser.ToString(), survivor.ToString(), actor: "test");
+
+        // Survivor never had its own proj_hardware row — the loser's should now live there,
+        // not vanish until the next poll (the bug this test guards against).
+        long survivorCount = await _fixture.CountAsync(
+            "proj_hardware",
+            $"device = '{survivor}' AND system_vendor = 'Ghost'"
+        );
+        Assert.Equal(1, survivorCount);
+    }
+
+    [Fact]
+    public async Task ManualMerge_ConflictingSingleDimProjection_LoserNewer_OverwritesSurvivor()
+    {
+        Guid survivor = await _fixture.InsertDeviceAsync("managed");
+        Guid loser = await _fixture.InsertDeviceAsync("managed");
+
+        await InsertProjHardwareAsync(survivor, vendor: "OldVendor", updatedAt: DateTimeOffset.UtcNow.AddHours(-2));
+        await InsertProjHardwareAsync(loser, vendor: "NewVendor", updatedAt: DateTimeOffset.UtcNow);
+
+        await _registry.ManualMergeAsync(loser.ToString(), survivor.ToString(), actor: "test");
+
+        long survivorCount = await _fixture.CountAsync(
+            "proj_hardware",
+            $"device = '{survivor}' AND system_vendor = 'NewVendor'"
+        );
+        Assert.Equal(1, survivorCount);
+
+        long loserCount = await _fixture.CountAsync("proj_hardware", $"device = '{loser}'");
+        Assert.Equal(0, loserCount);
+    }
+
+    [Fact]
+    public async Task ManualMerge_ConflictingSingleDimProjection_SurvivorNewer_KeepsSurvivorData()
+    {
+        Guid survivor = await _fixture.InsertDeviceAsync("managed");
+        Guid loser = await _fixture.InsertDeviceAsync("managed");
+
+        await InsertProjHardwareAsync(survivor, vendor: "CurrentVendor", updatedAt: DateTimeOffset.UtcNow);
+        await InsertProjHardwareAsync(loser, vendor: "StaleVendor", updatedAt: DateTimeOffset.UtcNow.AddHours(-2));
+
+        await _registry.ManualMergeAsync(loser.ToString(), survivor.ToString(), actor: "test");
+
+        // Survivor's more-recently-confirmed data must not be clobbered by the older loser row.
+        long survivorCount = await _fixture.CountAsync(
+            "proj_hardware",
+            $"device = '{survivor}' AND system_vendor = 'CurrentVendor'"
+        );
+        Assert.Equal(1, survivorCount);
+    }
+
+    [Fact]
+    public async Task ManualMerge_CompositeKeyProjection_DifferentInterfaces_BothSurvive()
+    {
+        Guid survivor = await _fixture.InsertDeviceAsync("managed");
+        Guid loser = await _fixture.InsertDeviceAsync("managed");
+
+        await InsertProjInterfaceAsync(survivor, "eth1");
+        await InsertProjInterfaceAsync(loser, "eth0");
+
+        await _registry.ManualMergeAsync(loser.ToString(), survivor.ToString(), actor: "test");
+
+        // Distinct secondary keys (interface names) don't collide — both rows should now live
+        // under the survivor rather than the loser's eth0 being dropped.
+        long survivorIfaceCount = await _fixture.CountAsync("proj_interfaces", $"device = '{survivor}'");
+        Assert.Equal(2, survivorIfaceCount);
+    }
+
+    [Fact]
+    public async Task ManualMerge_RepointsServiceDeviceId_DoesNotDeleteServiceRow()
+    {
+        Guid survivor = await _fixture.InsertDeviceAsync("managed");
+        Guid loser = await _fixture.InsertDeviceAsync("managed");
+
+        await using (NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync())
+        await using (NpgsqlCommand cmd = new(
+            "INSERT INTO proj_services (service, service_id, type, device_id, updated_at) " +
+            "VALUES ('svc-1', 'svc-1', 'dns', @d, now())",
+            conn
+        ))
+        {
+            cmd.Parameters.AddWithValue("d", loser.ToString());
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        await _registry.ManualMergeAsync(loser.ToString(), survivor.ToString(), actor: "test");
+
+        // The service row itself (keyed by 'service', not by device) must survive the merge —
+        // only its device_id backreference gets repointed.
+        long repointed = await _fixture.CountAsync(
+            "proj_services",
+            $"service = 'svc-1' AND device_id = '{survivor}'"
+        );
+        Assert.Equal(1, repointed);
+    }
+
+    private async Task InsertProjHardwareAsync(Guid device, string vendor, DateTimeOffset updatedAt)
+    {
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        await using NpgsqlCommand cmd = new(
+            "INSERT INTO proj_hardware (device, system_vendor, updated_at) VALUES (@d, @v, @u)",
+            conn
+        );
+        cmd.Parameters.AddWithValue("d", device.ToString());
+        cmd.Parameters.AddWithValue("v", vendor);
+        cmd.Parameters.AddWithValue("u", updatedAt);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private async Task InsertProjInterfaceAsync(Guid device, string interfaceName)
+    {
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        await using NpgsqlCommand cmd = new(
+            "INSERT INTO proj_interfaces (device, interface, updated_at) VALUES (@d, @i, now())",
+            conn
+        );
+        cmd.Parameters.AddWithValue("d", device.ToString());
+        cmd.Parameters.AddWithValue("i", interfaceName);
+        await cmd.ExecuteNonQueryAsync();
     }
 
     [Fact]

@@ -959,18 +959,20 @@ table.data tbody tr.row-warn td:first-child {
 /* A grouped section rail beside the panel area. Scales to the ~40 device-detail sections
    (built-in + fact-view) far better than a wrapping horizontal tab bar. Reuses the global
    nav's visual language (eyebrow group labels + accent-tint active pill). */
+/* The page shell (.main.data-grid-page) is a fixed-height flex column: page-head and
+   .identity are flex-shrink:0 headers, and .detail-body is the one region that grows to
+   fill whatever's left, so the browser window never has to scroll — only the nav rail
+   and the active panel do, each within their own bounded height. */
 .detail-body {
     display: grid;
     grid-template-columns: 200px 1fr;
     gap: var(--space-5);
-    align-items: start;
+    align-items: stretch;
+    flex: 1;
+    min-height: 0;
 }
 
 .section-nav {
-    position: sticky;
-    top: 0;
-    align-self: start;
-    max-height: calc(100vh - var(--space-6));
     overflow-y: auto;
 }
 
@@ -1036,23 +1038,49 @@ table.data tbody tr.row-warn td:first-child {
 }
 
 /* The panel column must be allowed to shrink so wide tables scroll inside their own
-   .detail-table-scroll rather than stretching the grid track. */
+   .detail-table-scroll rather than stretching the grid track. It's also a flex column so
+   the one visible (non-[hidden]) .tabpanel can grow to fill the full row height. */
 .section-panels {
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 }
 
 .section-panels .tabpanel {
     padding-top: 0;
 }
 
+/* Only one .tabpanel is ever visible ([hidden] is toggled by switchTab()). It fills the
+   remaining height and scrolls internally — content that isn't a .detail-table-scroll
+   (e.g. a kv sheet) falls back to scrolling the panel itself. */
+.section-panels .tabpanel:not([hidden]) {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.section-panels .tabpanel:not([hidden]) .detail-table-scroll {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+}
+
 @media (max-width: 960px) {
+    /* Below 960px the nav collapses to a wrapping horizontal strip above the panel, so the
+       fixed-height fill layout no longer applies — let the page scroll normally instead. */
     .detail-body {
         grid-template-columns: 1fr;
+        flex: none;
+        display: block;
     }
 
     .section-nav {
         position: static;
         max-height: none;
+        overflow-y: visible;
         display: flex;
         flex-wrap: wrap;
         gap: var(--space-2);
@@ -1066,6 +1094,21 @@ table.data tbody tr.row-warn td:first-child {
 
     .section-nav-group > .group-label {
         display: none;
+    }
+
+    .section-panels {
+        display: block;
+    }
+
+    .section-panels .tabpanel:not([hidden]) {
+        display: block;
+        flex: none;
+        overflow-y: visible;
+    }
+
+    .section-panels .tabpanel:not([hidden]) .detail-table-scroll {
+        flex: none;
+        max-height: 65vh;
     }
 }
 
@@ -1099,6 +1142,13 @@ table.data tbody tr.row-warn td:first-child {
     gap: var(--space-5);
     flex-wrap: wrap;
     align-items: flex-start;
+    flex-shrink: 0;
+}
+
+/* Network-at-a-glance stats fill the space beside the kv list instead of leaving it
+   empty; capped so 2-3 tiles don't stretch edge-to-edge on wide viewports. */
+.identity-stats {
+    flex: 0 1 460px;
 }
 
 .identity .title {

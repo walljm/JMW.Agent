@@ -259,7 +259,7 @@ public sealed class DashboardModel : PageModel
             await foreach ((Guid DeviceId, string? Hostname, DateTimeOffset? LastSeen) r in
                 conn.GetNotSeenDevicesAsync(NotSeenDays, NotSeenCap, ct))
             {
-                rows.Add(new NotSeenRow(r.DeviceId, Display(r.Hostname, r.DeviceId), r.LastSeen));
+                rows.Add(new NotSeenRow(r.DeviceId, Display(r.Hostname), r.LastSeen));
             }
 
             Cache("dash_not_seen", rows, FastTtl);
@@ -283,7 +283,7 @@ public sealed class DashboardModel : PageModel
                 conn.GetNewDevicesAsync(NewDeviceDays, NewDeviceCap, ct))
             {
                 rows.Add(
-                    new NewDeviceRow(r.DeviceId, Display(r.Hostname, r.DeviceId), r.ManagementStatus, r.CreatedAt)
+                    new NewDeviceRow(r.DeviceId, Display(r.Hostname), r.ManagementStatus, r.CreatedAt)
                 );
             }
 
@@ -460,8 +460,8 @@ public sealed class DashboardModel : PageModel
         return series;
     }
 
-    private static string Display(string? hostname, Guid deviceId) =>
-        string.IsNullOrWhiteSpace(hostname) ? deviceId.ToString()[..8] : hostname;
+    private static string Display(string? hostname) =>
+        string.IsNullOrWhiteSpace(hostname) ? "—" : hostname;
 
     private bool TryCache<T>(string key, out T? value) where T : class =>
         _cache.TryGetValue(key, out value) && value is not null;

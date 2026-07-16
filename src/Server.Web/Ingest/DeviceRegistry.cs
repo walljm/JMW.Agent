@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using JMW.Discovery.Core;
 using JMW.Discovery.Server.Audit;
 using JMW.Discovery.Server.Data;
+using JMW.Discovery.Server.Projections;
 using JMW.Discovery.Server.Queries;
 
 using Npgsql;
@@ -301,38 +302,13 @@ public sealed class DeviceRegistry
     }
 
     /// <summary>
-    /// Projection tables holding a per-device current-state snapshot, keyed by the column named
-    /// here. Rebuilt from live facts as they arrive, so once a loser's fingerprints are reassigned
-    /// (see <see cref="MergeLosersAsync"/>) nothing will ever refresh its rows again — they become
-    /// permanently stale and are purged on merge rather than left as an orphaned duplicate of the
-    /// survivor's data.
-    /// </summary>
-    private static readonly (string Table, string Column)[] DeviceProjectionTables =
-    [
-        ("proj_containers", "device"),
-        ("proj_device_arp", "device"),
-        ("proj_device_routes", "device"),
-        ("proj_devices", "device"),
-        ("proj_dhcp_local_leases", "device"),
-        ("proj_discovered", "device"),
-        ("proj_discovered_services", "device"),
-        ("proj_disks", "device"),
-        ("proj_filesystems", "device"),
-        ("proj_hardware", "device"),
-        ("proj_hardware_inventory", "device"),
-        ("proj_interfaces", "device"),
-        ("proj_ports", "device"),
-        ("proj_services", "device_id"),
-        ("proj_systems", "device"),
-    ];
-
-    /// <summary>
     /// Aliases every loser to survivor, reassigns their fingerprints, appends them to
     /// survivor's merged_from (idempotent — losers already recorded are skipped, so retrying
-    /// the same merge is safe), purges the losers' stale projection rows, and deletes the losers'
-    /// own devices rows so nothing of them is independently browsable afterward — then writes one
-    /// audit entry. Shared by <see cref="AutoMergeAsync"/> (N losers from fingerprint collision)
-    /// and <see cref="ManualMergeAsync"/> (1 loser from an admin action) — the two had diverged
+    /// the same merge is safe), repoints the losers' projection rows onto the survivor (per
+    /// ADR-002/COMP-004), and deletes the losers' own devices rows so nothing of them is
+    /// independently browsable afterward — then writes one audit entry. Shared by
+    /// <see cref="AutoMergeAsync"/> (N losers from fingerprint collision) and
+    /// <see cref="ManualMergeAsync"/> (1 loser from an admin action) — the two had diverged
     /// (array_cat vs array_append+guard) before unifying here on the guarded, retry-safe form.
     /// </summary>
     private static async Task MergeLosersAsync(
@@ -415,16 +391,11 @@ public sealed class DeviceRegistry
             await mergeCmd.ExecuteNonQueryAsync(ct);
         }
 
-        // Purge each loser's stale projection rows — the survivor's own rows already hold (or
-        // will hold, from future facts) the merged current-state view.
-        foreach ((string table, string column) in DeviceProjectionTables)
-        {
-            await using NpgsqlCommand purgeCmd = conn.CreateCommand();
-            purgeCmd.Transaction = tx;
-            purgeCmd.CommandText = $"DELETE FROM {table} WHERE {column} = ANY($1::text[])";
-            purgeCmd.Parameters.Add(Param.TextArray(losers));
-            await purgeCmd.ExecuteNonQueryAsync(ct);
-        }
+        // Repoint each loser's projection rows onto the survivor instead of discarding them —
+        // otherwise a device's current-state tabs (interfaces, hardware, disks, ...) go blank
+        // the instant it's merged and stay blank until the next poll happens to touch every
+        // one of those fact sources again.
+        await RepointProjectionsAsync(conn, tx, survivor, losers, ct);
 
         // Retire the losers' own devices rows. Safe: their fingerprints were just reassigned
         // above (device_fingerprints has an FK back to devices with no cascade, so this throws
@@ -440,6 +411,140 @@ public sealed class DeviceRegistry
         }
 
         await AuditLog.WriteAsync(conn, tx, actor, auditAction, survivor, auditDetail, ct);
+    }
+
+    /// <summary>
+    /// Repoints every device-scoped projection table onto the survivor. Reads
+    /// <see cref="ProjectionLibrary.AllDefs"/> directly rather than a hand-maintained table
+    /// list, so a projection added there is automatically covered here too — this is what
+    /// closed the gap where proj_device_certs and proj_discovered_tls were silently skipped
+    /// by the old hardcoded list.
+    /// </summary>
+    private static async Task RepointProjectionsAsync(
+        NpgsqlConnection conn,
+        NpgsqlTransaction tx,
+        string survivor,
+        string[] losers,
+        CancellationToken ct
+    )
+    {
+        foreach (ProjectionDef def in ProjectionLibrary.AllDefs)
+        {
+            if (def.DimensionNames.Count > 0 && def.DimensionNames[0] == "Device")
+            {
+                await RepointDeviceDimensionedProjectionAsync(conn, tx, def, survivor, losers, ct);
+                continue;
+            }
+
+            // Not device-dimensioned (e.g. Service-keyed) — but some of these carry a plain
+            // device_id backreference column (proj_services) that still needs repointing even
+            // though the row's own identity (the service) never collides across a merge.
+            ProjectionColumnDef? deviceIdColumn = def.Columns.FirstOrDefault(c => c.ColumnName == "device_id");
+            if (deviceIdColumn is null)
+            {
+                continue;
+            }
+
+            await using NpgsqlCommand cmd = conn.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText =
+                $"UPDATE {def.TableName} SET {deviceIdColumn.ColumnName} = $2 " +
+                $"WHERE {deviceIdColumn.ColumnName} = ANY($1::text[])";
+            cmd.Parameters.Add(Param.TextArray(losers));
+            cmd.Parameters.Add(Param.Text(survivor));
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// Repoints one device-dimensioned projection table (device is part of the row's primary
+    /// key — either the whole key, e.g. proj_hardware, or the first column of a composite key,
+    /// e.g. proj_interfaces keyed on (device, interface)):
+    /// 1. Rows whose secondary key (if any) doesn't already exist under the survivor move over
+    ///    outright — this is the common case (e.g. the survivor never had its own hardware row).
+    /// 2. Rows that collide with an existing survivor row (same secondary key on both sides,
+    ///    which happens when the same physical device was independently tracked under both
+    ///    identities) are resolved by freshness: the loser's data overwrites the survivor's row
+    ///    only when the loser was confirmed more recently (updated_at). Column-level splicing
+    ///    isn't attempted — mixing columns from two independently-aged snapshots has no
+    ///    principled tie-break, so the whole row from the fresher side wins.
+    /// 3. Whatever remains under a loser id afterward (moved, or lost the freshness compare) is
+    ///    dropped.
+    /// </summary>
+    private static async Task RepointDeviceDimensionedProjectionAsync(
+        NpgsqlConnection conn,
+        NpgsqlTransaction tx,
+        ProjectionDef def,
+        string survivor,
+        string[] losers,
+        CancellationToken ct
+    )
+    {
+        string table = def.TableName;
+        string[] dimCols = def.DimensionNames.Select(n => n.ToLowerInvariant()).ToArray();
+        string deviceCol = dimCols[0];
+        string[] secondaryCols = dimCols[1..];
+        string[] dataCols = def.Columns.Select(c => c.ColumnName).ToArray();
+
+        string existsSecondaryMatch = secondaryCols.Length == 0
+            ? ""
+            : " AND " + string.Join(" AND ", secondaryCols.Select(c => $"s.{c} = {table}.{c}"));
+        string joinSecondaryMatch = secondaryCols.Length == 0
+            ? ""
+            : " AND " + string.Join(" AND ", secondaryCols.Select(c => $"tgt.{c} = src.{c}"));
+        string setClause = dataCols.Length == 0
+            ? ""
+            : string.Join(", ", dataCols.Select(c => $"{c} = src.{c}"));
+
+        // One loser at a time, not batched: a second loser's row must see the first loser's
+        // row already settled onto the survivor, otherwise two different losers both claiming
+        // the same (survivor, secondary-key) pair in one UPDATE would hit a primary-key
+        // violation (e.g. a 3-way auto-merge where two losers both have an "eth0" row).
+        foreach (string loser in losers)
+        {
+            await using (NpgsqlCommand moveCmd = conn.CreateCommand())
+            {
+                moveCmd.Transaction = tx;
+                moveCmd.CommandText = $"""
+                    UPDATE {table}
+                    SET {deviceCol} = $2
+                    WHERE {deviceCol} = $1
+                      AND NOT EXISTS (
+                          SELECT 1 FROM {table} s
+                          WHERE s.{deviceCol} = $2{existsSecondaryMatch}
+                      )
+                    """;
+                moveCmd.Parameters.Add(Param.Text(loser));
+                moveCmd.Parameters.Add(Param.Text(survivor));
+                await moveCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            if (dataCols.Length > 0)
+            {
+                await using NpgsqlCommand overwriteCmd = conn.CreateCommand();
+                overwriteCmd.Transaction = tx;
+                overwriteCmd.CommandText = $"""
+                    UPDATE {table} AS tgt
+                    SET {setClause}, updated_at = src.updated_at
+                    FROM {table} AS src
+                    WHERE tgt.{deviceCol} = $2
+                      AND src.{deviceCol} = $1
+                      {joinSecondaryMatch}
+                      AND src.updated_at > tgt.updated_at
+                    """;
+                overwriteCmd.Parameters.Add(Param.Text(loser));
+                overwriteCmd.Parameters.Add(Param.Text(survivor));
+                await overwriteCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            await using (NpgsqlCommand deleteCmd = conn.CreateCommand())
+            {
+                deleteCmd.Transaction = tx;
+                deleteCmd.CommandText = $"DELETE FROM {table} WHERE {deviceCol} = $1";
+                deleteCmd.Parameters.Add(Param.Text(loser));
+                await deleteCmd.ExecuteNonQueryAsync(ct);
+            }
+        }
     }
 
     private static async Task<string> FindOldestDeviceIdAsync(
