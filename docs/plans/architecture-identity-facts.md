@@ -318,3 +318,90 @@ get rid of projection tables that are no longer being used").**
 5. No behavior change observable in reports or the operator-facts write gate.
 6. After Phase 4, no `proj_*` table exists without at least one non-materializer reader,
    and the audit method is documented so it re-runs when reports change.
+
+## 10. Promotion completeness — all discovered facts, not a curated subset
+
+> **Directive (Boss, 2026-07-16):** "if we're going to surface a device, all its data needs
+> to be surfaced. but a device shouldn't be surfaced if it can't be fingerprinted. we still
+> believe an obscured mac is unique, so it existed. the problem was, not all the facts about
+> it were also promoted. when something is promoted, all its facts need to be promoted from
+> the device that sees it." Folds the standalone "device shows a name not in its facts" bug
+> (device `bde0832f`, "Lappy.local") into this plan.
+
+### 10.1 The gap (verified this session)
+
+A device promoted purely from discovery legitimately exists — its obscured-MAC is a unique
+fingerprint (`device_fingerprints`), so surfacing it is correct. What's wrong is *incomplete*
+promotion:
+
+- Promotion writes **projection rows via direct SQL** — `DiscoveryMaterializer`'s
+  `ResolveAndPromoteAsync` / `MaterializeDiscoveredSourceAsync` / `MaterializePromotionGapsAsync`
+  call `UpsertDeviceSystem.sql` / `UpsertDeviceSummary.sql` / `UpsertDeviceHardware.sql`. **None
+  of them writes `facts_history`.** So a discovered device's **All Facts tab is empty** even when
+  its summary/tabs render a name, and the displayed name has no provenance trail (it lives under
+  the *observer's* `Device[observer].Discovered[ip]` subtree, not under the promoted device).
+- Only a **hand-picked subset** of columns moves (`hostname`, `friendly_name`, `model`,
+  `device_type`→`kind`, `vendor`, `os`). Any other intrinsic the observer knows is dropped.
+  (For `bde0832f` the observer — a Google Wifi AP — happened to know only the obscured MAC +
+  `hostname`, so the visible symptom was just the empty All Facts tab; a richer observer would
+  drop more.)
+
+### 10.2 What "all its facts" means
+
+The observer's `Device[observer].Discovered[ip].*` subtree already separates **intrinsic device
+attributes** from **the sighting/Link edge** (AGENTS.md, "Google Wifi collector"). Promotion must
+carry over the **intrinsic** set only:
+
+- **Promote:** `Hostname`, `FriendlyName`, `Model`, `DeviceType`, `Vendor`, `Os`, the advertised
+  `Service[]` names, and every identity signal this plan moves to `proj_identity_facts`
+  (`OnvifSerial`, `SnmpSerial`, `SsdpUuid`, `CastId`, … — §3's moving set).
+- **Never promote:** `Discovered[].Link.*` (SignalDbm, Tx/RxRate, Rx/TxBytes, Band, Medium,
+  Guest, ConnectedSeconds). These are properties of *the observation*, not the device, and stay
+  on the observer's row (rendered on the device's "Seen By" tab).
+
+### 10.3 Why this belongs in this plan
+
+Once intrinsic identity signals are **fact-shaped** in `proj_identity_facts` (keyed
+`(device, entity_key, attribute_path)`), "promote all facts" stops being a hand-maintained
+column list and becomes a **uniform re-emit**: for the promoted device, iterate the observer's
+`Discovered[ip]` intrinsic rows and re-emit each as a `Device[promotedDeviceId].<attr>` fact.
+This deletes the curated-subset failure mode by construction — the same reason the plan replaces
+per-signal columns with a path set. The wide `proj_discovered` intrinsics that stay (hostname,
+friendly_name, vendor, model — §2) are re-emitted alongside from their known paths.
+
+### 10.4 Approach
+
+Promotion **emits the intrinsic facts through the ingest path** (into `facts_history`, then the
+normal projection router) under the promoted device, rather than writing `proj_*` directly:
+
+- **Provenance:** each emitted fact carries `source_name` = the observing collector (e.g.
+  `google-wifi`). The promoted name then *is* a real, attributed fact in the All Facts tab —
+  directly resolving the "name not in its facts" report — instead of an untraceable projection
+  write.
+- **Idempotency:** re-emitting every materializer cycle must be a no-op when unchanged. Server
+  emission has no agent delta-tracker, so gate on change (facts_history dedup-on-write +
+  `GenericProjection`'s EntityStateCache already absorb identical re-emits; confirm the promoted
+  path hits both).
+- **No re-derivation loop:** emitted facts are `Device[deviceId].*` (not
+  `Device[observer].Discovered[]`), so they are never themselves re-observed and re-promoted.
+- **Fingerprint gate unchanged:** still mint/surface a device only from a valid fingerprint
+  (obscured-MAC counts; a lone locally-administered/randomized real MAC does not).
+- The COALESCE-precedence rule is unchanged: an authoritative agent-reported fact for the same
+  device+path always wins over a promoted discovered value (promotion fills gaps, never clobbers).
+
+### 10.5 Obligations and acceptance criteria (additive to §6, §9)
+
+7. A discovered-only device's `facts_history` contains **every** intrinsic fact the observer
+   reported for it (minus `Link.*`), with `source_name` = the observing collector — asserted by
+   an integration test that seeds an observer `Discovered[ip]` subtree, promotes, and diffs the
+   promoted device's fact set against the observer's intrinsic set.
+8. The promoted device's All Facts tab is non-empty whenever the observer knew any intrinsic
+   about it; the displayed name resolves to a real fact with a collector source.
+9. `Link.*` sighting telemetry never appears under the promoted device (only on the observer's
+   "Seen By" row).
+
+### 10.6 Sequencing
+
+Runs as **Phase 5**, after the intrinsic identity signals are fact-shaped (Phases 1–3) so the
+re-emit iterates `proj_identity_facts` + the surviving wide intrinsics uniformly. It is not a
+prerequisite for Phases 1–4 and does not change their acceptance criteria.
