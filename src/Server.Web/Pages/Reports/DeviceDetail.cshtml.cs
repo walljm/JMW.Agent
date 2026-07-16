@@ -105,10 +105,16 @@ public sealed class DeviceDetailModel : PageModel
     public IReadOnlyList<DeviceSectionGroup> NavGroups { get; private set; } = [];
 
     /// <summary>
-    /// Section the page opens on: Hardware for managed, Discovery Sources for discovered,
-    /// falling back to the first populated section. Overridden by a valid <c>?tab=</c> in the browser.
+    /// Section the page opens on: History when there's an open incident (the most
+    /// judgment-relevant fact on the page), else Hardware for managed / Discovery Sources for
+    /// discovered, falling back to the first populated section. Overridden by a valid <c>?tab=</c>
+    /// in the browser.
     /// </summary>
     public string DefaultSection { get; private set; } = "allfacts";
+
+    /// <summary>Open (unresolved) incidents from History — the page's single "is something
+    /// currently wrong" signal, surfaced in the identity header and the History nav badge.</summary>
+    public int OpenIncidentCount { get; private set; }
 
     public async Task<IActionResult> OnGetAsync(string id, string? from, CancellationToken ct)
     {
@@ -468,6 +474,7 @@ public sealed class DeviceDetailModel : PageModel
             .Select(row => (row.AttributePath, row.Value))
             .ToList();
 
+        OpenIncidentCount = History.Data.Count(h => h.Kind == "open");
         BuildNav();
 
         return Page();
@@ -496,7 +503,9 @@ public sealed class DeviceDetailModel : PageModel
     private void BuildNav()
     {
         // Built-in sections: (id, label, group, hasData, count?). Count is null for single-record
-        // sheets (System, Hardware, BACnet) where a chip would be meaningless.
+        // sheets (Hardware, BACnet) where a chip would be meaningless. There's no standalone
+        // "System" section — Hostname/OS are already in the identity header, so that used to be
+        // a near-duplicate tab; its one bit of unique info (fact freshness) moved to the OS row.
         (string Id, string Label, FactViewGroup Group, bool Show, int? Count)[] builtins =
         [
             ("history", "History", FactViewGroup.History, true, History.Data.Count),
@@ -509,7 +518,6 @@ public sealed class DeviceDetailModel : PageModel
             ("advertised", "Advertised Services", FactViewGroup.Network, AdvertisedServices.Data.Count > 0,
                 AdvertisedServices.Data.Count),
             ("sightings", "Seen By", FactViewGroup.Network, Sightings.Data.Count > 0, Sightings.Data.Count),
-            ("system", "System", FactViewGroup.Software, SystemFacts.Data is not null, null),
             ("containers", "Containers", FactViewGroup.Software, Containers.Data.Count > 0, Containers.Data.Count),
             ("sources", "Discovery Sources", FactViewGroup.Discovery, Sources.Data.Count > 0, Sources.Data.Count),
             ("services", "Services", FactViewGroup.Discovery, Services.Data.Count > 0, Services.Data.Count),
@@ -526,7 +534,7 @@ public sealed class DeviceDetailModel : PageModel
             {
                 if (g == group && show)
                 {
-                    items.Add(new DeviceSectionItem(id, itemLabel, count));
+                    items.Add(new DeviceSectionItem(id, itemLabel, count, id == "history" && OpenIncidentCount > 0));
                 }
             }
 
@@ -548,8 +556,11 @@ public sealed class DeviceDetailModel : PageModel
 
         NavGroups = groups;
 
-        // Preferred landing section by management status, falling back to the first populated one.
-        string preferred = ManagementStatus == "managed" ? "hardware" : "sources";
+        // An open incident is the most judgment-relevant thing on the page, so it wins the
+        // landing slot outright. Otherwise fall back to management status, then the first
+        // populated section.
+        string preferred = OpenIncidentCount > 0 ? "history"
+            : ManagementStatus == "managed" ? "hardware" : "sources";
         DefaultSection = flatIds.Contains(preferred) ? preferred
             : flatIds.Count > 0 ? flatIds[0]
             : "allfacts";
@@ -770,8 +781,10 @@ public sealed record DeviceSectionGroup(string Label, IReadOnlyList<DeviceSectio
 /// <summary>
 /// One clickable section in the device detail nav. <paramref name="Count" /> is the
 /// row count for multi-row sections (rendered as a chip) and null for single-record sheets.
+/// <paramref name="Attention" /> flags the chip as needing attention (e.g. History with an
+/// open incident) so it renders in the crit color instead of the neutral default.
 /// </summary>
-public sealed record DeviceSectionItem(string Id, string Label, int? Count);
+public sealed record DeviceSectionItem(string Id, string Label, int? Count, bool Attention = false);
 
 /// <summary>One observer's view of this device (an observer↔neighbor sighting).</summary>
 public sealed record SightingRow(

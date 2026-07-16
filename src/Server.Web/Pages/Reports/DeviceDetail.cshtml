@@ -36,6 +36,13 @@
                 {
                     <span class="badge-discovered">discovered</span>
                 }
+                @if (Model.OpenIncidentCount > 0)
+                {
+                    <a class="status crit" href="#" onclick="switchTab('history'); return false;"
+                       title="Jump to History">
+                        @Model.OpenIncidentCount open incident@(Model.OpenIncidentCount == 1 ? "" : "s")
+                    </a>
+                }
             </div>
             <dl class="kv" style="margin-top:var(--space-3)">
                 <dt>UUID</dt>
@@ -61,12 +68,20 @@
                     {
                         <span class="text-dim"> (inferred)</span>
                     }
+                    @if (Model.SystemFacts.Error is null && Model.SystemFacts.Data is { } sf)
+                    {
+                        <span class="text-dim" title="@ViewFormat.IsoUtc(sf.UpdatedAt)"> · updated @ViewFormat.RelativeTime(sf.UpdatedAt)</span>
+                    }
                 </dd>
                 <dt>Last Seen</dt>
                 <dd>
                     @if (Model.LastSeen.HasValue)
                     {
                         <time data-utc="@ViewFormat.IsoUtc(Model.LastSeen.Value)">@Model.LastSeen.Value.ToString("yyyy-MM-dd HH:mm") UTC</time>
+                        @if (Model.LastSeen.Value < DateTime.UtcNow.AddDays(-DashboardModel.NotSeenDays))
+                        {
+                            <span class="status warn" style="margin-left:var(--space-2)">stale</span>
+                        }
                     }
                     else
                     {
@@ -75,35 +90,30 @@
                 </dd>
             </dl>
         </div>
-        @if (Model.Interfaces.Data.Count > 0 || Model.Ports.Data.Count > 0 || Model.Services.Data.Count > 0)
+        @{
+            (string Tab, string Label, int Count)[] atGlance =
+            [
+                ("interfaces", "Interfaces", Model.Interfaces.Data.Count),
+                ("ports", "Open Ports", Model.Ports.Data.Count),
+                ("disks", "Disks", Model.Disks.Data.Count),
+                ("containers", "Containers", Model.Containers.Data.Count),
+                ("services", "Services", Model.Services.Data.Count),
+            ];
+        }
+        @if (atGlance.Any(s => s.Count > 0))
         {
             <div class="identity-stats stat-row">
-                @if (Model.Interfaces.Data.Count > 0)
+                @foreach ((string tab, string label, int count) in atGlance)
                 {
-                    <div class="stat">
-                        <a class="stat-head" href="#" onclick="switchTab('interfaces'); return false;">
-                            <div class="label">Interfaces</div>
-                            <div class="value">@Model.Interfaces.Data.Count</div>
-                        </a>
-                    </div>
-                }
-                @if (Model.Ports.Data.Count > 0)
-                {
-                    <div class="stat">
-                        <a class="stat-head" href="#" onclick="switchTab('ports'); return false;">
-                            <div class="label">Open Ports</div>
-                            <div class="value">@Model.Ports.Data.Count</div>
-                        </a>
-                    </div>
-                }
-                @if (Model.Services.Data.Count > 0)
-                {
-                    <div class="stat">
-                        <a class="stat-head" href="#" onclick="switchTab('services'); return false;">
-                            <div class="label">Services</div>
-                            <div class="value">@Model.Services.Data.Count</div>
-                        </a>
-                    </div>
+                    @if (count > 0)
+                    {
+                        <div class="stat">
+                            <a class="stat-head" href="#" onclick="switchTab('@tab'); return false;">
+                                <div class="label">@label</div>
+                                <div class="value">@count</div>
+                            </a>
+                        </div>
+                    }
                 }
             </div>
         }
@@ -117,7 +127,20 @@
             @foreach (DeviceSectionGroup navGroup in Model.NavGroups)
             {
                 <div class="section-nav-group">
-                    <span class="group-label eyebrow">@navGroup.Label</span>
+                    @if (navGroup.Items.Count > 1)
+                    {
+                        <button type="button" class="group-label-btn eyebrow"
+                                data-panels="@string.Join(",", navGroup.Items.Select(i => i.Id))"
+                                data-group-label="@navGroup.Label"
+                                title="View all @navGroup.Label sections together">
+                            @navGroup.Label
+                            <span class="group-label-all">View all</span>
+                        </button>
+                    }
+                    else
+                    {
+                        <span class="group-label eyebrow">@navGroup.Label</span>
+                    }
                     @foreach (DeviceSectionItem item in navGroup.Items)
                     {
                         <button type="button" class="section-nav-item" role="tab" aria-selected="false"
@@ -125,7 +148,7 @@
                             <span class="section-nav-label">@item.Label</span>
                             @if (item.Count is { } count)
                             {
-                                <span class="section-nav-count">@count</span>
+                                <span class="section-nav-count@(item.Attention ? " attn" : "")">@count</span>
                             }
                         </button>
                     }
@@ -278,31 +301,6 @@
                 }
             </div>
 
-            <div class="tabpanel" role="tabpanel" data-panel="system" hidden>
-                <partial name="_SectionError" model="Model.SystemFacts.Error"/>
-                @if (Model.SystemFacts.Error is null)
-                {
-                    @if (Model.SystemFacts.Data is null)
-                    {
-                        <div class="empty">No system facts for this device.</div>
-                    }
-                    else
-                    {
-                        SystemFacts? s = Model.SystemFacts.Data;
-                        <dl class="kv">
-                            <dt>Hostname</dt>
-                            <dd>@(s.Hostname ?? "—")</dd>
-                            <dt>OS</dt>
-                            <dd>@(s.OsDistro ?? s.OsFamily ?? "—")</dd>
-                        </dl>
-                        <p class="prose text-dim" style="margin-top:var(--space-3)">
-                            OS version, kernel, timezone, boot time, and live resource usage are
-                            under "OS Details" / "Resource Usage" in the Software section.
-                        </p>
-                    }
-                }
-            </div>
-
             <div class="tabpanel" role="tabpanel" data-panel="hardware" hidden>
                 <partial name="_SectionError" model="Model.HardwareFacts.Error"/>
                 @if (Model.HardwareFacts.Error is null)
@@ -331,6 +329,8 @@
                             <dd>@(h.BiosVersion ?? "—")</dd>
                             <dt>Virtualization</dt>
                             <dd>@(h.Virtualization ?? "—")</dd>
+                            <dt>Updated</dt>
+                            <dd class="text-dim" title="@ViewFormat.IsoUtc(h.UpdatedAt)">@ViewFormat.RelativeTime(h.UpdatedAt)</dd>
                         </dl>
                     }
                 }
@@ -381,7 +381,7 @@
                                     <tr>
                                         <td>@(i.Name ?? "—")</td>
                                         <td class="mono">@(i.Ipv4 ?? "—")</td>
-                                        <td class="mono">@(i.Ipv6 ?? "—")</td>
+                                        <td class="mono cell-truncate" title="@i.Ipv6">@(i.Ipv6 ?? "—")</td>
                                         <td class="mono">
                                             @if (!string.IsNullOrEmpty(i.MacAddress))
                                             {
@@ -396,7 +396,8 @@
                                                 @:—
                                             }
                                         </td>
-                                        <td class="text-dim">@ViewFormat.FormatOui(i.Oui, i.OuiCountry)</td>
+                                        @{ string ouiText = ViewFormat.FormatOui(i.Oui, i.OuiCountry); }
+                                        <td class="text-dim cell-truncate" title="@ouiText">@ouiText</td>
                                         <td><span class="mac-flag @flag.Css" title="@flag.Title">@flag.Label</span></td>
                                         <td>@(i.Mtu?.ToString() ?? "—")</td>
                                         <td>@(i.Up == true ? "up" : i.Up == false ? "down" : "—")</td>
@@ -544,6 +545,10 @@
                     }
                     else
                     {
+                        <p class="prose text-dim" style="margin-bottom:var(--space-3)">
+                            Ports this device is actively listening on, with the owning process.
+                            For services it broadcasts on the network, see Advertised Services.
+                        </p>
                         <div class="detail-table-scroll">
                             <table class="data">
                                 <thead>
@@ -582,6 +587,10 @@
                     }
                     else
                     {
+                        <p class="prose text-dim" style="margin-bottom:var(--space-3)">
+                            Per-component hardware inventory (each part individually). For a
+                            CPU/memory/system-level summary, see the Hardware tab.
+                        </p>
                         <div class="detail-table-scroll">
                             <table class="data">
                                 <thead>
@@ -937,8 +946,22 @@
                 return t.getAttribute('data-tab');
             });
 
+        // Clears whatever showGroup() left behind (injected headings, group-view layout,
+        // active state on the group button) so a normal single-tab switch starts clean.
+        function clearGroupView() {
+            document.querySelectorAll('.group-label-btn').forEach(function (b) {
+                b.classList.remove('active');
+            });
+            document.querySelectorAll('.tabpanel-heading').forEach(function (h) {
+                h.remove();
+            });
+            var panels = document.querySelector('.section-panels');
+            if (panels) panels.classList.remove('group-view');
+        }
+
         function switchTab(target) {
             if (TABS.indexOf(target) < 0) target = TABS[0];
+            clearGroupView();
             document.querySelectorAll('.section-nav-item').forEach(function (t) {
                 var active = t.getAttribute('data-tab') === target;
                 t.classList.toggle('active', active);
@@ -958,6 +981,49 @@
             });
         });
 
+        // "View all" on a group label shows every section in that group stacked together
+        // (scrollable), instead of one tab at a time — for correlating facts across e.g.
+        // Interfaces/Ports/Advertised Services/Seen By without clicking back and forth.
+        // Panel headings are injected here rather than server-rendered, since they're
+        // redundant with (and would duplicate) the nav highlighting in normal single-tab mode.
+        function showGroup(btn) {
+            var panelIds = btn.getAttribute('data-panels').split(',');
+            document.querySelectorAll('.tabpanel-heading').forEach(function (h) {
+                h.remove();
+            });
+            document.querySelectorAll('.section-nav-item').forEach(function (t) {
+                t.classList.remove('active');
+                t.setAttribute('aria-selected', 'false');
+            });
+            document.querySelectorAll('.group-label-btn').forEach(function (b) {
+                b.classList.toggle('active', b === btn);
+            });
+            document.querySelectorAll('.tabpanel').forEach(function (panel) {
+                var id = panel.getAttribute('data-panel');
+                var show = panelIds.indexOf(id) !== -1;
+                panel.hidden = !show;
+                if (show) {
+                    var navItem = document.querySelector('.section-nav-item[data-tab="' + id + '"]');
+                    var label = navItem ? navItem.querySelector('.section-nav-label').textContent : id;
+                    var heading = document.createElement('div');
+                    heading.className = 'tabpanel-heading';
+                    heading.textContent = label;
+                    panel.prepend(heading);
+                }
+            });
+            var sectionPanels = document.querySelector('.section-panels');
+            if (sectionPanels) sectionPanels.classList.add('group-view');
+            var url = new URL(location.href);
+            url.searchParams.set('tab', 'group:' + btn.getAttribute('data-group-label'));
+            history.replaceState(null, '', url);
+        }
+
+        document.querySelectorAll('.group-label-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                showGroup(btn);
+            });
+        });
+
         // All Facts tab's Collector filter — client-side, since every fact is already
         // loaded (this tab has no pagination) rather than a server round-trip. A row's
         // data-source is comma-joined when the fact was merged across multiple observers/
@@ -974,6 +1040,14 @@
             // Server picks the landing section by management status; ?tab= overrides it.
             var fallback = (NAV && NAV.getAttribute('data-default')) || TABS[0];
             var tab = new URLSearchParams(location.search).get('tab');
+            if (tab && tab.indexOf('group:') === 0) {
+                var groupBtn = document.querySelector(
+                    '.group-label-btn[data-group-label="' + CSS.escape(tab.slice('group:'.length)) + '"]');
+                if (groupBtn) {
+                    showGroup(groupBtn);
+                    return;
+                }
+            }
             switchTab(TABS.indexOf(tab) >= 0 ? tab : fallback);
         });
 

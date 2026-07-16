@@ -550,6 +550,14 @@ table.data tbody td {
     white-space: nowrap;
 }
 
+/* For fixed-width columns whose content can run long (vendor names, IPv6 addresses):
+   ellipsize instead of bleeding into the next column. Pair with a title attribute for
+   the full value on hover. */
+.cell-truncate {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* Numeric columns right-align so magnitudes line up on the ones digit */
 table.data th.num,
 table.data td.num {
@@ -989,6 +997,40 @@ table.data tbody tr.row-warn td:first-child {
     padding: 0 var(--space-3) var(--space-2);
 }
 
+/* Clickable variant of .group-label for groups with >1 section — lets an operator view every
+   section in the group stacked together (see showGroup() in DeviceDetail.cshtml) instead of
+   clicking through them one at a time. "View all" stays subtle until hovered/active so it
+   doesn't compete with the group label at rest. */
+.group-label-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 0 var(--space-3) var(--space-2);
+    margin: 0;
+    font-family: var(--font-sans);
+    cursor: pointer;
+}
+
+.group-label-btn:hover,
+.group-label-btn.active {
+    color: var(--accent);
+}
+
+.group-label-all {
+    text-transform: none;
+    letter-spacing: normal;
+    opacity: 0;
+}
+
+.group-label-btn:hover .group-label-all,
+.group-label-btn.active .group-label-all {
+    opacity: 1;
+}
+
 .section-nav-item {
     display: flex;
     align-items: center;
@@ -1037,6 +1079,17 @@ table.data tbody tr.row-warn td:first-child {
     color: var(--accent);
 }
 
+/* Flags a nav chip as needing attention (e.g. History with an open incident) instead of
+   the neutral gray every other chip uses. */
+.section-nav-count.attn {
+    background: var(--crit-bg);
+    color: var(--crit);
+}
+
+.section-nav-item.active .section-nav-count.attn {
+    color: var(--crit);
+}
+
 /* The panel column must be allowed to shrink so wide tables scroll inside their own
    .detail-table-scroll rather than stretching the grid track. It's also a flex column so
    the one visible (non-[hidden]) .tabpanel can grow to fill the full row height. */
@@ -1068,6 +1121,34 @@ table.data tbody tr.row-warn td:first-child {
     max-height: none;
 }
 
+/* "View all" mode (showGroup() in DeviceDetail.cshtml): several panels are visible at once,
+   stacked and block-scrolled, instead of one panel flexing to fill the height. Each panel's
+   table is height-capped rather than height-filling since there are several to a screen, and
+   gets an injected heading since the nav highlighting that IDs the active panel in single-tab
+   mode doesn't apply when nothing in the nav is "active". */
+.section-panels.group-view {
+    display: block;
+    overflow-y: auto;
+}
+
+.section-panels.group-view .tabpanel:not([hidden]) {
+    display: block;
+    flex: none;
+    overflow: visible;
+    margin-bottom: var(--space-6);
+}
+
+.section-panels.group-view .tabpanel:not([hidden]) .detail-table-scroll {
+    flex: none;
+    max-height: 50vh;
+}
+
+.tabpanel-heading {
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-bold);
+    margin-bottom: var(--space-3);
+}
+
 @media (max-width: 960px) {
     /* Below 960px the nav collapses to a wrapping horizontal strip above the panel, so the
        fixed-height fill layout no longer applies — let the page scroll normally instead. */
@@ -1093,6 +1174,12 @@ table.data tbody tr.row-warn td:first-child {
     }
 
     .section-nav-group > .group-label {
+        display: none;
+    }
+
+    /* "View all" assumes the grouped-rail layout; below 960px nav is a flat wrapping strip
+       with no group context, so hide the affordance rather than support it there too. */
+    .group-label-btn {
         display: none;
     }
 
