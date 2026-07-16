@@ -405,3 +405,51 @@ normal projection router) under the promoted device, rather than writing `proj_*
 Runs as **Phase 5**, after the intrinsic identity signals are fact-shaped (Phases 1–3) so the
 re-emit iterates `proj_identity_facts` + the surviving wide intrinsics uniformly. It is not a
 prerequisite for Phases 1–4 and does not change their acceptance criteria.
+
+### 10.7 Open question — promoted-fact precedence vs the last-write-wins projection (UNSETTLED)
+
+> **Status (2026-07-16):** Flagged during review, **not yet resolved**. §10.4 asserts "promotion
+> fills gaps, never clobbers" as if it were free. It is not — that guarantee is currently a
+> property of the *direct-upsert* path only, and does **not** survive re-emitting through the
+> normal ingest pipeline without extra work. Resolve this before implementing Phase 5.
+
+The two write paths have **opposite precedence**, and the emit-facts approach silently swaps one
+for the other:
+
+| Path | `ON CONFLICT` rule | Effect |
+|---|---|---|
+| Promotion today (`Data/Discovery/UpsertDevice{Summary,Hardware,System}.sql`) | `COALESCE(existing, EXCLUDED)` | **fill-only / first-write-wins** — an already-set value is never overwritten |
+| Normal pipeline (`Ingest/Projections/GenericProjection.cs` `BuildSql`) | `COALESCE(EXCLUDED, table)` | **last-write-wins** — newest non-null routed value wins |
+
+`RoutedFact` (`Ingest/Projections/ProjectionRouter.cs`) carries only `DimensionKeys, Attribute,
+Value, CollectedAt` — **no source**, and the value overwrite ignores `collected_at` (that only
+feeds `GREATEST(updated_at)`). So there is no precedence layer between the router and the
+projection: whatever routes last wins.
+
+**Consequence:** naively re-emitting promoted facts through the ingest path *inverts* today's
+guard. A low-confidence promoted value (OS from an HTTP fingerprint, vendor from an OUI/model
+guess) would **clobber** an authoritative agent-reported value on any cycle where the promotion
+routes after the agent's report — the exact opposite of §10.4.
+
+**Scope of the risk (narrow but real):** only a device observed by *both* an agent and discovery,
+*and* only when the two disagree. Discovered-only devices have nothing to clobber; identical
+values are harmless.
+
+**Options to actually honor §10.4:**
+
+- **(a) Split the emit by confidence (preferred).** Emit high-confidence intrinsics (hostname,
+  friendly_name, model, device_type→kind, service names, identity signals) to their **canonical**
+  paths; emit soft inferences (vendor, os) to the **existing** `*_guess` paths
+  (`FactPaths.Derived.DeviceVendorGuess`, `DeviceOsGuess`). Reporting already coalesces canonical >
+  guess, and last-write-wins *among guesses* is fine. Minimal, and reuses the guess/canonical
+  split the codebase already has. Note the model→vendor derivations shipped 2026-07-16 already
+  route this way: a device's own SMBIOS model → `DeviceVendorGuess`; a discovered neighbor's model
+  → `DiscoveredVendor` (promoted, fill-only). So (a) is already the de-facto pattern.
+- **(b) Per-column source precedence in the projection** (agent > promotion regardless of order).
+  Heavier: adds a source to `RoutedFact` and a precedence check to every projection's `ON CONFLICT`.
+- **(c) A fill-only projection mode** for a dedicated "promotion" source.
+
+**Decision: DEFERRED.** Until Phase 5 is scheduled, promotion keeps its direct fill-only upserts
+(correct precedence, but `facts_history` stays incomplete and the All Facts tab stays empty for
+discovered-only devices — the original §10.1 gap). Do **not** ship the emit-facts change until one
+of (a)/(b)/(c) is chosen, or the "never clobbers" guarantee is knowingly dropped.

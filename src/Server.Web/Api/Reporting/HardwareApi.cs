@@ -13,11 +13,18 @@ public static class HardwareApi
     public const int DefaultLimit = 100;
     public const int MaxLimit = 500;
 
+    // Hardware page vendor: the device's own DMI/SMBIOS vendor first, else the unified device
+    // vendor (proj_devices.vendor) or its inferred guess. proj_hardware.system_vendor is reserved
+    // for the agent/dmidecode path, so a discovered/derived vendor (e.g. model→vendor for a
+    // Google Wifi station) lands only in proj_devices — coalescing here surfaces it on this page.
+    private const string VendorExpr =
+        "COALESCE(NULLIF(h.system_vendor, ''), NULLIF(pd.vendor, ''), NULLIF(pd.vendor_guess, ''))";
+
     private static readonly Dictionary<string, string> SortExpressions =
         new(StringComparer.Ordinal)
         {
             ["hostname"] = "coalesce(s.hostname, '')",
-            ["vendor"] = "coalesce(h.system_vendor, '')",
+            ["vendor"] = VendorExpr,
             ["cpu"] = "coalesce(h.cpu_model, '')",
         };
 
@@ -71,18 +78,19 @@ public static class HardwareApi
 
         string sql = $"""
             SELECT
-                h.device, s.hostname, h.system_vendor, h.system_model, h.system_serial,
+                h.device, s.hostname, {VendorExpr} AS system_vendor, h.system_model, h.system_serial,
                 h.bios_version, h.virtualization, h.cpu_model, h.cpu_vendor, h.cpu_cores,
                 h.cpu_logical_cores, h.cpu_mhz, h.total_mem_bytes, disks.total_bytes,
                 {sortKeyCol} AS sort_key,
                 COALESCE(s.friendly_name, s.hostname) AS friendly_name
             FROM proj_hardware h
                 LEFT JOIN proj_systems s ON s.device = h.device
+                LEFT JOIN proj_devices pd ON pd.device = h.device
                 LEFT JOIN LATERAL (
                     SELECT SUM(d.size_bytes) AS total_bytes FROM proj_disks d WHERE d.device = h.device
                 ) disks ON TRUE
             WHERE ($1::text IS NULL OR COALESCE(s.hostname, '') ILIKE '%' || $1 || '%'
-                    OR COALESCE(h.system_vendor, '') ILIKE '%' || $1 || '%'
+                    OR {VendorExpr} ILIKE '%' || $1 || '%'
                     OR COALESCE(h.system_model, '') ILIKE '%' || $1 || '%'
                     OR COALESCE(h.cpu_model, '') ILIKE '%' || $1 || '%')
               AND ($2::text IS NULL OR (({sortKeyCol}, h.device) {cmp} ($2, $3)))

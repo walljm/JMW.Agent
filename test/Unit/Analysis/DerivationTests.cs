@@ -574,7 +574,7 @@ public sealed class DerivationTests
         Assert.Empty(d.Derive(facts));
     }
 
-    // ── VendorFromModelPrefixDerivation ─────────────────────────────────────────
+    // ── VendorFromModelDerivation ───────────────────────────────────────────────
 
     [Theory]
     [InlineData("ThinkPad X1 Carbon Gen 10", "Lenovo")]
@@ -591,12 +591,14 @@ public sealed class DerivationTests
     [InlineData("iPad Air", "Apple")]
     [InlineData("MacBookPro18,3", "Apple")]
     [InlineData("iMac21,2", "Apple")]
+    [InlineData("Mac15,10", "Apple")] // bare Apple model identifier (Mac Studio / notebook)
+    [InlineData("Mac15,3", "Apple")]
     [InlineData("Surface Pro 9", "Microsoft")]
     [InlineData("ROG Strix G15", "ASUS")]
     [InlineData("ZenBook 14X", "ASUS")]
-    public void VendorFromModelPrefix_HwSystemModel_KnownPrefix_ProducesGuess(string model, string vendor)
+    public void VendorFromModel_HwSystemModel_Known_ProducesGuess(string model, string vendor)
     {
-        VendorFromModelPrefixDerivation d = new();
+        VendorFromModelDerivation d = new();
         Fact[] facts = [Fact.Create($"Device[{Dev}].Hardware.SystemModel", model, T)];
 
         IReadOnlyList<Fact> results = d.Derive(facts);
@@ -608,31 +610,33 @@ public sealed class DerivationTests
     }
 
     [Fact]
-    public void VendorFromModelPrefix_DiscoveredModel_KnownPrefix_ProducesGuess()
+    public void VendorFromModel_Contains_MidStringToken_Matches()
     {
-        VendorFromModelPrefixDerivation d = new();
-        Fact[] facts = [Fact.Create($"Device[{Dev}].Discovered[192.168.1.50].Model", "Galaxy S23", T)];
+        // Contains (not StartsWith): a vendor-prefixed SMBIOS string still resolves the model
+        // line sitting mid-string. "OptiPlex" is not at the start here.
+        VendorFromModelDerivation d = new();
+        Fact[] facts = [Fact.Create($"Device[{Dev}].Hardware.SystemModel", "Dell Inc. OptiPlex 7090", T)];
 
         IReadOnlyList<Fact> results = d.Derive(facts);
-
         Assert.Single(results);
-        Assert.Equal("Samsung", results[0].Value.AsString());
+        Assert.Equal("Dell", results[0].Value.AsString());
     }
 
     [Fact]
-    public void VendorFromModelPrefix_MustBeAtStart_NotJustContained()
+    public void VendorFromModel_DiscoveredModel_NotHandledHere()
     {
-        VendorFromModelPrefixDerivation d = new();
-        // "Surface" appears mid-string, not as a prefix — must not match.
-        Fact[] facts = [Fact.Create($"Device[{Dev}].Hardware.SystemModel", "Generic Surface-Mount Board", T)];
+        // A discovered neighbor's model is VendorFromDiscoveredModelDerivation's job (it scopes the
+        // vendor to the station); this derivation only reads the device's own SMBIOS model.
+        VendorFromModelDerivation d = new();
+        Fact[] facts = [Fact.Create($"Device[{Dev}].Discovered[192.168.1.50].Model", "Galaxy S23", T)];
 
         Assert.Empty(d.Derive(facts));
     }
 
     [Fact]
-    public void VendorFromModelPrefix_CaseInsensitive_StillMatches()
+    public void VendorFromModel_CaseInsensitive_StillMatches()
     {
-        VendorFromModelPrefixDerivation d = new();
+        VendorFromModelDerivation d = new();
         Fact[] facts = [Fact.Create($"Device[{Dev}].Hardware.SystemModel", "thinkpad t14", T)];
 
         IReadOnlyList<Fact> results = d.Derive(facts);
@@ -641,37 +645,89 @@ public sealed class DerivationTests
     }
 
     [Fact]
-    public void VendorFromModelPrefix_UnknownModel_ReturnsEmpty()
+    public void VendorFromModel_UnknownModel_ReturnsEmpty()
     {
-        VendorFromModelPrefixDerivation d = new();
+        VendorFromModelDerivation d = new();
         Fact[] facts = [Fact.Create($"Device[{Dev}].Hardware.SystemModel", "Generic PC", T)];
 
         Assert.Empty(d.Derive(facts));
     }
 
     [Fact]
-    public void VendorFromModelPrefix_NoInputs_ReturnsEmpty()
+    public void VendorFromModel_NoInputs_ReturnsEmpty()
     {
-        VendorFromModelPrefixDerivation d = new();
+        VendorFromModelDerivation d = new();
         Assert.Empty(d.Derive([]));
     }
 
     [Fact]
-    public void VendorFromModelPrefix_WhitespaceOnlyValue_ReturnsEmpty()
+    public void VendorFromModel_WhitespaceOnlyValue_ReturnsEmpty()
     {
-        VendorFromModelPrefixDerivation d = new();
+        VendorFromModelDerivation d = new();
         Fact[] facts = [Fact.Create($"Device[{Dev}].Hardware.SystemModel", "   ", T)];
 
         Assert.Empty(d.Derive(facts));
     }
 
     [Fact]
-    public void VendorFromModelPrefix_UnrelatedFactsOnly_ReturnsEmpty()
+    public void VendorFromModel_UnrelatedFactsOnly_ReturnsEmpty()
     {
-        VendorFromModelPrefixDerivation d = new();
+        VendorFromModelDerivation d = new();
         Fact[] facts = [Fact.Create($"Device[{Dev}].Hardware.SystemVendor", "Dell", T)];
 
         Assert.Empty(d.Derive(facts));
+    }
+
+    // ── VendorFromDiscoveredModelDerivation ─────────────────────────────────────
+
+    [Theory]
+    [InlineData("Nest Audio", "Google")]
+    [InlineData("Google Nest Mini", "Google")] // mid-string token — Contains, not StartsWith
+    [InlineData("Pixel Tablet", "Google")]
+    [InlineData("Mac15,10", "Apple")] // bare Apple model identifier
+    [InlineData("MacBookPro14,2", "Apple")]
+    [InlineData("Galaxy S23", "Samsung")]
+    public void VendorFromDiscoveredModel_KnownModel_ProducesDiscoveredVendor(string model, string vendor)
+    {
+        VendorFromDiscoveredModelDerivation d = new();
+        Fact[] facts = [Fact.Create($"Device[{Dev}].Discovered[192.168.1.50].Model", model, T)];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+
+        Assert.Single(results);
+        Assert.Equal(vendor, results[0].Value.AsString());
+        Assert.Equal($"Device[{Dev}].Discovered[192.168.1.50].Vendor", results[0].Id);
+        Assert.Equal(FactPaths.DiscoveredVendor, results[0].AttributePath);
+    }
+
+    [Fact]
+    public void VendorFromDiscoveredModel_ObservedVendorPresent_ReturnsEmpty()
+    {
+        // An observed UPnP manufacturer always wins over the model-derived vendor.
+        VendorFromDiscoveredModelDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].Discovered[192.168.1.50].Model", "Mac15,10", T),
+            Fact.Create($"Device[{Dev}].Discovered[192.168.1.50].Vendor", "Apple Inc.", T),
+        ];
+
+        Assert.Empty(d.Derive(facts));
+    }
+
+    [Fact]
+    public void VendorFromDiscoveredModel_UnknownModel_ReturnsEmpty()
+    {
+        VendorFromDiscoveredModelDerivation d = new();
+        Fact[] facts = [Fact.Create($"Device[{Dev}].Discovered[192.168.1.50].Model", "Generic Widget", T)];
+
+        Assert.Empty(d.Derive(facts));
+    }
+
+    [Fact]
+    public void VendorFromDiscoveredModel_NoInputs_ReturnsEmpty()
+    {
+        VendorFromDiscoveredModelDerivation d = new();
+        Assert.Empty(d.Derive([]));
     }
 
     // ── VendorFromHostnamePrefixDerivation ──────────────────────────────────────

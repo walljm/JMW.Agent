@@ -397,10 +397,11 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
     public async Task MaterializeAsync_ObscuredMac_NoKnownIp_MintsDeviceOnObscuredMac()
     {
         // The server knows no real MAC for this IP, so the '*' form can't reconstruct
-        // (mac column stays null). But the obscured MAC reveals 11 of 12 nibbles, so it
-        // is a stable anchor in its own right: it mints a device carrying the station's
-        // mDNS hostname, surfacing a host that would otherwise be invisible.
-        await InsertObscuredDiscoveredRowAsync("google-wifi-ap", "192.168.1.61", "aabbccddee0*", "ghost");
+        // (mac column stays null). But the obscured MAC reveals 11 of 12 nibbles and its OUI is
+        // globally-unique (0x3c — not randomized), so it is a stable anchor in its own right: it
+        // mints a device carrying the station's mDNS hostname, surfacing a host that would
+        // otherwise be invisible.
+        await InsertObscuredDiscoveredRowAsync("google-wifi-ap", "192.168.1.61", "3c22fbaabb0*", "ghost");
 
         await _materializer.MaterializeAsync(CancellationToken.None);
 
@@ -410,7 +411,7 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
             )
         );
         Assert.Equal(
-            "aabbccddee0*",
+            "3c22fbaabb0*",
             await ReadScalarAsync(
                 "SELECT obscured_mac FROM proj_discovered WHERE device = 'google-wifi-ap' AND discovered = '192.168.1.61'"
             )
@@ -424,9 +425,35 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
             SELECT s.hostname
             FROM proj_systems s
             JOIN device_fingerprints f ON f.device_id = s.device::uuid
-            WHERE f.fp_type = 'obscured-mac' AND f.fp_value = 'aabbccddee0*'
+            WHERE f.fp_type = 'obscured-mac' AND f.fp_value = '3c22fbaabb0*'
             """
             )
+        );
+    }
+
+    [Fact]
+    public async Task MaterializeAsync_ObscuredMac_LocallyAdministered_MintsNoDevice()
+    {
+        // A randomized Wi-Fi MAC (Apple "Private Wi-Fi Address" etc.) is seen only by its obscured
+        // form, whose OUI carries the locally-administered bit (0x3a → 0x02 set). It is NOT a stable
+        // identity, so it must mint NO device — the sighting is kept as an observation only.
+        // Without this, every MAC rotation spawns a fresh phantom device (the bug that split one
+        // MacBook into two records: real OUI 64:4b:f0 vs randomized 3a:91:b0).
+        await InsertObscuredDiscoveredRowAsync("google-wifi-ap", "192.168.1.62", "3a91b0b6466*", "roaming-laptop");
+
+        await _materializer.MaterializeAsync(CancellationToken.None);
+
+        // The observation is preserved …
+        Assert.Equal(
+            "3a91b0b6466*",
+            await ReadScalarAsync(
+                "SELECT obscured_mac FROM proj_discovered WHERE device = 'google-wifi-ap' AND discovered = '192.168.1.62'"
+            )
+        );
+        // … but no device was minted from the randomized MAC.
+        Assert.Equal(
+            0,
+            await _fixture.CountAsync("device_fingerprints", "fp_type = 'obscured-mac' AND fp_value = '3a91b0b6466*'")
         );
     }
 
