@@ -190,6 +190,12 @@ public sealed class AgentDetailModel : PageModel
     // status cue on each Configuration row.
     public Dictionary<string, CollectorHealthRow> InlineHealth { get; private set; } = new(StringComparer.Ordinal);
 
+    // Per-remote-target health over the same window, keyed by (target, collector_type) —
+    // target is the endpoint for device-scanner stats and label-or-endpoint for service
+    // stats, so the Targets tab looks a row up by endpoint first, then label.
+    public Dictionary<(string Target, string CollectorType), CollectorHealthRow> TargetHealth { get; private set; } =
+        new();
+
     // Global liveness thresholds (read-only display in Settings — no per-agent editor).
     public int LivenessOnlineMultiplier { get; private set; }
     public int LivenessOfflineCeilingSecs { get; private set; }
@@ -376,6 +382,21 @@ public sealed class AgentDetailModel : PageModel
 
             InlineHealth[className] =
                 new CollectorHealthRow(inlineName, h.RunCount ?? 0, h.ErrorCount ?? 0, h.MedianDurationMs, inlineName, h.Kind ?? "collector");
+        }
+
+        // Per-target health over the same window for the Targets tab's inline cue.
+        List<(string? Target, string? CollectorType, int? RunCount, int? ErrorCount, double? MedianDurationMs)>
+            targetHealthRows = await conn.GetTargetHealthSummaryAsync(id, windowStart, null, ct).ToListAsync(ct);
+        foreach ((string? Target, string? CollectorType, int? RunCount, int? ErrorCount, double? MedianDurationMs) t
+                 in targetHealthRows)
+        {
+            if (t.Target is not { } statTarget || t.CollectorType is not { } statType)
+            {
+                continue;
+            }
+
+            TargetHealth[(statTarget, statType)] =
+                new CollectorHealthRow(statTarget, t.RunCount ?? 0, t.ErrorCount ?? 0, t.MedianDurationMs, statTarget, "target");
         }
 
         return Page();

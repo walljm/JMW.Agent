@@ -727,6 +727,7 @@
                             <th>Collector type</th>
                             <th>Credential</th>
                             <th>Enabled</th>
+                            <th>Health <span class="text-dim" style="font-weight:var(--fw-normal)">(last @AgentDetailModel.LookbackHours h)</span></th>
                             <th></th>
                         </tr>
                         </thead>
@@ -744,6 +745,28 @@
                                                onchange="toggleTarget('@t.TargetId')">
                                         <span class="slider"></span>
                                     </label>
+                                </td>
+                                <td>
+                                    @{
+                                        // Device-scanner stats key `target` by endpoint; service stats key
+                                        // it by label-or-endpoint — try both before giving up.
+                                        AgentDetailModel.CollectorHealthRow? th = null;
+                                        if (!Model.TargetHealth.TryGetValue((t.Endpoint, t.CollectorType), out th)
+                                            && t.Label is { } tLabel)
+                                        {
+                                            Model.TargetHealth.TryGetValue((tLabel, t.CollectorType), out th);
+                                        }
+                                    }
+                                    @if (th is { RunCount: > 0 } thh)
+                                    {
+                                        double tr = 100.0 * thh.ErrorCount / thh.RunCount;
+                                        string trc = tr == 0 ? "ok" : tr < 25 ? "warn" : "crit";
+                                        <span class="hcue"><span class="status @trc">@tr.ToString("F0")%</span><span>@thh.RunCount run@(thh.RunCount == 1 ? "" : "s")</span></span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-dim">—</span>
+                                    }
                                 </td>
                                 <td style="display:flex;gap:var(--space-2)">
                                     <button class="btn btn-sm"

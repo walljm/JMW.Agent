@@ -270,6 +270,25 @@ public static partial class AgentQueries
         );
 
     /// <summary>
+    /// Per-remote-target run count, error count, and median duration across the given cycle
+    /// window (null since/until leaves that bound open), for the Targets tab's inline health
+    /// cue. Target is the stat's own key — the endpoint for device-scanner runs, the
+    /// label-or-endpoint for service runs — and CollectorType mirrors targets.collector_type,
+    /// so the pair identifies one configured target row.
+    /// </summary>
+    [DatabaseCommand]
+    public static partial
+        IAsyncEnumerable<(string? Target, string? CollectorType, int? RunCount, int? ErrorCount, double?
+            MedianDurationMs)>
+        GetTargetHealthSummaryAsync(
+            this NpgsqlConnection connection,
+            Guid agentId,
+            DateTimeOffset? since,
+            DateTimeOffset? until,
+            CancellationToken cancellationToken
+        );
+
+    /// <summary>
     /// Agent-level collection health for the Overview "Collection" tile: the most recent cycle
     /// that actually ran a collector/scanner/service probe (any age — heartbeat-only cycles are
     /// excluded, see GetAgentCollectionSummary.sql) plus cycle counts within the rolling window
