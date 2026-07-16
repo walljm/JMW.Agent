@@ -49,6 +49,11 @@ public readonly record struct InUseResult(bool? InUse);
 
 public readonly record struct DiscoveredMacResult(string? Mac);
 
+// Nullable: the ->> extraction is a computed expression, reported nullable in SchemaOnly mode.
+public readonly record struct CollectionKeyResult(string? CollectionKey);
+
+public readonly record struct MetadataIdResult(Guid Id);
+
 public readonly record struct CertsExpiringResult(long? CertsExpiring);
 
 /// <summary>

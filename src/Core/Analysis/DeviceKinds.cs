@@ -77,6 +77,7 @@ public static class DeviceKinds
     public const string Speaker = "speaker";
     public const string Tap = "tap";
     public const string TerminalServer = "terminal-server";
+    public const string Thermostat = "thermostat";
     public const string TimeClock = "time-clock";
     public const string TransparentBridge = "transparent-bridge";
     public const string UcSessionController = "uc-session-controller";
@@ -88,4 +89,32 @@ public static class DeviceKinds
     public const string Vtc = "vtc";
     public const string Waf = "waf";
     public const string WirelessController = "wireless-controller";
+
+    /// <summary>
+    /// Kinds whose devices run embedded firmware rather than a general-purpose, inventoriable
+    /// OS (cameras, thermostats, appliance-class IoT). <see cref="Derivations.FirmwareOsDerivation" />
+    /// emits <see cref="FactPaths.SystemOsFamily" /> = "firmware" for these when no real OS fact
+    /// is present, so reports show "firmware" instead of a blank OS. Network gear
+    /// (router/switch/AP/firewall) is deliberately excluded — those frequently self-report a
+    /// nameable OS (RouterOS, OpenWrt, IOS, ChromiumOS) that collectors or banner derivations
+    /// can still discover.
+    /// </summary>
+    public static readonly IReadOnlySet<string> FirmwareOnlyKinds = new HashSet<string>(StringComparer.Ordinal)
+    {
+        IndustrialIot,
+        BuildingAutomation,
+        AudioDevice,
+        Camera,
+        DoorController,
+        Intercom,
+        Microphone,
+        Pdu,
+        Phone,
+        Printer,
+        Radio,
+        Speaker,
+        Thermostat,
+        TimeClock,
+        Ups,
+    };
 }

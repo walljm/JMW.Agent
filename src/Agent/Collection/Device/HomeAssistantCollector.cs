@@ -172,7 +172,8 @@ public sealed class HomeAssistantCollector : IServiceCollector
 
             string? mac = device.Connections
                 .FirstOrDefault(c => c.Type.Equals("mac", StringComparison.OrdinalIgnoreCase))
-                .Value;
+                .Value
+                ?? MacFromIdentifiers(device);
             List<string> upnpUuids = ExtractUpnpUuids(device);
 
             // Without a MAC, only mint a device for identifier domains known to identify real,
@@ -384,6 +385,30 @@ public sealed class HomeAssistantCollector : IServiceCollector
             id => id.Domain.Equals("ipp", StringComparison.OrdinalIgnoreCase)
              || id.Domain.StartsWith("homeassistant_", StringComparison.OrdinalIgnoreCase)
         );
+
+    /// <summary>
+    /// Fallback MAC for registry entries with no "mac" connection pair: Nabu Casa USB radios
+    /// (Connect ZBT-2 et al.) register identifiers-only, with the radio's EUI-48 as the
+    /// identifier value (e.g. ["homeassistant_connect_zbt2", "1CDBD45E6F90"]). When that value
+    /// is exactly 12 hex digits, treat it as the device's MAC. Restricted to homeassistant_*
+    /// domains — other integrations put non-MAC ids (USB serials, cloud ids) in this slot.
+    /// Note the radio EUI never appears on the LAN (it's a Zigbee/Thread radio, not an Ethernet
+    /// NIC), so this buys OUI vendor resolution and a stable MAC identity, not ARP correlation.
+    /// </summary>
+    private static string? MacFromIdentifiers(HaDevice device)
+    {
+        foreach ((string domain, string value) in device.Identifiers)
+        {
+            if (domain.StartsWith("homeassistant_", StringComparison.OrdinalIgnoreCase)
+                && value.Length == 12
+                && value.All(Uri.IsHexDigit))
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// Pulls every bare device UUID out of this device's UPnP-flavored values — both

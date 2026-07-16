@@ -1156,4 +1156,155 @@ public sealed class DerivationTests
         DeviceModelDerivation d = new();
         Assert.Empty(d.Derive([]));
     }
+
+    // ── FirmwareOsDerivation ───────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(DeviceKinds.Camera)]
+    [InlineData(DeviceKinds.Thermostat)]
+    [InlineData(DeviceKinds.IndustrialIot)]
+    [InlineData(DeviceKinds.BuildingAutomation)]
+    [InlineData(DeviceKinds.Printer)]
+    public void FirmwareOs_FirmwareKindWithoutOs_EmitsFirmwareOsFamily(string kind)
+    {
+        FirmwareOsDerivation d = new();
+        Fact[] facts = [Fact.Create($"Device[{Dev}].Kind", kind, T)];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+
+        Assert.Single(results);
+        Assert.Equal("firmware", results[0].Value.AsString());
+        Assert.Equal($"Device[{Dev}].OS.Family", results[0].Id);
+        Assert.Equal(FactPaths.SystemOsFamily, results[0].AttributePath);
+    }
+
+    [Theory]
+    [InlineData(DeviceKinds.Host)] // general-purpose OS kinds stay untouched
+    [InlineData(DeviceKinds.Server)]
+    [InlineData(DeviceKinds.Router)] // network gear deliberately excluded (may self-report an OS)
+    [InlineData(DeviceKinds.Switch)]
+    [InlineData("some-unknown-kind")]
+    public void FirmwareOs_NonFirmwareKind_ReturnsEmpty(string kind)
+    {
+        FirmwareOsDerivation d = new();
+        Assert.Empty(d.Derive([Fact.Create($"Device[{Dev}].Kind", kind, T)]));
+    }
+
+    [Fact]
+    public void FirmwareOs_OsFamilyPresentInBatch_ReturnsEmpty()
+    {
+        FirmwareOsDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].Kind", DeviceKinds.Camera, T),
+            Fact.Create($"Device[{Dev}].OS.Family", "linux", T),
+        ];
+
+        Assert.Empty(d.Derive(facts));
+    }
+
+    [Fact]
+    public void FirmwareOs_OsDistroPresentInBatch_ReturnsEmpty()
+    {
+        FirmwareOsDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].Kind", DeviceKinds.Camera, T),
+            Fact.Create($"Device[{Dev}].OS.Distro", "OpenWrt", T),
+        ];
+
+        Assert.Empty(d.Derive(facts));
+    }
+
+    [Fact]
+    public void FirmwareOs_WhitespaceOsValue_StillEmits()
+    {
+        // A blank OS value is "no OS reported", not a real OS — the firmware fact still fires.
+        FirmwareOsDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].Kind", DeviceKinds.Thermostat, T),
+            Fact.Create($"Device[{Dev}].OS.Family", "  ", T),
+        ];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+        Assert.Single(results);
+        Assert.Equal("firmware", results[0].Value.AsString());
+    }
+
+    [Fact]
+    public void FirmwareOs_NoInputs_ReturnsEmpty()
+    {
+        FirmwareOsDerivation d = new();
+        Assert.Empty(d.Derive([]));
+    }
+
+    // ── VendorOsFromDiscoveredTypeDerivation ──────────────────────────────────
+
+    [Theory]
+    [InlineData("OnHub Mesh Point")]
+    [InlineData("onhub")] // case-insensitive substring match
+    public void VendorOsFromDiscoveredType_OnHubType_EmitsGoogleAndLinux(string deviceType)
+    {
+        VendorOsFromDiscoveredTypeDerivation d = new();
+        Fact[] facts = [Fact.Create($"Device[{Dev}].Discovered[192.168.1.2].DeviceType", deviceType, T)];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+
+        Assert.Equal(2, results.Count);
+        Fact vendor = results.First(f => f.AttributePath == FactPaths.DiscoveredVendor);
+        Fact os = results.First(f => f.AttributePath == FactPaths.DiscoveredOs);
+        Assert.Equal("Google", vendor.Value.AsString());
+        Assert.Equal($"Device[{Dev}].Discovered[192.168.1.2].Vendor", vendor.Id);
+        Assert.Equal("linux", os.Value.AsString());
+        Assert.Equal($"Device[{Dev}].Discovered[192.168.1.2].Os", os.Id);
+    }
+
+    [Fact]
+    public void VendorOsFromDiscoveredType_ObservedVendorPresent_OnlyEmitsOs()
+    {
+        // An observed UPnP manufacturer always wins over the kind-derived constant.
+        VendorOsFromDiscoveredTypeDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].Discovered[192.168.1.2].DeviceType", "OnHub Mesh Point", T),
+            Fact.Create($"Device[{Dev}].Discovered[192.168.1.2].Vendor", "Google Inc.", T),
+        ];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+
+        Fact os = Assert.Single(results);
+        Assert.Equal(FactPaths.DiscoveredOs, os.AttributePath);
+        Assert.Equal("linux", os.Value.AsString());
+    }
+
+    [Fact]
+    public void VendorOsFromDiscoveredType_BothPresent_ReturnsEmpty()
+    {
+        VendorOsFromDiscoveredTypeDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].Discovered[192.168.1.2].DeviceType", "OnHub Mesh Point", T),
+            Fact.Create($"Device[{Dev}].Discovered[192.168.1.2].Vendor", "Google Inc.", T),
+            Fact.Create($"Device[{Dev}].Discovered[192.168.1.2].Os", "ChromiumOS", T),
+        ];
+
+        Assert.Empty(d.Derive(facts));
+    }
+
+    [Theory]
+    [InlineData("Nest-Audio")] // known Google type, but not OnHub — no rule matches
+    [InlineData("Chromecast")]
+    public void VendorOsFromDiscoveredType_UnknownType_ReturnsEmpty(string deviceType)
+    {
+        VendorOsFromDiscoveredTypeDerivation d = new();
+        Assert.Empty(d.Derive([Fact.Create($"Device[{Dev}].Discovered[192.168.1.2].DeviceType", deviceType, T)]));
+    }
+
+    [Fact]
+    public void VendorOsFromDiscoveredType_NoInputs_ReturnsEmpty()
+    {
+        VendorOsFromDiscoveredTypeDerivation d = new();
+        Assert.Empty(d.Derive([]));
+    }
 }

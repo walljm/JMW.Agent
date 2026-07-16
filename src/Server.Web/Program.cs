@@ -249,6 +249,8 @@ builder.Services.AddRateLimiter(options =>
 
 WebApplication app = builder.Build();
 
+ProgramLog.ServerStarting(app.Logger, ServerVersion.Full);
+
 app.UseExceptionHandler(appError =>
     appError.Run(async context =>
         {
@@ -488,4 +490,7 @@ internal static partial class ProgramLog
 {
     [LoggerMessage(Level = LogLevel.Error, Message = "Database connectivity check failed.")]
     public static partial void DbConnectFailed(ILogger logger, Exception ex);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "JMW Discovery Server {Version} starting.")]
+    public static partial void ServerStarting(ILogger logger, string version);
 }

@@ -14,6 +14,7 @@ public sealed class OperatorFactCatalogTests
     [InlineData(FactPaths.DeviceKind)]
     [InlineData(FactPaths.InterfaceSpeedBps)] // child-collection catalog path, adjacent to InterfaceMAC
     [InlineData(FactPaths.SystemOsDistro)]
+    [InlineData(FactPaths.SystemFriendlyName)] // materializer gap-fill read, but authorable by design
     public void Classify_CatalogPath_IsOverride(string path) =>
         Assert.Equal(OperatorFactCatalog.PathClass.Override, OperatorFactCatalog.Classify(path));
 
@@ -23,7 +24,7 @@ public sealed class OperatorFactCatalogTests
     [InlineData(FactPaths.DiscoveredMAC)]
     [InlineData(FactPaths.HwSystemSerial)]
     [InlineData(FactPaths.SystemHostname)]
-    [InlineData(FactPaths.SystemFriendlyName)]
+    [InlineData(FactPaths.DiscoveredFriendlyName)] // the *promotion source* stays blocked; only the display rollup is authorable
     public void Classify_IdentityBearingConst_IsIdentityProtected(string path) =>
         Assert.Equal(OperatorFactCatalog.PathClass.IdentityProtected, OperatorFactCatalog.Classify(path));
 

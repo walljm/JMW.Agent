@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
     <PropertyGroup>
+        <!-- The server's release version. The SDK appends the git sha automatically
+             (InformationalVersion = "X.Y.Z+<sha>"); ServerVersion.cs surfaces it in the
+             startup log and UI sidebar. Bump when cutting a deployable release. -->
+        <Version>3.1.1</Version>
         <TargetFramework>net10.0</TargetFramework>
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>

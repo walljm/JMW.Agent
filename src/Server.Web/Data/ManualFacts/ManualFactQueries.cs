@@ -19,8 +19,8 @@ public static partial class ManualFactQueries
     /// the attribute path (architecture §7.1).
     /// </summary>
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<(string? AttributePath, string? KeyValues, string? Value, string? Label,
-        string? SourceName, DateTimeOffset? CollectedAt)>
+    public static partial IAsyncEnumerable<(string AttributePath, string? KeyValues, string? Value, string? Label,
+        string SourceName, DateTimeOffset CollectedAt)>
         GetDeviceOperatorFactsAsync(
             this NpgsqlConnection connection,
             Guid deviceId,
@@ -32,13 +32,24 @@ public static partial class ManualFactQueries
     /// (attribute_path + non-device key_values). Returns the row id.
     /// </summary>
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<Guid> UpsertFactPathMetadataAsync(
+    public static partial IAsyncEnumerable<MetadataIdResult> UpsertFactPathMetadataAsync(
         this NpgsqlConnection connection,
         string attributePath,
         string keyValues,
         string? label,
         string? description,
         string updatedBy,
+        bool? showInReports,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// The device-scoped arbitrary fact paths flagged to appear as extra columns in device-listing
+    /// reports (fact_path_metadata.show_in_reports), with their display labels. Ordinal path order.
+    /// </summary>
+    [DatabaseCommand]
+    public static partial IAsyncEnumerable<(string AttributePath, string? Label)> GetReportFactColumnsAsync(
+        this NpgsqlConnection connection,
         CancellationToken cancellationToken
     );
 
@@ -47,7 +58,7 @@ public static partial class ManualFactQueries
     /// interfaces), backing the child-key combo box (REQ-010). Works for any dimension.
     /// </summary>
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<string?> GetDeviceCollectionKeysAsync(
+    public static partial IAsyncEnumerable<CollectionKeyResult> GetDeviceCollectionKeysAsync(
         this NpgsqlConnection connection,
         string deviceId,
         string dimension,

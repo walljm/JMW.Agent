@@ -373,6 +373,14 @@ a:focus-visible, button:focus-visible, .input:focus-visible, .tab:focus-visible,
     text-align: center;
 }
 
+/* Server build identity at the very foot of the sidebar */
+.nav-user .nav-version {
+    margin-top: var(--space-2);
+    width: 100%;
+    text-align: center;
+    font-size: var(--fs-xs);
+}
+
 .main {
     padding: var(--space-5) var(--space-6);
     overflow: auto;

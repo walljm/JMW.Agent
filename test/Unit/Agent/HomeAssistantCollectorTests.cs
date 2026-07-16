@@ -96,10 +96,11 @@ public sealed class HomeAssistantCollectorTests
     }
 
     [Theory]
-    [InlineData("ipp", "5837574D3032333100")]
-    [InlineData("homeassistant_connect_zbt2", "1CDBD45E6F90")]
-    [InlineData("homeassistant_sky_connect", "AABBCCDDEEFF")]
-    public async Task Collect_MacLessAllowedIdentifierDomain_Included(string domain, string value)
+    [InlineData("ipp", "5837574D3032333100", null)] // 18 hex chars — not a MAC shape, no fallback
+    [InlineData("homeassistant_connect_zbt2", "1CDBD45E6F90", "1CDBD45E6F90")] // radio EUI-48 → MAC
+    [InlineData("homeassistant_sky_connect", "AABBCCDDEEFF", "AABBCCDDEEFF")]
+    [InlineData("homeassistant_yellow", "not-a-mac-serial", null)] // homeassistant_* but non-hex value
+    public async Task Collect_MacLessAllowedIdentifierDomain_Included(string domain, string value, string? expectedMac)
     {
         string devices =
             $$"""
@@ -113,6 +114,38 @@ public sealed class HomeAssistantCollectorTests
         List<Fact> facts = (await Collect(socket, new FakeServiceContext())).ToList();
 
         Assert.Equal($"{domain}:{value}", Value(facts, "Service[svc-1].HomeAssistant.HaDevice[dev-allowed].Identifiers"));
+
+        // A homeassistant_* identifier value shaped like a bare EUI-48 doubles as the device MAC
+        // (Nabu Casa radios register identifiers-only, no "mac" connection pair).
+        if (expectedMac is null)
+        {
+            Assert.DoesNotContain(
+                facts,
+                f => f.Id == "Service[svc-1].HomeAssistant.HaDevice[dev-allowed].Mac"
+            );
+        }
+        else
+        {
+            Assert.Equal(expectedMac, Value(facts, "Service[svc-1].HomeAssistant.HaDevice[dev-allowed].Mac"));
+        }
+    }
+
+    [Fact]
+    public async Task Collect_ExplicitMacConnection_WinsOverIdentifierFallback()
+    {
+        string devices =
+            """
+            [{"id":"dev-zbt","connections":[["mac","1c:db:d4:5e:6f:90"]],
+              "identifiers":[["homeassistant_connect_zbt2","FFFFFFFFFFFF"]],
+              "manufacturer":"Nabu Casa","model":"Home Assistant Connect ZBT-2"}]
+            """;
+        FakeSocket socket = new(
+            [AuthRequired, AuthOk, Result(1, devices), Result(2, "[]"), Result(3, "[]"), Result(4, "[]")]
+        );
+
+        List<Fact> facts = (await Collect(socket, new FakeServiceContext())).ToList();
+
+        Assert.Equal("1c:db:d4:5e:6f:90", Value(facts, "Service[svc-1].HomeAssistant.HaDevice[dev-zbt].Mac"));
     }
 
     [Theory]

@@ -438,14 +438,14 @@ public sealed class DeviceDetailModel : PageModel
             await using NpgsqlConnection operatorConn = await _db.OpenConnectionAsync(ct);
             OperatorFacts = await operatorConn.GetDeviceOperatorFactsAsync(deviceId, ct)
                 .Select(r => new OperatorFactRow(
-                        r.AttributePath ?? "",
+                        r.AttributePath,
                         FormatScope(r.KeyValues),
                         ExtractKeys(r.KeyValues),
-                        OperatorFactCatalog.IsOverride(r.AttributePath ?? "") ? "Override" : "Arbitrary",
+                        OperatorFactCatalog.IsOverride(r.AttributePath) ? "Override" : "Arbitrary",
                         r.Label,
                         r.Value,
                         r.SourceName,
-                        r.CollectedAt?.UtcDateTime
+                        r.CollectedAt.UtcDateTime
                     )
                 )
                 .ToListAsync(ct);

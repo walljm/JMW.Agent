@@ -112,7 +112,7 @@ public sealed class GoogleWifiCollector : IDeviceCollector
             Fingerprints: [new Fingerprint(FingerprintType.GoogleWifiDeviceId, report.DeviceId)],
             Kind: "router",
             Vendor: "google",
-            OsFamily: null,
+            OsFamily: "Linux",
             OsVersion: status?.Software?.SoftwareVersion
         );
         string deviceId = await context.RegisterProbeAsync(identity, ct);
@@ -135,6 +135,16 @@ public sealed class GoogleWifiCollector : IDeviceCollector
         AddStorageFacts(facts, deviceId, report);
         AddWanFacts(facts, deviceId, report);
         AddBridgeVlanFacts(facts, deviceId, report);
+
+        // A-priori OS fallback: every unit this collector talks to is Google hardware running a
+        // ChromiumOS-derived Linux, so the OS is known even when the diagnostic report's
+        // /etc/lsb-release section is missing (AddLsbReleaseFacts otherwise reports the
+        // observed distro name, e.g. "Chrome OS", which wins over this constant).
+        if (!facts.Any(f => f.AttributePath == FactPaths.SystemOsDistro))
+        {
+            facts.Add(Fact.Create(FactPaths.SystemOsDistro, [deviceId], "ChromiumOS"));
+            facts.Add(Fact.Create(FactPaths.SystemOsFamily, [deviceId], "linux"));
+        }
 
         HashSet<string> seenIps = new(StringComparer.Ordinal);
         foreach (OnHubStation station in OnHubStations.Extract(report))

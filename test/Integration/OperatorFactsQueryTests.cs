@@ -53,7 +53,7 @@ public sealed class OperatorFactsQueryTests
 
         await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
 
-        List<(string? AttributePath, string? KeyValues, string? Value, string? Label, string? SourceName, DateTimeOffset?
+        List<(string AttributePath, string? KeyValues, string? Value, string? Label, string SourceName, DateTimeOffset
             CollectedAt)> rows = await conn.GetDeviceOperatorFactsAsync(Guid.Parse(dev), CancellationToken.None)
             .ToListAsync();
 
@@ -93,6 +93,7 @@ public sealed class OperatorFactsQueryTests
 
         await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
         List<string?> keys = await conn.GetDeviceCollectionKeysAsync(dev, "Interface", CancellationToken.None)
+            .Select(k => k.CollectionKey)
             .ToListAsync();
 
         Assert.Equal(["aa", "bb"], keys);
@@ -108,11 +109,11 @@ public sealed class OperatorFactsQueryTests
 
         // Insert with a full key_values (incl. Device); the upsert strips Device → stored key {}.
         await conn.UpsertFactPathMetadataAsync("Device[].Vendor", $"{{\"Device\":\"{dev}\"}}", "First", null, "user:boss",
-                CancellationToken.None)
+                showInReports: null, CancellationToken.None)
             .ToListAsync();
         // A second upsert from a different device (same stripped key {}) replaces the label.
         await conn.UpsertFactPathMetadataAsync("Device[].Vendor", "{\"Device\":\"other\"}", "Second", null, "user:boss",
-                CancellationToken.None)
+                showInReports: null, CancellationToken.None)
             .ToListAsync();
 
         Assert.Equal(1, await _fixture.CountAsync("fact_path_metadata", "attribute_path = 'Device[].Vendor'"));

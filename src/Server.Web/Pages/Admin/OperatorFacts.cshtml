@@ -271,6 +271,13 @@
                 return;
             }
             tbody.insertAdjacentHTML('beforeend', items.map(function (r) {
+                var reportToggle = r.can_show_in_reports
+                    ? '<a href="javascript:void(0)" data-path="' + escapeHtml(r.attribute_path)
+                        + '" data-label="' + escapeHtml(r.label || '') + '" data-shown="' + (r.show_in_reports ? '1' : '')
+                        + '" onclick="ofToggleReportColumn(this)"'
+                        + ' title="Show this fact as an extra column in the Devices report">'
+                        + (r.show_in_reports ? 'Hide from report' : 'Show in report') + '</a>'
+                    : '';
                 return '<tr>'
                     + '<td class="mono">' + escapeHtml(r.attribute_path) + '</td>'
                     + '<td class="text-dim">' + escapeHtml(r.scope) + '</td>'
@@ -281,6 +288,7 @@
                     + '<a href="javascript:void(0)" data-path="' + escapeHtml(r.attribute_path)
                     + '" data-keys="' + escapeHtml(JSON.stringify(deriveKeys(r.scope))) + '"'
                     + ' data-label="' + escapeHtml(r.label || '') + '" onclick="ofEditLabel(this)">Edit label</a>'
+                    + reportToggle
                     + '</td>'
                     + '</tr>';
             }).join(''));
@@ -303,6 +311,32 @@
             document.getElementById('ofPath').value = el.dataset.path;
             ofToggleMode();
             ofRunSearch(el.dataset.path);
+        }
+
+        async function ofToggleReportColumn(el) {
+            var next = !el.dataset.shown;
+            var resp = await fetch('/api/v1/admin/operator-facts/metadata', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF},
+                body: JSON.stringify({
+                    attribute_path: el.dataset.path,
+                    keys: [],
+                    // Re-send the current label — the upsert replaces label on every write.
+                    label: el.dataset.label || null,
+                    description: null,
+                    show_in_reports: next,
+                }),
+            });
+            if (resp.ok) {
+                el.dataset.shown = next ? '1' : '';
+                el.textContent = next ? 'Hide from report' : 'Show in report';
+                toast(next
+                    ? 'This fact now appears as a column in the Devices report.'
+                    : 'Removed from the Devices report.');
+            } else {
+                var err = await resp.json().catch(function () { return null; });
+                toast('Error: ' + (err && err.detail ? err.detail : resp.status));
+            }
         }
 
         async function ofEditLabel(el) {

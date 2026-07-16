@@ -107,10 +107,12 @@ public static class AnalysisLibrary
             new DeviceVendorDerivation(),
             new VendorFromOsDistroDerivation(),
             new VendorOsFromDeviceBannerDerivation(),
+            new VendorOsFromDiscoveredTypeDerivation(),
             new VendorFromModelPrefixDerivation(),
             new VendorFromHostnamePrefixDerivation(),
             new DeviceModelDerivation(),
             new DeviceKindDerivation(),
+            new FirmwareOsDerivation(),
         ]
     );
 }

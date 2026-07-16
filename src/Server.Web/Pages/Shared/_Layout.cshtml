@@ -57,6 +57,9 @@
                     onclick="fetch('/auth/logout',{method:'POST'}).then(()=>location.href='/Login')">
                 Sign out
             </button>
+            <span class="text-dim nav-version" title="@JMW.Discovery.Server.Infrastructure.ServerVersion.Full">
+                v@(JMW.Discovery.Server.Infrastructure.ServerVersion.Display)
+            </span>
         </div>
     </nav>
     @RenderBody()

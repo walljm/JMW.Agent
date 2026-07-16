@@ -20,12 +20,15 @@ public sealed class OperatorFactsIdentityFitnessTests
     {
         // Map each Value-tagged (table, column) the materializer reads to the FactPaths const that
         // projection column carries, then assert set-equality with the exclusion set — plus the one
-        // documented exception (HwSystemSerial is an agent-path fingerprint, not a materializer read).
+        // documented exception (HwSystemSerial is an agent-path fingerprint, not a materializer read),
+        // minus the gap-fill-only exemptions (reads that only decide whether promotion auto-fills
+        // display metadata — operator-authorable by design, see OperatorFactCatalog.GapFillOnlyFactPaths).
         HashSet<string> expected = DiscoveryMaterializer.IdentityInputColumns
             .Where(c => c.Kind == DiscoveryMaterializer.IdentityInputKind.Value)
             .Select(c => MapValueColumnToConst(c.Table, c.ColumnOrDimension))
             .ToHashSet(StringComparer.Ordinal);
         expected.Add(FactPaths.HwSystemSerial);
+        expected.ExceptWith(OperatorFactCatalog.GapFillOnlyFactPaths);
 
         Assert.Equal(
             expected.OrderBy(p => p, StringComparer.Ordinal),

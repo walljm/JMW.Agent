@@ -72,6 +72,11 @@ public sealed class GoogleWifiCollectorTests
         Assert.Equal("ACc3d", Value(facts, "Device[_probe_].Hardware.SystemModel"));
         Assert.Equal("14150.376.32", Value(facts, "Device[_probe_].OS.Version"));
         Assert.Equal(123456L, facts.First(f => f.Id == "Device[_probe_].System.UptimeSeconds").Value.AsLong());
+        // No /etc/lsb-release in SampleRoute → the a-priori fallback fires (OnHub firmware
+        // is ChromiumOS-derived Linux). With lsb-release present the observed name wins —
+        // see Collect_EmitsRichClientAndApFacts.
+        Assert.Equal("linux", Value(facts, "Device[_probe_].OS.Family"));
+        Assert.Equal("ChromiumOS", Value(facts, "Device[_probe_].OS.Distro"));
 
         // ── Discovered stations keyed by IP ──
         Assert.Equal("00e0bf1fc40*", Value(facts, "Device[_probe_].Discovered[192.168.1.60].ObscuredMAC"));

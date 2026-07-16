@@ -154,7 +154,7 @@ public static class OperatorFactsApi
         {
             await conn
                 .UpsertFactPathMetadataAsync(template, fact.KeyValuesJson, body.Label, body.Description, Actor(context),
-                    ct)
+                    showInReports: null, ct)
                 .FirstOrDefaultAsync(ct);
         }
 
@@ -224,8 +224,8 @@ public static class OperatorFactsApi
 
         await using NpgsqlConnection conn = await db.OpenConnectionAsync(ct);
         List<string> keys = await conn.GetDeviceCollectionKeysAsync(id.ToString(), dim, ct)
-            .Where(k => !string.IsNullOrEmpty(k))
-            .Select(k => k!)
+            .Where(k => !string.IsNullOrEmpty(k.CollectionKey))
+            .Select(k => k.CollectionKey!)
             .ToListAsync(ct);
 
         return Results.Json(new { keys }, JsonOpts);
@@ -260,17 +260,50 @@ public static class OperatorFactsApi
                 $"'{body.AttributePath}' with the supplied keys is not a valid fact path.");
         }
 
+        // The report-column flag only makes sense for a device-scoped arbitrary fact: overrides
+        // already have real report columns, and a child-collection fact has no single per-device
+        // value to show.
+        if (body.ShowInReports == true)
+        {
+            if (OperatorFactCatalog.Classify(body.AttributePath) != OperatorFactCatalog.PathClass.Arbitrary)
+            {
+                return ApiError.Problem(
+                    422,
+                    "not_report_flaggable",
+                    $"'{body.AttributePath}' is a catalog fact — only arbitrary operator facts can be "
+                  + "flagged as report columns."
+                );
+            }
+
+            if ((body.Keys ?? []).Length > 0)
+            {
+                return ApiError.Problem(
+                    422,
+                    "not_report_flaggable",
+                    "Only device-scoped facts can be shown as report columns — a child-collection fact "
+                  + "has no single per-device value."
+                );
+            }
+        }
+
         await using NpgsqlConnection conn = await db.OpenConnectionAsync(ct);
         await conn
             .UpsertFactPathMetadataAsync(body.AttributePath, keyValuesJson, body.Label, body.Description, Actor(context),
-                ct)
+                body.ShowInReports, ct)
             .FirstOrDefaultAsync(ct);
 
         await audit.WriteAsync(Actor(context), "operator-fact.metadata.set", body.AttributePath,
-            new { path = body.AttributePath, keys = body.Keys ?? [], label = body.Label }, ct
+            new { path = body.AttributePath, keys = body.Keys ?? [], label = body.Label, show_in_reports = body.ShowInReports }, ct
         );
 
-        return Results.Json(new { path = body.AttributePath, label = body.Label, description = body.Description },
+        return Results.Json(
+            new
+            {
+                path = body.AttributePath,
+                label = body.Label,
+                description = body.Description,
+                show_in_reports = body.ShowInReports,
+            },
             JsonOpts);
     }
 
@@ -419,12 +452,13 @@ public static class OperatorFactsApi
                 s.attribute_path,
                 s.meta_key::text AS meta_key,
                 count(DISTINCT s.device_id) AS device_count,
-                m.label
+                m.label,
+                COALESCE(m.show_in_reports, FALSE) AS show_in_reports
             FROM sigs s
                 LEFT JOIN fact_path_metadata m
                     ON m.attribute_path = s.attribute_path AND m.key_values = s.meta_key
             WHERE ($1::text IS NULL OR (s.attribute_path, s.meta_key::text) > ($1, $2))
-            GROUP BY s.attribute_path, s.meta_key, m.label
+            GROUP BY s.attribute_path, s.meta_key, m.label, m.show_in_reports
             ORDER BY s.attribute_path, s.meta_key::text
             LIMIT $3
             """;
@@ -443,12 +477,17 @@ public static class OperatorFactsApi
             {
                 string attributePath = reader.GetString(0);
                 string metaKey = reader.GetString(1);
+                string scope = FormatScope(metaKey);
                 items.Add(
                     new FleetPathItem(
                         AttributePath: attributePath,
-                        Scope: FormatScope(metaKey),
+                        Scope: scope,
                         DeviceCount: reader.IsDBNull(2) ? 0 : reader.GetInt64(2),
-                        Label: GetStr(reader, 3)
+                        Label: GetStr(reader, 3),
+                        ShowInReports: !reader.IsDBNull(4) && reader.GetBoolean(4),
+                        CanShowInReports:
+                            string.Equals(scope, "Device", StringComparison.Ordinal)
+                         && OperatorFactCatalog.Classify(attributePath) == OperatorFactCatalog.PathClass.Arbitrary
                     )
                 );
                 tiebreakers.Add((attributePath, metaKey));
@@ -583,7 +622,13 @@ public static class OperatorFactsApi
 
     private sealed record RevertOperatorFactRequest(string AttributePath, string[]? Keys);
 
-    private sealed record SetMetadataRequest(string AttributePath, string[]? Keys, string? Label, string? Description);
+    private sealed record SetMetadataRequest(
+        string AttributePath,
+        string[]? Keys,
+        string? Label,
+        string? Description,
+        bool? ShowInReports
+    );
 
     public sealed record FleetFactItem(
         string DeviceId,
@@ -596,5 +641,12 @@ public static class OperatorFactsApi
         DateTime? CollectedAt
     );
 
-    public sealed record FleetPathItem(string AttributePath, string Scope, long DeviceCount, string? Label);
+    public sealed record FleetPathItem(
+        string AttributePath,
+        string Scope,
+        long DeviceCount,
+        string? Label,
+        bool ShowInReports,
+        bool CanShowInReports
+    );
 }

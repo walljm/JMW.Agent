@@ -24,6 +24,10 @@
                     <th sort-key="status" sort-grid="Model.Grid" sort-target="#devices-table">Status</th>
                     <th style="cursor:default">Discovery Sources</th>
                     <th sort-key="last_seen" sort-grid="Model.Grid" sort-target="#devices-table">Last Seen</th>
+                    @foreach (OperatorFactColumns.Column col in Model.OperatorColumns)
+                    {
+                        <th style="cursor:default" title="Operator fact: @col.AttributePath">@col.Heading</th>
+                    }
                 </tr>
                 </thead>
                 <tbody>
@@ -78,6 +82,10 @@
                                 @:—
                             }
                         </td>
+                        @foreach (OperatorFactColumns.Column col in Model.OperatorColumns)
+                        {
+                            <td>@(Model.OperatorValues.TryGetValue((device.DeviceId, col.AttributePath), out string? ofv) ? ofv : "—")</td>
+                        }
                     </tr>
                 }
                 </tbody>

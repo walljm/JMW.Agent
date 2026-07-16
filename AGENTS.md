@@ -266,7 +266,10 @@ IP) and accepts it only when unique. The match is written back as the row's `mac
 device is resolved, and the intrinsic attributes are **promoted** onto the resolved
 `Device[]` (mDNS hostname → `OS.Hostname`, mDNS/UPnP friendly name → the separate
 `OS.FriendlyName` display rollup — never conflated with the real hostname, model →
-`Hardware.SystemModel`, device-type → `Kind`). Promotion runs every cycle (not only at the reconstruction instant, via
+`Hardware.SystemModel`, device-type → `Kind`, vendor → `proj_devices.vendor`, os →
+`proj_systems.os_family`; the row's vendor/os may come from observation (UPnP
+manufacturer) or from `VendorOsFromDiscoveredTypeDerivation`, which derives them from a
+self-identifying device type — e.g. "OnHub Mesh Point" → Google / linux). Promotion runs every cycle (not only at the reconstruction instant, via
 `GetObscuredMacRowsAsync` over all obscured rows), so late-arriving enrichment still
 graduates; the COALESCE upserts make re-promotion a no-op. Per-row work is wrapped so a
 **locally-administered / randomized MAC** (common on phones/tablets — rejected as a

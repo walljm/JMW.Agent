@@ -47,7 +47,7 @@
             <dl class="kv" style="margin-top:var(--space-3)">
                 <dt>UUID</dt>
                 <dd class="mono">@Model.DeviceId</dd>
-                <dt>Vendor / Type</dt>
+                <dt>Vendor / Kind</dt>
                 <dd>
                     @(Model.Vendor ?? "—")@(string.IsNullOrEmpty(Model.Kind) ? "" : " · " + Model.Kind)
                     @if (Model.VendorIsGuess)

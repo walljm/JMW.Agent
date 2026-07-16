@@ -62,7 +62,8 @@ public static partial class DiscoveryQueries
     /// </summary>
     [DatabaseCommand]
     public static partial IAsyncEnumerable<(string Device, string Ip, string? ObscuredMac, string? Mac, string?
-        Hostname, string? Model, string? FriendlyName, string? DeviceType, string? CastId)> GetObscuredMacRowsAsync(
+        Hostname, string? Model, string? FriendlyName, string? DeviceType, string? CastId, string? Vendor,
+        string? Os)> GetObscuredMacRowsAsync(
         this NpgsqlConnection connection,
         CancellationToken cancellationToken
     );

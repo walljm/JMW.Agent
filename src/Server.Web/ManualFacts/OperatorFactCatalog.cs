@@ -37,9 +37,9 @@ public static class OperatorFactCatalog
     /// NFR-8 identity-bearing exclusion set — every <see cref="FactPaths" /> const whose projection
     /// column <c>DiscoveryMaterializer</c> reads as a fingerprint or promotion input, plus
     /// <see cref="FactPaths.HwSystemSerial" /> (the agent-direct chassis-serial fingerprint — not a
-    /// materializer read, but excluded per Boss's confirmed list). 28 consts + HwSystemSerial.
-    /// Kept in exact set-equality with the materializer's declared read set by the identity fitness
-    /// test; the mapping is:
+    /// materializer read, but excluded per Boss's confirmed list). 27 consts + HwSystemSerial.
+    /// Kept in exact set-equality with the materializer's declared read set (minus the
+    /// <see cref="GapFillOnlyFactPaths" /> exemptions) by the identity fitness test; the mapping is:
     /// <code>
     /// Tier 1 — identity/merge-critical (wrong value ⇒ wrong device merge or spurious duplicate)
     ///   ArpMac                    → proj_device_arp.mac
@@ -69,9 +69,10 @@ public static class OperatorFactCatalog
     ///   HwSystemModel             → proj_hardware.system_model
     ///   SystemHostname            → proj_systems.hostname
     ///   SystemOsFamily            → proj_systems.os_family
-    ///   SystemFriendlyName        → proj_systems.friendly_name
     ///   DhcpLocalLeaseHostname    → proj_dhcp_local_leases.hostname
     /// Plus HwSystemSerial (agent-path fingerprint, documented exception in the fitness test).
+    /// Minus SystemFriendlyName (materializer read, but gap-fill-only — see
+    /// <see cref="GapFillOnlyFactPaths" />).
     /// </code>
     /// </summary>
     public static readonly IReadOnlySet<string> IdentityBearingFactPaths = new HashSet<string>(StringComparer.Ordinal)
@@ -105,11 +106,28 @@ public static class OperatorFactCatalog
         FactPaths.HwSystemModel,
         FactPaths.SystemHostname,
         FactPaths.SystemOsFamily,
-        FactPaths.SystemFriendlyName,
         FactPaths.DhcpLocalLeaseHostname,
 
         // Agent-direct chassis-serial fingerprint (not a materializer read — see fitness test).
         FactPaths.HwSystemSerial,
+    };
+
+    /// <summary>
+    /// Materializer reads that are <b>gap-fill-only</b> and therefore stay operator-authorable
+    /// despite appearing in <c>DiscoveryMaterializer.IdentityInputColumns</c>. The materializer
+    /// consults these columns solely to decide whether promotion should auto-fill missing display
+    /// metadata — the value never participates in fingerprinting or device merging, so an
+    /// operator-set value cannot corrupt identity; it merely (correctly) suppresses the auto-fill.
+    /// The fitness test subtracts this set from the materializer read set before asserting
+    /// equality, making each exemption an explicit, reviewed decision.
+    ///
+    /// <c>SystemFriendlyName</c>: proj_systems.friendly_name is read by GetPromotionGapRows only
+    /// to find devices whose friendly name is still empty. FactPaths.cs documents the path as
+    /// directly operator-editable — it is the intended home for an operator-assigned display name.
+    /// </summary>
+    public static readonly IReadOnlySet<string> GapFillOnlyFactPaths = new HashSet<string>(StringComparer.Ordinal)
+    {
+        FactPaths.SystemFriendlyName,
     };
 
     /// <summary>

@@ -22,6 +22,14 @@ public sealed class DevicesModel : ReportPageModel
     }
 
     public IReadOnlyList<DeviceReportItem> Devices { get; private set; } = [];
+
+    /// <summary>Operator-fact report columns (fact_path_metadata.show_in_reports) and this page's
+    /// values, keyed (deviceId, attributePath). Display-only — never sortable/filterable.</summary>
+    public IReadOnlyList<OperatorFactColumns.Column> OperatorColumns { get; private set; } = [];
+
+    public IReadOnlyDictionary<(string Device, string Path), string> OperatorValues { get; private set; } =
+        new Dictionary<(string, string), string>();
+
     public string? NextCursor { get; private set; }
     public string? PrevCursor { get; private set; }
     public GridState Grid { get; private set; } = null!;
@@ -91,6 +99,12 @@ public sealed class DevicesModel : ReportPageModel
 
                 Devices = items;
                 NextCursor = next;
+
+                (OperatorColumns, OperatorValues) = await OperatorFactColumns.LoadAsync(
+                    _db,
+                    [.. items.Select(i => i.DeviceId)],
+                    ct
+                );
             },
             ex => DevicesModelLog.LoadFailed(_logger, ex),
             "_DevicesTable"

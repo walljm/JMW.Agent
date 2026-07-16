@@ -14,6 +14,8 @@ SELECT
   , friendly_name
   , device_type
   , cast_id
+  , vendor
+  , os
 FROM
     proj_discovered
 WHERE

@@ -90,15 +90,15 @@ public sealed class DiscoveryMaterializer
         // Tier 2 — promotion input value columns.
         new("proj_discovered", "hostname", IdentityInputKind.Value), // GetPromotionGapRows, discovered promote
         new("proj_discovered", "friendly_name", IdentityInputKind.Value), // GetObscuredMacRows, GetPromotionGapRows
-        new("proj_discovered", "vendor", IdentityInputKind.Value), // discovered promote, GetPromotionGapRows
+        new("proj_discovered", "vendor", IdentityInputKind.Value), // discovered promote, GetPromotionGapRows, GetObscuredMacRows
         new("proj_discovered", "model", IdentityInputKind.Value), // discovered promote, GetPromotionGapRows
-        new("proj_discovered", "os", IdentityInputKind.Value), // discovered promote, GetPromotionGapRows
+        new("proj_discovered", "os", IdentityInputKind.Value), // discovered promote, GetPromotionGapRows, GetObscuredMacRows
         new("proj_discovered", "device_type", IdentityInputKind.Value), // GetObscuredMacRows
         new("proj_hardware", "system_vendor", IdentityInputKind.Value), // GetPromotionGapRows gap detection
         new("proj_hardware", "system_model", IdentityInputKind.Value), // GetPromotionGapRows gap detection
         new("proj_systems", "hostname", IdentityInputKind.Value), // GetPromotionGapRows gap detection
         new("proj_systems", "os_family", IdentityInputKind.Value), // GetPromotionGapRows gap detection
-        new("proj_systems", "friendly_name", IdentityInputKind.Value), // GetPromotionGapRows; promoted DiscoveryMaterializer
+        new("proj_systems", "friendly_name", IdentityInputKind.Value), // GetPromotionGapRows — gap-fill-only; operator-authorable via OperatorFactCatalog.GapFillOnlyFactPaths
         new("proj_dhcp_local_leases", "hostname", IdentityInputKind.Value), // GetPromotionGapRows fallback
 
         // Dimension keys that are themselves fingerprints.
@@ -475,7 +475,7 @@ public sealed class DiscoveryMaterializer
         // Promotion runs every cycle so late-arriving enrichment still graduates;
         // COALESCE upserts make re-promotion a no-op.
         List<(string Device, string Ip, string? ObscuredMac, string? Mac, string? Hostname, string? Model, string?
-            FriendlyName, string? DeviceType, string? CastId)> rows =
+            FriendlyName, string? DeviceType, string? CastId, string? Vendor, string? Os)> rows =
             await conn.GetObscuredMacRowsAsync(ct).ToListAsync(ct);
         // Reader closed — conn is free for the per-row lookups + writes below.
 
@@ -492,7 +492,7 @@ public sealed class DiscoveryMaterializer
         // ── Phase 1: reconstruct the full MAC for each row (best-effort). ──
         List<ObscuredRow> resolved = new(rows.Count);
         foreach ((string device, string ip, string? obscured, string? existingMac, string? hostname, string? model,
-            string? friendlyName, string? deviceType, string? castId) in rows)
+            string? friendlyName, string? deviceType, string? castId, string? vendor, string? os) in rows)
         {
             string? full = NullIfBlank(existingMac);
             if (full is null && obscured is not null && ObscuredMac.TryGetOui(obscured, out string oui))
@@ -518,7 +518,9 @@ public sealed class DiscoveryMaterializer
                     model,
                     friendlyName,
                     deviceType,
-                    NullIfBlank(castId)
+                    NullIfBlank(castId),
+                    vendor,
+                    os
                 )
             );
         }
@@ -617,35 +619,42 @@ public sealed class DiscoveryMaterializer
             // The sighting/link telemetry stays on the observation in proj_discovered.
             // Hostname and friendly name are genuinely distinct here — never conflated: the mDNS
             // hostname (if reported) is the real hostname; the mDNS/UPnP friendly name (e.g. "Kitchen
-            // Audio") is display-only.
+            // Audio") is display-only. OS rides along the same COALESCE upsert (the row's os column
+            // is the station-level hint — e.g. VendorOsFromDiscoveredTypeDerivation's "linux" for an
+            // OnHub mesh unit — never overwriting an agent-collected os_family).
             string? cleanHostname = NullIfBlank(r.Hostname);
             string? cleanFriendlyName = NullIfBlank(r.FriendlyName);
-            if (cleanHostname != null || cleanFriendlyName != null)
+            string? cleanOs = NullIfBlank(r.Os);
+            if (cleanHostname != null || cleanFriendlyName != null || cleanOs != null)
             {
                 await conn.UpsertDeviceSystemAsync(
                         deviceId,
                         cleanHostname,
                         cleanFriendlyName,
                         NullIfBlank(r.Ip),
-                        osFamily: null,
+                        cleanOs,
                         ct
                     )
                     .ExecuteAsync(ct);
             }
 
-            // Model → Hardware.SystemModel. Vendor is intentionally not set: the
-            // observed OUI is a NIC vendor, not the device manufacturer.
+            // Model → Hardware.SystemModel. Hardware vendor is intentionally not set: proj_hardware
+            // vendor is reserved for the agent/dmidecode path.
             if (NullIfBlank(r.Model) is { } cleanModel)
             {
                 await conn.UpsertDeviceHardwareAsync(deviceId, vendor: null, cleanModel, serial: null, ct)
                     .ExecuteAsync(ct);
             }
 
-            // DeviceType → Kind (e.g. "Nest-Audio"). Vendor intentionally not set here either —
-            // same reasoning as the model/hardware upsert above.
-            if (NullIfBlank(r.DeviceType) is { } kind)
+            // DeviceType → Kind (e.g. "Nest-Audio", "OnHub Mesh Point") and Vendor → proj_devices
+            // vendor, matching the generic discovered-promote path. The row's vendor column is the
+            // station-level UPnP manufacturer or a kind-derived vendor (OnHub → Google via
+            // VendorOsFromDiscoveredTypeDerivation) — a device manufacturer, not an OUI guess.
+            string? cleanVendor = NullIfBlank(r.Vendor);
+            string? cleanKind = NullIfBlank(r.DeviceType);
+            if (cleanVendor != null || cleanKind != null)
             {
-                await conn.UpsertDeviceSummaryAsync(deviceId, vendor: null, kind, ct).ExecuteAsync(ct);
+                await conn.UpsertDeviceSummaryAsync(deviceId, cleanVendor, cleanKind, ct).ExecuteAsync(ct);
             }
         }
         catch (ArgumentException)
@@ -664,7 +673,9 @@ public sealed class DiscoveryMaterializer
         string? Model,
         string? FriendlyName,
         string? DeviceType,
-        string? CastId
+        string? CastId,
+        string? Vendor,
+        string? Os
     );
 
     private async Task MaterializeInterfaceMacsAsync(NpgsqlConnection conn, CancellationToken ct)

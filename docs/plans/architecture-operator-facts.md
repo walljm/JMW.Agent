@@ -25,6 +25,21 @@ mode: standalone
 > badge" from UX §2.1 is dropped (no data feeds it). (3) The UX doc's stale `DEC-9`/`DEC-11`
 > cross-references map to `DEC-8` (free-form arbitrary scope) and `REQ-003` (near-miss); a one-line
 > fix in `ux-operator-facts.md` is recommended, non-blocking.
+>
+> **Post-ship amendments (Boss, 2026-07-16, same day):**
+> - **Amendment C — gap-fill-only exemption.** `SystemFriendlyName` is carved back OUT of the
+>   Tier-2 exclusion: its only materializer read (`GetPromotionGapRows` on
+>   `proj_systems.friendly_name`) is gap detection — an operator-set value cannot corrupt identity,
+>   it only (correctly) suppresses the promotion auto-fill, and FactPaths.cs always documented the
+>   path as operator-editable. Implemented as `OperatorFactCatalog.GapFillOnlyFactPaths`, which the
+>   fitness test subtracts from the materializer read set. `DiscoveredFriendlyName` (a promotion
+>   *source*) stays blocked.
+> - **Amendment D — arbitrary facts as report columns.** A device-scoped arbitrary path can be
+>   flagged (`fact_path_metadata.show_in_reports`, migration 0084, toggled from the fleet browse
+>   page) to appear as an extra display-only column in device-listing reports. Values are read from
+>   the `facts_history` operator subset per page (`OperatorFactColumns`), not projected — no new
+>   proj table, never sortable/filterable. Catalog overrides and child-collection facts are not
+>   flaggable (422 `not_report_flaggable`).
 
 ---
 
