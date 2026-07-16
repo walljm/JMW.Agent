@@ -100,6 +100,14 @@ public static class FingerprintNormalizer
     // (e.g. "703acb70d06*"). Strip separators, lowercase, and require exactly 11 hex
     // digits followed by a single '*'. A fully-masked value ("************") has no
     // hex nibbles and is rejected — it carries no identifying signal.
+    //
+    // The obscured form preserves the real OUI (first 3 bytes), so the first octet is genuine.
+    // Apply the same identity policy as NormalizeMac: reject a first octet whose multicast (0x01)
+    // or locally-administered (0x02) bit is set. A locally-administered value here is a randomized
+    // MAC (e.g. an Apple "Private Wi-Fi Address"), which is NOT a stable device identity — without
+    // this guard a rotating randomized Wi-Fi MAC mints a fresh device on every rotation (observed:
+    // one MacBook split into two records, real OUI 64:4b:f0 vs randomized 3a:91:b0). The sighting
+    // is still kept as an observation (proj_discovered); it just never becomes a fingerprint.
 
     public static string? NormalizeObscuredMac(string raw)
     {
@@ -132,6 +140,14 @@ public static class FingerprintNormalizer
             {
                 return null;
             }
+        }
+
+        // First octet = first two nibbles. Reject multicast (0x01) / locally-administered (0x02),
+        // mirroring NormalizeMac — a randomized OUI is not a stable identity.
+        if (!byte.TryParse(buf[..2], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte firstOctet)
+         || (firstOctet & 0x03) != 0)
+        {
+            return null;
         }
 
         return new string(buf[..12]);

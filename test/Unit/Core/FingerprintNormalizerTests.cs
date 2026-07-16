@@ -32,6 +32,29 @@ public sealed class FingerprintNormalizerTests
     public void NormalizeMac_InvalidInputs_ReturnsNull(string input) =>
         Assert.Null(FingerprintNormalizer.NormalizeMac(input));
 
+    // ── Obscured MAC (Google Wifi) ────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("703acb70d06*", "703acb70d06*")] // globally-unique OUI (0x70), unicast
+    [InlineData("644bf0c7c8a*", "644bf0c7c8a*")] // real Apple OUI 64:4b:f0
+    [InlineData("703ACB70D06*", "703acb70d06*")] // uppercase normalizes to lowercase
+    [InlineData("70:3a:cb:70d06*", "703acb70d06*")] // separators stripped
+    public void NormalizeObscuredMac_ValidInputs_ReturnsCanonicalForm(string input, string expected) =>
+        Assert.Equal(expected, FingerprintNormalizer.Normalize(FingerprintType.ObscuredMac, input));
+
+    [Theory]
+    [InlineData("3a91b0b6466*")] // 0x3a — locally administered (real randomized Apple Wi-Fi MAC)
+    [InlineData("0211223344a*")] // 0x02 — locally-administered bit
+    [InlineData("0111223344a*")] // 0x01 — multicast bit
+    [InlineData("703acb70d0*")] // too short (10 nibbles + '*')
+    [InlineData("703acb70d066")] // no trailing '*'
+    [InlineData("************")] // fully masked — no hex signal
+    [InlineData("zz3acb70d06*")] // invalid hex
+    [InlineData("")]
+    [InlineData("   ")]
+    public void NormalizeObscuredMac_InvalidInputs_ReturnsNull(string input) =>
+        Assert.Null(FingerprintNormalizer.Normalize(FingerprintType.ObscuredMac, input));
+
     // ── Chassis serial ────────────────────────────────────────────────────────
 
     [Theory]

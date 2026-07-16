@@ -137,7 +137,9 @@ public static class FingerprintType
     /// stays cohesive on one record even when the real MAC can't be reconstructed
     /// from ARP/DHCP. When the real MAC *is* reconstructed it is registered as a
     /// separate <see cref="Mac" /> fingerprint, which bridges to other observers.
-    /// Normalized: 11 lowercase hex digits + trailing '*', separators stripped.
+    /// Normalized: 11 lowercase hex digits + trailing '*', separators stripped; a
+    /// multicast or locally-administered (randomized) first octet is rejected, same
+    /// identity policy as <see cref="Mac" /> (see FingerprintNormalizer.NormalizeObscuredMac).
     /// </summary>
     public const string ObscuredMac = "obscured-mac";
 
