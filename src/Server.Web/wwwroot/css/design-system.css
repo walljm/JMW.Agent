@@ -584,7 +584,7 @@ table.data tbody tr.row-warn td:first-child {
     border-radius: var(--radius-lg);
 }
 
-/* MAC administration-scope flag (universal / randomized / multicast) */
+/* MAC administration-scope flag (universal / local / multicast) */
 .mac-flag {
     font-size: var(--fs-xs);
     font-weight: var(--fw-med);

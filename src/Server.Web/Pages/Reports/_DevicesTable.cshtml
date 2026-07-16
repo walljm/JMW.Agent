@@ -26,7 +26,7 @@
                 </tr>
                 </thead>
                 <tbody>
-                @foreach (DeviceListItem device in Model.Devices)
+                @foreach (DeviceReportItem device in Model.Devices)
                 {
                     <tr data-href="/devices/@device.DeviceId?from=devices" style="cursor:pointer">
                         <td>@(string.IsNullOrEmpty(device.Hostname) ? "—" : device.Hostname)</td>

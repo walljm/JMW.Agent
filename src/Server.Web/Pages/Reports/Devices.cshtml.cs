@@ -21,7 +21,7 @@ public sealed class DevicesModel : ReportPageModel
         _logger = logger;
     }
 
-    public IReadOnlyList<DeviceListItem> Devices { get; private set; } = [];
+    public IReadOnlyList<DeviceReportItem> Devices { get; private set; } = [];
     public string? NextCursor { get; private set; }
     public string? PrevCursor { get; private set; }
     public GridState Grid { get; private set; } = null!;
@@ -74,7 +74,7 @@ public sealed class DevicesModel : ReportPageModel
         IActionResult result = await RunReportLoadAsync(
             async () =>
             {
-                (IReadOnlyList<DeviceListItem> items, string? next) = await DeviceListApi.QueryAsync(
+                (IReadOnlyList<DeviceReportItem> items, string? next) = await DeviceListApi.QueryAsync(
                     _db,
                     Status,
                     Source,

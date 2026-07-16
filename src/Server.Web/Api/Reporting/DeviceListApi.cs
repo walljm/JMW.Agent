@@ -74,7 +74,7 @@ public static class DeviceListApi
             afterDeviceId = deviceId;
         }
 
-        (List<DeviceListItem> items, string? nextCursor) = await QueryAsync(
+        (List<DeviceReportItem> items, string? nextCursor) = await QueryAsync(
             db,
             status,
             source,
@@ -105,7 +105,7 @@ public static class DeviceListApi
     /// and ORDER BY use that expression with device_id as a stable, unique tiebreaker so pages
     /// never skip or repeat rows. Descending flips both the tuple comparison and ORDER BY.
     /// </summary>
-    public static async Task<(List<DeviceListItem> Items, string? NextCursor)> QueryAsync(
+    public static async Task<(List<DeviceReportItem> Items, string? NextCursor)> QueryAsync(
         NpgsqlDataSource db,
         string? status,
         string? source,
@@ -150,7 +150,7 @@ public static class DeviceListApi
         AddText(cmd, afterDeviceId);
         cmd.Parameters.Add(Param.Integer(limit + 1));
 
-        List<DeviceListItem> items = new();
+        List<DeviceReportItem> items = new();
         // sort_key[i] is the SQL-computed sort expression for items[i] — used verbatim for the
         // cursor so it always matches the keyset comparison (no C#-side re-derivation to drift).
         List<string> sortKeys = new();
@@ -159,7 +159,7 @@ public static class DeviceListApi
             while (await reader.ReadAsync(ct))
             {
                 items.Add(
-                    new DeviceListItem(
+                    new DeviceReportItem(
                         DeviceId: reader.GetGuid(0).ToString(),
                         Hostname: GetStr(reader, 1),
                         Ip: GetStr(reader, 2),
@@ -379,7 +379,7 @@ public static class DeviceListApi
         """;
 }
 
-public sealed record DeviceListItem(
+public sealed record DeviceReportItem(
     string DeviceId,
     string? Hostname,
     string? Ip,

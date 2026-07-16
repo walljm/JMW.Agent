@@ -102,9 +102,12 @@ public static class ViewFormat
 
     /// <summary>
     /// Classifies a MAC address by the first octet's I/G and U/L bits into a display
-    /// badge: (Label, Title, CssClass). Multicast (I/G set), randomized/locally-
-    /// administered (U/L set), or universal (burned-in). Null/unparseable → ("—","","").
+    /// badge: (Label, Title, CssClass). Multicast (I/G set), locally administered
+    /// (U/L set), or universal (burned-in). Null/unparseable → ("—","","").
     /// Shared so every MAC-displaying view (device detail, hosts, ARP) flags MACs consistently.
+    /// The U/L bit alone cannot distinguish OS-level privacy randomization from a
+    /// hypervisor/container-assigned static address — both set the same bit — so the
+    /// label says "local" rather than "randomized", which would overclaim.
     /// </summary>
     public static (string Label, string Title, string Css) MacFlag(string? mac)
     {
@@ -126,8 +129,9 @@ public static class ViewFormat
 
         if ((b & 0x02) != 0)
         {
-            return ("randomized", "Locally administered (U/L bit set) — randomized/private or virtual",
-                "mac-flag-local");
+            return ("local", "Locally administered (U/L bit set) — assigned by software rather than burned in by " +
+                "the hardware vendor. Common for VMs, containers, VPN adapters, and OS-level MAC-privacy " +
+                "features; a single address can't distinguish which.", "mac-flag-local");
         }
 
         return ("universal", "Universally administered — burned-in hardware address", "mac-flag-universal");
