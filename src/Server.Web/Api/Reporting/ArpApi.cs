@@ -10,18 +10,20 @@ public static class ArpApi
     public const int MaxLimit = 500;
 
     /// <summary>
-    /// Columns the ARP list may be sorted by. Only columns with a supporting index are exposed —
-    /// see <c>proj_device_arp_mac_idx</c>. One cursor shape — (sort_key, device, arp) — covers
-    /// every sort.
+    /// Columns the ARP list may be sorted by. One cursor shape — (sort_key, device, arp) —
+    /// covers every sort. Default is IP so entries from every observing device interleave by
+    /// neighbor address (a router's ARP cache sorted by the observer's own UUID buries whole
+    /// observers on later pages — e.g. core's rows never surfaced on page 1).
     /// </summary>
     private static readonly Dictionary<string, string> SortExpressions =
         new(StringComparer.Ordinal)
         {
+            ["ip"] = "a.arp",
             ["device"] = "a.device",
             ["mac"] = "coalesce(a.mac, '')",
         };
 
-    public const string DefaultSort = "device";
+    public const string DefaultSort = "ip";
 
     public static readonly IReadOnlySet<string> SortableColumns =
         SortExpressions.Keys.ToHashSet(StringComparer.Ordinal);
