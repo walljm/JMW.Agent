@@ -14,11 +14,12 @@ public static class HardwareApi
     public const int MaxLimit = 500;
 
     // Hardware page vendor: the device's own DMI/SMBIOS vendor first, else the unified device
-    // vendor (proj_devices.vendor) or its inferred guess. proj_hardware.system_vendor is reserved
-    // for the agent/dmidecode path, so a discovered/derived vendor (e.g. model→vendor for a
-    // Google Wifi station) lands only in proj_devices — coalescing here surfaces it on this page.
+    // vendor (proj_devices.vendor, which already includes the inferred guess as its lowest-priority
+    // fan-in input — see DeviceVendorDerivation). proj_hardware.system_vendor is reserved for the
+    // agent/dmidecode path, so a discovered/derived vendor (e.g. model→vendor for a Google Wifi
+    // station) lands only in proj_devices — coalescing here surfaces it on this page.
     private const string VendorExpr =
-        "COALESCE(NULLIF(h.system_vendor, ''), NULLIF(pd.vendor, ''), NULLIF(pd.vendor_guess, ''))";
+        "COALESCE(NULLIF(h.system_vendor, ''), NULLIF(pd.vendor, ''))";
 
     private static readonly Dictionary<string, string> SortExpressions =
         new(StringComparer.Ordinal)

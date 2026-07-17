@@ -62,7 +62,6 @@ public sealed class DeviceDetailModel : PageModel
     public string? Hostname { get; private set; }
     public string? FriendlyName { get; private set; }
     public string? Vendor { get; private set; }
-    public bool VendorIsGuess { get; private set; }
     public string? VendorSourceName { get; private set; }
     public string? Kind { get; private set; }
     public string? LastSeenIp { get; private set; }
@@ -136,7 +135,7 @@ public sealed class DeviceDetailModel : PageModel
 
         (Guid DeviceId, string ManagementStatus, string? Hostname, string? FriendlyName, string? OsFamily, string?
             OsDistro,
-            string? OsDistroGuess, DateTimeOffset? LastSeen, string? Vendor, string? VendorGuess, string?
+            string? OsDistroGuess, DateTimeOffset? LastSeen, string? Vendor, string?
             VendorSourceName,
             string? Kind, string? CpuModel, long? CpuCores, long? TotalMemBytes, string? SystemVendor, string?
             SystemModel, string? SystemSerial, string? LastSeenIp)
@@ -155,8 +154,7 @@ public sealed class DeviceDetailModel : PageModel
         ManagementStatus = summary.ManagementStatus;
         Hostname = summary.Hostname;
         FriendlyName = summary.FriendlyName;
-        Vendor = summary.Vendor ?? summary.VendorGuess;
-        VendorIsGuess = summary.Vendor is null && summary.VendorGuess is not null;
+        Vendor = summary.Vendor;
         VendorSourceName = summary.VendorSourceName;
         Kind = summary.Kind;
         LastSeenIp = summary.LastSeenIp;

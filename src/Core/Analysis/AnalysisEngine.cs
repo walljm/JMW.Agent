@@ -31,6 +31,7 @@ public sealed class AnalysisEngine
 
         _derivations = TopologicalSort(derivations.ToList());
         HydratableInputPaths = ComputeHydratableInputPaths(_derivations);
+        AllDerivationInputPaths = _derivations.SelectMany(d => d.Inputs).ToHashSet(StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -46,6 +47,17 @@ public sealed class AnalysisEngine
     /// derived against full current state, not just the delta.
     /// </summary>
     public IReadOnlySet<string> HydratableInputPaths { get; }
+
+    /// <summary>
+    /// Every path consumed as ANY derivation's input, unfiltered — unlike
+    /// <see cref="HydratableInputPaths" /> this includes paths that are themselves another
+    /// derivation's output (e.g. <see cref="FactPaths.Derived.DeviceVendorGuess" />, consumed by
+    /// <see cref="Derivations.DeviceVendorDerivation" />) and paths outside the Device scope. Used
+    /// by <c>FactPathRoutingFitnessTests</c> as a fourth valid routing home: a pure intermediate
+    /// that has no projection column or fact view of its own is still a legitimately routed fact
+    /// path if a derivation consumes it (architecture-identity-facts.md §12).
+    /// </summary>
+    public IReadOnlySet<string> AllDerivationInputPaths { get; }
 
     private static HashSet<string> ComputeHydratableInputPaths(IReadOnlyList<IDerivation> derivations)
     {

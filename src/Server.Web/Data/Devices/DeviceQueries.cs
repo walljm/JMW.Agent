@@ -35,7 +35,7 @@ public static partial class DeviceQueries
         FriendlyName,
         string? OsFamily,
         string? OsDistro, string? OsDistroGuess, DateTimeOffset? LastSeen, string?
-        Vendor, string? VendorGuess, string? VendorSourceName, string? Kind, string? CpuModel, long? CpuCores, long?
+        Vendor, string? VendorSourceName, string? Kind, string? CpuModel, long? CpuCores, long?
         TotalMemBytes, string?
         SystemVendor, string? SystemModel, string? SystemSerial, string? LastSeenIp)> GetDeviceSummaryAsync(
         this NpgsqlConnection connection,

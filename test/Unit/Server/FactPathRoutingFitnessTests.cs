@@ -50,6 +50,13 @@ public sealed class FactPathRoutingFitnessTests
         // Fact-path values surfaced by a device-detail fact view instead of a projection.
         HashSet<string> viewPaths = FactViewLibrary.AllConsumedFactPaths().ToHashSet(StringComparer.Ordinal);
 
+        // Pure intermediates: consumed as SOME derivation's input, so they have a legitimate home
+        // even with no projection column or fact view of their own (architecture-identity-facts.md
+        // §12 Phase 6 — DeviceVendorGuess/DeviceOsGuess lost their "guess" columns and now only
+        // feed the canonical fan-ins).
+        HashSet<string> derivationInputPaths = AnalysisLibrary.CreateEngine().AllDerivationInputPaths
+            .ToHashSet(StringComparer.Ordinal);
+
         List<string> unrouted = new();
         foreach ((string name, string path) in AllFactPaths())
         {
@@ -72,6 +79,11 @@ public sealed class FactPathRoutingFitnessTests
             if (IdentitySignalPaths.All.Contains(path))
             {
                 continue; // routed to materialization_facts (fact-shaped, not a GenericProjection column)
+            }
+
+            if (derivationInputPaths.Contains(path))
+            {
+                continue; // pure intermediate consumed as a derivation input — no column needed
             }
 
             unrouted.Add($"{name} = \"{path}\"  (DimKey='{Fact.DeriveDimKey(path)}', Attribute='{attr}')");

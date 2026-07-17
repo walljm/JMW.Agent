@@ -11,9 +11,9 @@ SELECT
             THEN NULL
         ELSE s.updated_at
     END AS last_seen
-    -- Falls back to the inferred guess (VendorFromOsDistroDerivation et al.) when no protocol
-    -- self-reports vendor. See docs/plans/vendor-derivation-updates.md §3.
-  , COALESCE(pd.vendor, pd.vendor_guess) AS vendor
+    -- Already includes the inferred guess (VendorFromOsDistroDerivation et al.) as
+    -- DeviceVendorDerivation's lowest-priority fan-in input.
+  , pd.vendor AS vendor
 FROM
     devices                d
     LEFT JOIN proj_systems s

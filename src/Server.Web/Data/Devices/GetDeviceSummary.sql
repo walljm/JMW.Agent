@@ -39,10 +39,6 @@ SELECT
         ELSE s.updated_at
     END AS last_seen
   , pd.vendor
-    -- Inferred vendor guess (VendorFromOsDistroDerivation et al.) — surfaced separately from
-    -- `vendor` so the caller can label it as inferred rather than self-reported; only meaningful
-    -- when `vendor` is NULL. See docs/plans/vendor-derivation-updates.md §3.
-  , pd.vendor_guess
     -- Which collector's fact produced the current pd.vendor value — pd.vendor is a
     -- last-write-wins projection of Device[].Vendor, so the latest facts_history row for
     -- that path/device IS the winning row.

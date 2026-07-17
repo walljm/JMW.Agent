@@ -23,11 +23,11 @@ public static class ProjectionLibrary
             [
                 // Fed by DeviceVendorDerivation, not FactPaths.DeviceVendor directly — that raw
                 // fact is one of several inputs fanned into the canonical output below (see
-                // DeviceVendorDerivation.cs). Every cross-device report reads THIS column.
+                // DeviceVendorDerivation.cs), including the inferred DeviceVendorGuess as the
+                // lowest-priority input. Every cross-device report reads THIS column — the former
+                // separate `vendor_guess` column is retired (architecture-identity-facts.md §12,
+                // Phase 6a); the fan-in already includes the inference.
                 new(FactPaths.Derived.DeviceVendorCanonical, "vendor", NpgsqlDbType.Text),
-                // Inferred guess (VendorFromOsDistroDerivation et al.) — reporting should only
-                // consult this when `vendor` is NULL. See docs/plans/vendor-derivation-updates.md §3.
-                new(FactPaths.Derived.DeviceVendorGuess, "vendor_guess", NpgsqlDbType.Text),
                 new(FactPaths.DeviceKind, "kind", NpgsqlDbType.Text),
                 // Fanned in from whichever raw model field is present (DeviceModelDerivation),
                 // vendor+OS-dispatched cleanup applied on top — see FactPaths.Derived.DeviceModelCanonical.

@@ -51,11 +51,7 @@
                 <dt>Vendor / Kind</dt>
                 <dd>
                     @(Model.Vendor ?? "—")@(string.IsNullOrEmpty(Model.Kind) ? "" : " · " + Model.Kind)
-                    @if (Model.VendorIsGuess)
-                    {
-                        <span class="text-dim"> (inferred)</span>
-                    }
-                    else if (!string.IsNullOrEmpty(Model.Vendor) && !string.IsNullOrEmpty(Model.VendorSourceName))
+                    @if (!string.IsNullOrEmpty(Model.Vendor) && !string.IsNullOrEmpty(Model.VendorSourceName))
                     {
                         <span class="text-dim"> (via @Model.VendorSourceName)</span>
                     }

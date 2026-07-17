@@ -316,6 +316,36 @@ public sealed class DerivationTests
     }
 
     [Fact]
+    public void DeviceVendor_GuessOnly_FansInToCanonical()
+    {
+        // Phase 6a (architecture-identity-facts.md §12): the inferred guess is the lowest-priority
+        // fan-in input, not a separate "guess" column — it fires only when no protocol self-reports
+        // a vendor.
+        DeviceVendorDerivation d = new();
+        Fact[] facts = [Fact.Create($"Device[{Dev}].VendorGuess", "Mikrotik", T)];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+        Assert.Single(results);
+        Assert.Equal("Mikrotik", results[0].Value.AsString());
+        Assert.Equal(FactPaths.Derived.DeviceVendorCanonical, results[0].AttributePath);
+    }
+
+    [Fact]
+    public void DeviceVendor_GuessAndRealSourcePresent_RealSourceWins()
+    {
+        DeviceVendorDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].VendorGuess", "Mikrotik", T),
+            Fact.Create($"Device[{Dev}].Hardware.SystemVendor", "Dell", T),
+        ];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+        Assert.Single(results);
+        Assert.Equal("Dell", results[0].Value.AsString());
+    }
+
+    [Fact]
     public void DeviceVendor_WhitespaceOnlyValue_SkipsToNextSource()
     {
         DeviceVendorDerivation d = new();

@@ -727,9 +727,12 @@ public static class FactPaths
 
         // Inferred vendor guess from a curated, vendor-exclusive signature (OS distro,
         // SNMP sysDescr, model prefix, hostname prefix — see docs/plans/vendor-derivation-updates.md
-        // §2). Deliberately kept separate from DeviceVendorCanonical: that field is a fan-in over
-        // protocols that self-report vendor directly, this one is inferred from a proxy signal.
-        // Reporting should only consult this when DeviceVendorCanonical is empty.
+        // §2). A pure intermediate as of Phase 6 (architecture-identity-facts.md §12): it has no
+        // projection column of its own — it feeds DeviceVendorDerivation as the lowest-priority
+        // input, and the hydrated fan-in (§11) is what makes that safe (an inference can never
+        // clobber a real value across batches). Still a valid routed fact path because it's
+        // consumed as a derivation input (also by DeviceKindDerivation/DeviceModelDerivation) — see
+        // FactPathRoutingFitnessTests' fourth routing home.
         public const string DeviceVendorGuess = "Device[].VendorGuess";
 
         // Inferred OS-distro guess from a curated, OS-exclusive signature (SNMP sysDescr today —
