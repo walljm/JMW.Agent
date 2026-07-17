@@ -740,18 +740,15 @@ public sealed class FullPipelineEndToEndTests : IAsyncLifetime
         string? hostname = null
     )
     {
+        // onvif_serial/roku_serial/ssdp_uuid/wsd_uuid moved to materialization_facts (Phase 3);
+        // mac/hostname/vendor/model stay on proj_discovered.
         const string sql = """
             INSERT INTO proj_discovered
-                (device, discovered, mac, hostname, onvif_serial, roku_serial,
-                 ssdp_uuid, wsd_uuid, vendor, model)
+                (device, discovered, mac, hostname, vendor, model)
             VALUES
-                (@device, @ip, @mac, @hostname, @onvifSerial, @rokuSerial,
-                 @ssdpUuid, @wsdUuid, @vendor, @model)
+                (@device, @ip, @mac, @hostname, @vendor, @model)
             ON CONFLICT (device, discovered) DO UPDATE
               SET mac          = EXCLUDED.mac,
-                  onvif_serial = EXCLUDED.onvif_serial,
-                  ssdp_uuid    = EXCLUDED.ssdp_uuid,
-                  wsd_uuid     = EXCLUDED.wsd_uuid,
                   vendor       = EXCLUDED.vendor,
                   model        = EXCLUDED.model
             """;
@@ -761,10 +758,6 @@ public sealed class FullPipelineEndToEndTests : IAsyncLifetime
         cmd.Parameters.AddWithValue("ip", ip);
         cmd.Parameters.AddWithValue("mac", (object?)mac ?? DBNull.Value);
         cmd.Parameters.AddWithValue("hostname", (object?)hostname ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("onvifSerial", (object?)onvifSerial ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("rokuSerial", (object?)rokuSerial ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("ssdpUuid", (object?)ssdpUuid ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("wsdUuid", (object?)wsdUuid ?? DBNull.Value);
         cmd.Parameters.AddWithValue("vendor", (object?)vendor ?? DBNull.Value);
         cmd.Parameters.AddWithValue("model", (object?)model ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync();

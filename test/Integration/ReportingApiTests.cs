@@ -3370,20 +3370,20 @@ public sealed class TargetCandidatesTests : IAsyncLifetime
 
     private async Task InsertDiscoveredWithHostKeyAsync(string discovered)
     {
+        // ssh_host_key moved to materialization_facts (Phase 3, docs/plans/
+        // architecture-identity-facts.md) — the proj_discovered row just needs to exist so
+        // ListTargetCandidates' ssh EXISTS-subquery has a row to match, and the host-key signal
+        // itself lives in materialization_facts.
         const string sql = """
-            INSERT INTO proj_discovered (device, discovered, ssh_host_key)
-            VALUES (@device, @discovered, @hostKey)
+            INSERT INTO proj_discovered (device, discovered)
+            VALUES (@device, @discovered)
             """;
         await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
         await using NpgsqlCommand cmd = new(sql, conn);
         cmd.Parameters.AddWithValue("device", "observer-device");
         cmd.Parameters.AddWithValue("discovered", discovered);
-        cmd.Parameters.AddWithValue("hostKey", "ssh-ed25519 AAAAtest");
         await cmd.ExecuteNonQueryAsync();
 
-        // ListTargetCandidates' ssh predicate now reads materialization_facts
-        // (docs/plans/architecture-identity-facts.md §5 Phase 2b) — this direct-SQL seed bypasses
-        // the router's dual write, so mirror it here.
         const string identitySql = """
             INSERT INTO materialization_facts (device, entity_key, attribute_path, value)
             VALUES ('observer-device', @discovered, 'Device[].Discovered[].SshHostKey', @hostKey)

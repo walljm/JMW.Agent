@@ -1344,10 +1344,10 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
     )
     {
         const string sql = """
-            INSERT INTO proj_discovered (device, discovered, mac, hostname, vendor, model, os)
-            VALUES (@device, @ip, @mac, @hostname, @vendor, @model, @os)
+            INSERT INTO proj_discovered (device, discovered, mac, hostname, vendor, model)
+            VALUES (@device, @ip, @mac, @hostname, @vendor, @model)
             ON CONFLICT (device, discovered) DO UPDATE
-              SET mac = EXCLUDED.mac, hostname = EXCLUDED.hostname, os = EXCLUDED.os
+              SET mac = EXCLUDED.mac, hostname = EXCLUDED.hostname
             """;
         await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
         await using NpgsqlCommand cmd = new(sql, conn);
@@ -1357,11 +1357,10 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
         cmd.Parameters.AddWithValue("hostname", (object?)hostname ?? DBNull.Value);
         cmd.Parameters.AddWithValue("vendor", (object?)vendor ?? DBNull.Value);
         cmd.Parameters.AddWithValue("model", (object?)model ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("os", (object?)os ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync();
 
-        // GetNewDiscoveredMacs now reads materialization_facts for Os (docs/plans/
-        // architecture-identity-facts.md §5 Phase 2d) — mirror the router's dual write.
+        // Os moved to materialization_facts (Phase 3, docs/plans/architecture-identity-facts.md) —
+        // no longer a proj_discovered column.
         if (os is not null)
         {
             await InsertMaterializationFactAsync(observer, ip, "Device[].Discovered[].Os", os);
@@ -1376,17 +1375,16 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
     )
     {
         const string sql = """
-            INSERT INTO proj_discovered (device, discovered, mac, ssh_host_key)
-            VALUES (@device, @ip, @mac, @key)
+            INSERT INTO proj_discovered (device, discovered, mac)
+            VALUES (@device, @ip, @mac)
             ON CONFLICT (device, discovered) DO UPDATE
-              SET mac = EXCLUDED.mac, ssh_host_key = EXCLUDED.ssh_host_key
+              SET mac = EXCLUDED.mac
             """;
         await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
         await using NpgsqlCommand cmd = new(sql, conn);
         cmd.Parameters.AddWithValue("device", observer);
         cmd.Parameters.AddWithValue("ip", ip);
         cmd.Parameters.AddWithValue("mac", (object?)mac ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("key", sshHostKey);
         await cmd.ExecuteNonQueryAsync();
 
         // GetSshHostKeyRows now reads materialization_facts (docs/plans/architecture-identity-facts.md
@@ -1425,26 +1423,21 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
     )
     {
         // A networkState-only cast row: carries the cast id + intrinsics but NO
-        // obscured_mac, so it never appears in GetObscuredMacRows.
+        // obscured_mac, so it never appears in GetObscuredMacRows. cast_id/device_type moved to
+        // materialization_facts (Phase 3); only friendly_name stays on proj_discovered.
         const string sql = """
-            INSERT INTO proj_discovered (device, discovered, cast_id, friendly_name, device_type)
-            VALUES (@device, @ip, @cast, @friendly, @dtype)
+            INSERT INTO proj_discovered (device, discovered, friendly_name)
+            VALUES (@device, @ip, @friendly)
             ON CONFLICT (device, discovered) DO UPDATE
-              SET cast_id = EXCLUDED.cast_id, friendly_name = EXCLUDED.friendly_name,
-                  device_type = EXCLUDED.device_type
+              SET friendly_name = EXCLUDED.friendly_name
             """;
         await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
         await using NpgsqlCommand cmd = new(sql, conn);
         cmd.Parameters.AddWithValue("device", observer);
         cmd.Parameters.AddWithValue("ip", ip);
-        cmd.Parameters.AddWithValue("cast", castId);
         cmd.Parameters.AddWithValue("friendly", (object?)friendlyName ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("dtype", (object?)deviceType ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync();
 
-        // GetCastIdIpCounts (Phase 2a) and GetObscuredMacRows (Phase 2e) now read
-        // materialization_facts (docs/plans/architecture-identity-facts.md §5) — these
-        // direct-SQL seeds bypass the router's dual write, so mirror it here.
         await InsertMaterializationFactAsync(observer, ip, "Device[].Discovered[].CastId", castId);
         if (deviceType is not null)
         {
@@ -1461,24 +1454,22 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
         string? deviceType
     )
     {
+        // cast_id/device_type moved to materialization_facts (Phase 3); obscured_mac/friendly_name
+        // stay on proj_discovered.
         const string sql = """
-            INSERT INTO proj_discovered (device, discovered, obscured_mac, cast_id, friendly_name, device_type)
-            VALUES (@device, @ip, @obscured, @cast, @friendly, @dtype)
+            INSERT INTO proj_discovered (device, discovered, obscured_mac, friendly_name)
+            VALUES (@device, @ip, @obscured, @friendly)
             ON CONFLICT (device, discovered) DO UPDATE
-              SET obscured_mac = EXCLUDED.obscured_mac, cast_id = EXCLUDED.cast_id,
-                  friendly_name = EXCLUDED.friendly_name, device_type = EXCLUDED.device_type
+              SET obscured_mac = EXCLUDED.obscured_mac, friendly_name = EXCLUDED.friendly_name
             """;
         await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
         await using NpgsqlCommand cmd = new(sql, conn);
         cmd.Parameters.AddWithValue("device", observer);
         cmd.Parameters.AddWithValue("ip", ip);
         cmd.Parameters.AddWithValue("obscured", obscuredMac);
-        cmd.Parameters.AddWithValue("cast", castId);
         cmd.Parameters.AddWithValue("friendly", (object?)friendlyName ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("dtype", (object?)deviceType ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync();
 
-        // See InsertCastDiscoveredNoObscuredRowAsync — mirrors the router's dual write.
         await InsertMaterializationFactAsync(observer, ip, "Device[].Discovered[].CastId", castId);
         if (deviceType is not null)
         {
@@ -1550,24 +1541,22 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
     )
     {
         const string sql = """
-            INSERT INTO proj_discovered (device, discovered, ssdp_uuid, hostname, vendor, model)
-            VALUES (@device, @ip, @uuid, @hostname, @vendor, @model)
+            INSERT INTO proj_discovered (device, discovered, hostname, vendor, model)
+            VALUES (@device, @ip, @hostname, @vendor, @model)
             ON CONFLICT (device, discovered) DO UPDATE
-              SET ssdp_uuid = EXCLUDED.ssdp_uuid, hostname = EXCLUDED.hostname,
-                  vendor = EXCLUDED.vendor, model = EXCLUDED.model
+              SET hostname = EXCLUDED.hostname, vendor = EXCLUDED.vendor, model = EXCLUDED.model
             """;
         await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
         await using NpgsqlCommand cmd = new(sql, conn);
         cmd.Parameters.AddWithValue("device", observer);
         cmd.Parameters.AddWithValue("ip", ip);
-        cmd.Parameters.AddWithValue("uuid", ssdpUuid);
         cmd.Parameters.AddWithValue("hostname", (object?)hostname ?? DBNull.Value);
         cmd.Parameters.AddWithValue("vendor", (object?)vendor ?? DBNull.Value);
         cmd.Parameters.AddWithValue("model", (object?)model ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync();
 
-        // GetNewDiscoveredSerials now reads materialization_facts (docs/plans/
-        // architecture-identity-facts.md §5 Phase 2c) — mirror the router's dual write.
+        // SsdpUuid moved to materialization_facts (Phase 3, docs/plans/architecture-identity-facts.md)
+        // — no longer a proj_discovered column.
         await InsertMaterializationFactAsync(observer, ip, "Device[].Discovered[].SsdpUuid", ssdpUuid);
     }
 
@@ -1581,24 +1570,22 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
     )
     {
         const string sql = """
-            INSERT INTO proj_discovered (device, discovered, snmp_serial, hostname, vendor, model)
-            VALUES (@device, @ip, @serial, @hostname, @vendor, @model)
+            INSERT INTO proj_discovered (device, discovered, hostname, vendor, model)
+            VALUES (@device, @ip, @hostname, @vendor, @model)
             ON CONFLICT (device, discovered) DO UPDATE
-              SET snmp_serial = EXCLUDED.snmp_serial, hostname = EXCLUDED.hostname,
-                  vendor = EXCLUDED.vendor, model = EXCLUDED.model
+              SET hostname = EXCLUDED.hostname, vendor = EXCLUDED.vendor, model = EXCLUDED.model
             """;
         await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
         await using NpgsqlCommand cmd = new(sql, conn);
         cmd.Parameters.AddWithValue("device", observer);
         cmd.Parameters.AddWithValue("ip", ip);
-        cmd.Parameters.AddWithValue("serial", snmpSerial);
         cmd.Parameters.AddWithValue("hostname", (object?)hostname ?? DBNull.Value);
         cmd.Parameters.AddWithValue("vendor", (object?)vendor ?? DBNull.Value);
         cmd.Parameters.AddWithValue("model", (object?)model ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync();
 
-        // GetNewDiscoveredSerials now reads materialization_facts (docs/plans/
-        // architecture-identity-facts.md §5 Phase 2c) — mirror the router's dual write.
+        // SnmpSerial moved to materialization_facts (Phase 3, docs/plans/architecture-identity-facts.md)
+        // — no longer a proj_discovered column.
         await InsertMaterializationFactAsync(observer, ip, "Device[].Discovered[].SnmpSerial", snmpSerial);
     }
 

@@ -71,18 +71,15 @@ public sealed class DiscoveryMaterializer
     public static readonly IReadOnlyList<IdentityInputColumn> IdentityInputColumns =
     [
         // Tier 1 — identity/merge-critical value columns.
+        // NB: the eleven materializer-only identity signals (Onvif/Roku/Snmp serial, Ssdp/Wsd uuid,
+        // Hue bridge id, Onvif hardware id, cast id, device_type, os, ssh host key) are no longer
+        // proj_discovered columns — they moved to materialization_facts (Phase 3,
+        // docs/plans/architecture-identity-facts.md). Their identity-bearing declaration is now
+        // IdentitySignalPaths, which the NFR-8 fitness test folds into the expected exclusion set
+        // directly. So this list holds only the surviving wide-column reads.
         new("proj_device_arp", "mac", IdentityInputKind.Value), // GetNewArpMacs, GetKnownMacsForIp
         new("proj_discovered", "mac", IdentityInputKind.Value), // GetNewDiscoveredMacs, GetKnownMacsForIp
         new("proj_discovered", "obscured_mac", IdentityInputKind.Value), // GetObscuredMacRows
-        new("proj_discovered", "onvif_serial", IdentityInputKind.Value), // GetPromotionGapRows (GetNewDiscoveredSerials/GetNewDiscoveredMacs moved to materialization_facts, Phase 2c/2d)
-        new("proj_discovered", "roku_serial", IdentityInputKind.Value), // GetPromotionGapRows (GetNewDiscoveredSerials/GetNewDiscoveredMacs moved to materialization_facts, Phase 2c/2d)
-        new("proj_discovered", "snmp_serial", IdentityInputKind.Value), // GetPromotionGapRows (GetNewDiscoveredSerials/GetNewDiscoveredMacs moved to materialization_facts, Phase 2c/2d)
-        new("proj_discovered", "ssdp_uuid", IdentityInputKind.Value), // GetPromotionGapRows (GetNewDiscoveredSerials/GetNewDiscoveredMacs moved to materialization_facts, Phase 2c/2d)
-        new("proj_discovered", "wsd_uuid", IdentityInputKind.Value), // GetPromotionGapRows (GetNewDiscoveredSerials/GetNewDiscoveredMacs moved to materialization_facts, Phase 2c/2d)
-        new("proj_discovered", "ssh_host_key", IdentityInputKind.Value), // GetSshHostKeyRows moved to materialization_facts, Phase 2b (column stays wide until Phase 3)
-        new("proj_discovered", "hue_bridge_id", IdentityInputKind.Value), // GetScannerIdRows moved to materialization_facts, Phase 2b (column stays wide until Phase 3)
-        new("proj_discovered", "onvif_hardware_id", IdentityInputKind.Value), // GetScannerIdRows moved to materialization_facts, Phase 2b (column stays wide until Phase 3)
-        new("proj_discovered", "cast_id", IdentityInputKind.Value), // GetCastIdIpCounts moved Phase 2a; GetObscuredMacRows moved Phase 2e (both materialization_facts)
         new("proj_interfaces", "mac_address", IdentityInputKind.Value), // GetInterfaceObscuredMacRows
         new("proj_interfaces", "obscured_mac", IdentityInputKind.Value), // GetInterfaceObscuredMacRows
         new("proj_interfaces", "ipv4", IdentityInputKind.Value), // GetInterfaceObscuredMacRows (join key)
@@ -93,8 +90,6 @@ public sealed class DiscoveryMaterializer
         new("proj_discovered", "friendly_name", IdentityInputKind.Value), // GetObscuredMacRows, GetPromotionGapRows
         new("proj_discovered", "vendor", IdentityInputKind.Value), // discovered promote, GetPromotionGapRows, GetObscuredMacRows
         new("proj_discovered", "model", IdentityInputKind.Value), // discovered promote, GetPromotionGapRows
-        new("proj_discovered", "os", IdentityInputKind.Value), // discovered promote (GetNewDiscoveredSerials/GetNewDiscoveredMacs/GetObscuredMacRows/GetPromotionGapRows os-arm moved to materialization_facts, Phase 2c/2d/2e/2f)
-        new("proj_discovered", "device_type", IdentityInputKind.Value), // GetObscuredMacRows moved to materialization_facts, Phase 2e
         new("proj_hardware", "system_vendor", IdentityInputKind.Value), // GetPromotionGapRows gap detection
         new("proj_hardware", "system_model", IdentityInputKind.Value), // GetPromotionGapRows gap detection
         new("proj_systems", "hostname", IdentityInputKind.Value), // GetPromotionGapRows gap detection

@@ -389,20 +389,15 @@ public static class ProjectionLibrary
                 new(FactPaths.DiscoveredObscuredMAC, "obscured_mac", NpgsqlDbType.Text),
                 new(FactPaths.DiscoveredHostname, "hostname", NpgsqlDbType.Text),
                 new(FactPaths.DiscoveredSources, "sources", NpgsqlDbType.Text),
-                new(FactPaths.DiscoveredOnvifSerial, "onvif_serial", NpgsqlDbType.Text),
-                new(FactPaths.DiscoveredRokuSerial, "roku_serial", NpgsqlDbType.Text),
-                new(FactPaths.DiscoveredSnmpSerial, "snmp_serial", NpgsqlDbType.Text),
-                new(FactPaths.DiscoveredHueBridgeId, "hue_bridge_id", NpgsqlDbType.Text),
-                new(FactPaths.DiscoveredOnvifHardwareId, "onvif_hardware_id", NpgsqlDbType.Text),
-                new(FactPaths.DiscoveredSsdpUuid, "ssdp_uuid", NpgsqlDbType.Text),
-                new(FactPaths.DiscoveredWsdUuid, "wsd_uuid", NpgsqlDbType.Text),
-                new(FactPaths.DiscoveredSshHostKey, "ssh_host_key", NpgsqlDbType.Text),
                 new(FactPaths.DiscoveredVendor, "vendor", NpgsqlDbType.Text),
                 new(FactPaths.DiscoveredModel, "model", NpgsqlDbType.Text),
-                new(FactPaths.DiscoveredOs, "os", NpgsqlDbType.Text),
                 new(FactPaths.DiscoveredFriendlyName, "friendly_name", NpgsqlDbType.Text),
-                new(FactPaths.DiscoveredDeviceType, "device_type", NpgsqlDbType.Text),
-                new(FactPaths.DiscoveredCastId, "cast_id", NpgsqlDbType.Text),
+                // The eleven materializer-only identity signals (OnvifSerial/RokuSerial/SnmpSerial/
+                // SsdpUuid/WsdUuid/HueBridgeId/OnvifHardwareId/CastId/DeviceType/Os/SshHostKey)
+                // moved to the fact-shaped materialization_facts table, written by
+                // IdentityFactProjection (docs/plans/architecture-identity-facts.md §3-4). They are
+                // routed via IdentitySignalPaths, not a column here — a new scanner fingerprint is a
+                // data change (one path added to that set), not a migration.
                 // Firmware and the sighting/link (observer↔neighbor edge) telemetry moved to the
                 // "Sighting Telemetry" / "Discovered (Probed)" fact views (FactViewLibrary.cs) —
                 // display-only, no cross-device query, no materializer promotion need.

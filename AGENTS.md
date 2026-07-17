@@ -220,10 +220,12 @@ How it works (`Collection/Device/OnHub/`):
   The `Discovered[]` fact subtree deliberately splits **intrinsic device
   attributes** from **the sighting/link** (the observer↔neighbor edge), because a
   −49 dBm reading is a property of the observation, not the device:
-  - Intrinsic (→ `proj_discovered` columns; PROMOTED to `Device[]` on reconstruction):
-    `ObscuredMAC`, `Oui` (raw 6-hex — NOT a vendor name), `Hostname`, `FriendlyName`
-    (mDNS `fn=`), `DeviceType` (mDNS cast-name, e.g. "Nest-Audio" → `Device[].Kind`),
-    `Model` (mDNS `model=`/`md=` → `Hardware.SystemModel`).
+  - Intrinsic (PROMOTED to `Device[]` on reconstruction): `ObscuredMAC`, `Oui` (raw
+    6-hex — NOT a vendor name), `Hostname`, `FriendlyName` (mDNS `fn=`), `Model` (mDNS
+    `model=`/`md=` → `Hardware.SystemModel`) — these stay `proj_discovered` columns;
+    plus `DeviceType` (mDNS cast-name, e.g. "Nest-Audio" → `Device[].Kind`) and `CastId`,
+    which are materializer-only signals and live in `materialization_facts` (see below),
+    not a `proj_discovered` column.
   - `Discovered[].Service[].Name` — advertised mDNS service types as a real list
     dimension (→ `proj_discovered_services`), not a comma-joined string.
   - `Discovered[].Link.*` — the sighting: `Medium` (wired/wireless), `Band`, `Guest`,
@@ -319,6 +321,22 @@ facts — they route nowhere and are invisible to every report. `FactPathRouting
 enforces this: a new `FactPaths` constant with no projection column and no fact view
 **fails the build**. If a parsed value isn't worth showing, don't emit it (and delete
 the constant) — don't dump it in a generic bag.
+
+**Materializer-only identity signals route to `materialization_facts`, not a `proj_*` column.**
+A signal that exists *only* so `DiscoveryMaterializer` can read its current value back out — a
+scanner fingerprint like an ONVIF/Roku/SNMP serial, an SSDP/WSD UUID, a Hue bridge id, a Cast id,
+etc. — has no cross-device report reader, so a wide projection column is the wrong shape: every new
+one was a column-per-signal migration. These route instead to the fact-shaped `materialization_facts`
+table (`(device, entity_key, attribute_path, value)`, written by `IdentityFactProjection`, one row
+per signal), so adding a fingerprint is a **data change** — one `FactPaths` const added to
+`IdentitySignalPaths` — not a migration. It is *not* a general EAV bag: it is exactly the
+identity-signal set in `IdentitySignalPaths`, text-only, and `FactPathRoutingFitnessTests` treats
+"∈ IdentitySignalPaths" as a third valid routing home alongside projection-column and fact-view.
+The wide `proj_discovered` intrinsics that reports *do* read (mac, obscured_mac, hostname,
+friendly_name, vendor, model, sources) deliberately stay columns — the split is by **consumer**, not
+by semantics. `materialization_facts` is not a `ProjectionDef`, so its device-merge repoint and
+delete are hand-written in `DeviceRegistry` (pinned by `MergeRepointCoverageTests`). Full design:
+`docs/plans/architecture-identity-facts.md`.
 
 **Monotonic counters route to `metrics_raw`, not `facts_history`.** A path listed in
 `FactPaths.MetricPaths` (interface Rx/Tx bytes/packets, discovered-link Rx/Tx bytes —

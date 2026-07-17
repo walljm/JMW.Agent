@@ -18,15 +18,21 @@ public sealed class OperatorFactsIdentityFitnessTests
     [Fact]
     public void ValueArm_IdentityBearingFactPaths_ExactlyMatchesMaterializerValueReads()
     {
-        // Map each Value-tagged (table, column) the materializer reads to the FactPaths const that
-        // projection column carries, then assert set-equality with the exclusion set — plus the one
-        // documented exception (HwSystemSerial is an agent-path fingerprint, not a materializer read),
-        // minus the gap-fill-only exemptions (reads that only decide whether promotion auto-fills
-        // display metadata — operator-authorable by design, see OperatorFactCatalog.GapFillOnlyFactPaths).
+        // The expected exclusion set is built from three sources (docs/plans/architecture-identity-facts.md
+        // §6.2, after the Phase-3 move):
+        //   • the surviving wide-column reads — each Value-tagged (table, column) the materializer
+        //     reads, mapped to the FactPaths const that projection column carries;
+        //   • IdentitySignalPaths — the eleven materializer-only signals that moved to
+        //     materialization_facts (no longer projection columns, so IdentitySignalPaths *is* their
+        //     identity-bearing declaration);
+        //   • plus HwSystemSerial (agent-path chassis-serial fingerprint, not a materializer read);
+        //   • minus the gap-fill-only exemptions (reads that only decide whether promotion auto-fills
+        //     display metadata — operator-authorable by design, see GapFillOnlyFactPaths).
         HashSet<string> expected = DiscoveryMaterializer.IdentityInputColumns
             .Where(c => c.Kind == DiscoveryMaterializer.IdentityInputKind.Value)
             .Select(c => MapValueColumnToConst(c.Table, c.ColumnOrDimension))
             .ToHashSet(StringComparer.Ordinal);
+        expected.UnionWith(IdentitySignalPaths.All);
         expected.Add(FactPaths.HwSystemSerial);
         expected.ExceptWith(OperatorFactCatalog.GapFillOnlyFactPaths);
 
