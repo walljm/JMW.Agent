@@ -44,6 +44,7 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
             "proj_device_arp",
             "proj_dhcp_leases",
             "proj_dhcp_local_leases",
+            "materialization_facts",
             "device_aliases",
             "device_fingerprints",
             "devices"
@@ -1429,6 +1430,10 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
         cmd.Parameters.AddWithValue("friendly", (object?)friendlyName ?? DBNull.Value);
         cmd.Parameters.AddWithValue("dtype", (object?)deviceType ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync();
+
+        // GetCastIdIpCounts now reads materialization_facts (docs/plans/architecture-identity-facts.md
+        // §5 Phase 2a) — these direct-SQL seeds bypass the router's dual write, so mirror it here.
+        await InsertMaterializationFactAsync(observer, ip, "Device[].Discovered[].CastId", castId);
     }
 
     private async Task InsertCastDiscoveredRowAsync(
@@ -1455,6 +1460,25 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
         cmd.Parameters.AddWithValue("cast", castId);
         cmd.Parameters.AddWithValue("friendly", (object?)friendlyName ?? DBNull.Value);
         cmd.Parameters.AddWithValue("dtype", (object?)deviceType ?? DBNull.Value);
+        await cmd.ExecuteNonQueryAsync();
+
+        // See InsertCastDiscoveredNoObscuredRowAsync — mirrors the router's dual write.
+        await InsertMaterializationFactAsync(observer, ip, "Device[].Discovered[].CastId", castId);
+    }
+
+    private async Task InsertMaterializationFactAsync(string device, string entityKey, string attributePath, string value)
+    {
+        const string sql = """
+            INSERT INTO materialization_facts (device, entity_key, attribute_path, value)
+            VALUES (@device, @entityKey, @path, @value)
+            ON CONFLICT (device, entity_key, attribute_path) DO UPDATE SET value = EXCLUDED.value
+            """;
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        await using NpgsqlCommand cmd = new(sql, conn);
+        cmd.Parameters.AddWithValue("device", device);
+        cmd.Parameters.AddWithValue("entityKey", entityKey);
+        cmd.Parameters.AddWithValue("path", attributePath);
+        cmd.Parameters.AddWithValue("value", value);
         await cmd.ExecuteNonQueryAsync();
     }
 

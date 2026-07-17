@@ -87,9 +87,11 @@ public static partial class DiscoveryQueries
     /// just obscured-MAC ones). A cast id at &gt;1 IP is a stale/roamed advertisement;
     /// counted over the full table because the current device's row may carry the cast
     /// id with no obscured MAC (networkState-only) and would be missed otherwise.
+    /// Reads materialization_facts, whose <c>value</c> column is NOT NULL — CastId is
+    /// non-nullable here (unlike the old proj_discovered.cast_id-backed query).
     /// </summary>
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<(string? CastId, long? IpCount)> GetCastIdIpCountsAsync(
+    public static partial IAsyncEnumerable<(string CastId, long? IpCount)> GetCastIdIpCountsAsync(
         this NpgsqlConnection connection,
         CancellationToken cancellationToken
     );

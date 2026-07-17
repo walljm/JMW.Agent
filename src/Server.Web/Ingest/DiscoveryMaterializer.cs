@@ -82,7 +82,7 @@ public sealed class DiscoveryMaterializer
         new("proj_discovered", "ssh_host_key", IdentityInputKind.Value), // GetSshHostKeyRows
         new("proj_discovered", "hue_bridge_id", IdentityInputKind.Value), // GetScannerIdRows
         new("proj_discovered", "onvif_hardware_id", IdentityInputKind.Value), // GetScannerIdRows
-        new("proj_discovered", "cast_id", IdentityInputKind.Value), // GetObscuredMacRows, GetCastIdIpCounts
+        new("proj_discovered", "cast_id", IdentityInputKind.Value), // GetObscuredMacRows (GetCastIdIpCounts moved to materialization_facts, Phase 2a)
         new("proj_interfaces", "mac_address", IdentityInputKind.Value), // GetInterfaceObscuredMacRows
         new("proj_interfaces", "obscured_mac", IdentityInputKind.Value), // GetInterfaceObscuredMacRows
         new("proj_interfaces", "ipv4", IdentityInputKind.Value), // GetInterfaceObscuredMacRows (join key)
@@ -487,8 +487,7 @@ public sealed class DiscoveryMaterializer
         // only obscured rows would undercount its IPs and wrongly co-register.
         Dictionary<string, int> castIdIpCount =
             (await conn.GetCastIdIpCountsAsync(ct).ToListAsync(ct))
-            .Where(r => r.CastId is not null)
-            .ToDictionary(r => r.CastId!, r => (int)(r.IpCount ?? 0), StringComparer.Ordinal);
+            .ToDictionary(r => r.CastId, r => (int)(r.IpCount ?? 0), StringComparer.Ordinal);
 
         // ── Phase 1: reconstruct the full MAC for each row (best-effort). ──
         List<ObscuredRow> resolved = new(rows.Count);
