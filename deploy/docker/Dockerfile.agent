@@ -14,7 +14,7 @@
 # is framework-dependent IL, so it's architecture-independent and runs fine
 # under whichever runtime image the (unpinned) final stage resolves to.
 ARG BUILDPLATFORM
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.300 AS build
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.301 AS build
 WORKDIR /src
 
 # .editorconfig carries analyzer severity overrides and Directory.Build.props sets
