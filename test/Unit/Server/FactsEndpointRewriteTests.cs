@@ -16,11 +16,13 @@ namespace JMW.Discovery.UnitTests.Server;
 /// </summary>
 public sealed class FactsEndpointRewriteTests
 {
+    private static readonly Guid TestAgentId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
     private static List<Fact> Invoke(string methodName, IReadOnlyList<Fact> facts, string newKey)
     {
         MethodInfo m = typeof(FactsEndpoint).GetMethod(methodName, BindingFlags.NonPublic | BindingFlags.Static)
          ?? throw new InvalidOperationException($"FactsEndpoint.{methodName} not found.");
-        return (List<Fact>)m.Invoke(null, [facts, newKey, DateTimeOffset.UtcNow])!;
+        return (List<Fact>)m.Invoke(null, [facts, newKey, DateTimeOffset.UtcNow, TestAgentId])!;
     }
 
     [Fact]
@@ -33,6 +35,7 @@ public sealed class FactsEndpointRewriteTests
         Fact result = Assert.Single(rewritten);
         Assert.Equal(FactSource.HttpBanner, result.Source);
         Assert.Equal("Device[device-123].Hostname", result.Id);
+        Assert.Equal(TestAgentId, result.AgentId);
     }
 
     [Fact]
@@ -48,5 +51,6 @@ public sealed class FactsEndpointRewriteTests
         Fact result = Assert.Single(rewritten);
         Assert.Equal(FactSource.TechnitiumDns, result.Source);
         Assert.Equal("Service[service-456].DNS.Stats.TotalQueries", result.Id);
+        Assert.Equal(TestAgentId, result.AgentId);
     }
 }

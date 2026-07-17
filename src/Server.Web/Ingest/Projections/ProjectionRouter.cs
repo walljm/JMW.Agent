@@ -76,7 +76,8 @@ public sealed class ProjectionRouter
                 DimensionKeys: dimKeys,
                 Attribute: fact.Attribute,
                 Value: fact.Value,
-                CollectedAt: fact.CollectedAt
+                CollectedAt: fact.CollectedAt,
+                AgentId: fact.AgentId
             );
 
             foreach (IProjection proj in targets)

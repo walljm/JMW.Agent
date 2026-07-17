@@ -455,19 +455,21 @@ public sealed class DiscoveryMaterializer
 
     /// <summary>
     /// Given an OUI extracted from an obscured MAC, looks up every real MAC known to have been
-    /// seen at <paramref name="ip" /> and returns the one matching that OUI, or null if none
-    /// matches. Byte-identical lookup shared by the two obscured-MAC reconstruction passes
-    /// (per-device and per-interface) — the guard condition, persistence call, and logging on
-    /// success/failure differ per pass and stay at each call site.
+    /// seen at <paramref name="ip" /> — scoped to <paramref name="agentId" />'s own LAN, the
+    /// row's own recorded observer (see docs/plans/ha-device-enrichment.md §5) — and returns the
+    /// one matching that OUI, or null if none matches. Byte-identical lookup shared by the two
+    /// obscured-MAC reconstruction passes (per-device and per-interface) — the guard condition,
+    /// persistence call, and logging on success/failure differ per pass and stay at each call site.
     /// </summary>
     private static async Task<string?> TryReconstructMacAsync(
         NpgsqlConnection conn,
         string ip,
         string oui,
+        Guid? agentId,
         CancellationToken ct
     )
     {
-        List<string?> ipMacs = (await conn.GetKnownMacsForIpAsync(ip, ct).ToListAsync(ct))
+        List<string?> ipMacs = (await conn.GetKnownMacsForIpAsync(ip, agentId, ct).ToListAsync(ct))
             .Select(r => r.Mac)
             .ToList();
         return ObscuredMac.Pick(ipMacs, oui);
@@ -487,7 +489,7 @@ public sealed class DiscoveryMaterializer
         // Promotion runs every cycle so late-arriving enrichment still graduates;
         // COALESCE upserts make re-promotion a no-op.
         List<(string Device, string Ip, string? ObscuredMac, string? Mac, string? Hostname, string? Model, string?
-            FriendlyName, string? DeviceType, string? CastId, string? Vendor, string? Os)> rows =
+            FriendlyName, string? DeviceType, string? CastId, string? Vendor, string? Os, Guid? AgentId)> rows =
             await conn.GetObscuredMacRowsAsync(ct).ToListAsync(ct);
         // Reader closed — conn is free for the per-row lookups + writes below.
 
@@ -503,12 +505,13 @@ public sealed class DiscoveryMaterializer
         // ── Phase 1: reconstruct the full MAC for each row (best-effort). ──
         List<ObscuredRow> resolved = new(rows.Count);
         foreach ((string device, string ip, string? obscured, string? existingMac, string? hostname, string? model,
-            string? friendlyName, string? deviceType, string? castId, string? vendor, string? os) in rows)
+            string? friendlyName, string? deviceType, string? castId, string? vendor, string? os, Guid? agentId)
+            in rows)
         {
             string? full = NullIfBlank(existingMac);
             if (full is null && obscured is not null && ObscuredMac.TryGetOui(obscured, out string oui))
             {
-                full = await TryReconstructMacAsync(conn, ip, oui, ct);
+                full = await TryReconstructMacAsync(conn, ip, oui, agentId, ct);
                 if (full is not null)
                 {
                     await conn.SetDiscoveredMacAsync(device, ip, full, ct).ExecuteAsync(ct);
@@ -698,17 +701,18 @@ public sealed class DiscoveryMaterializer
         // (The prior version dropped an interface from the query the moment mac_address was
         // set, making the merge one-shot: if the real-MAC observer arrived after
         // reconstruction, the AP stayed split into two devices forever.)
-        List<(string Device, string Interface, string? Ip, string? ObscuredMac, string? MacAddress)> rows =
-            await conn.GetInterfaceObscuredMacRowsAsync(ct).ToListAsync(ct);
+        List<(string Device, string Interface, string? Ip, string? ObscuredMac, string? MacAddress, Guid?
+            AgentId)> rows = await conn.GetInterfaceObscuredMacRowsAsync(ct).ToListAsync(ct);
         // Reader closed — conn is free for the per-row lookups + writes below.
 
         foreach (IGrouping<string, (string Device, string Interface, string? Ip, string? ObscuredMac, string?
-            MacAddress)> apGroup in rows.GroupBy(r => r.Device, StringComparer.Ordinal))
+            MacAddress, Guid? AgentId)> apGroup in rows.GroupBy(r => r.Device, StringComparer.Ordinal))
         {
             string device = apGroup.Key;
             List<Fingerprint> fps = [];
 
-            foreach ((string _, string iface, string? ip, string? obscured, string? macAddress) in apGroup)
+            foreach ((string _, string iface, string? ip, string? obscured, string? macAddress, Guid? agentId)
+                in apGroup)
             {
                 if (obscured is null)
                 {
@@ -725,7 +729,7 @@ public sealed class DiscoveryMaterializer
                 string? realMac = NullIfBlank(macAddress);
                 if (realMac is null && ip is not null && ObscuredMac.TryGetOui(obscured, out string oui))
                 {
-                    string? full = await TryReconstructMacAsync(conn, ip, oui, ct);
+                    string? full = await TryReconstructMacAsync(conn, ip, oui, agentId, ct);
                     if (full is null)
                     {
                         DiscoveryMaterializerLog.InterfaceMacUnresolved(_logger, obscured, ip);

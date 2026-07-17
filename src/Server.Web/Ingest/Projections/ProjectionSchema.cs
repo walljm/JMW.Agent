@@ -62,6 +62,11 @@ public static class ProjectionSchema
                 sql.Append("    ").Append(col.ColumnName).Append(' ').Append(PgType(col.Kind)).Append(",\n");
             }
 
+            if (def.TracksAgentId)
+            {
+                sql.Append("    agent_id uuid,\n");
+            }
+
             sql.Append("    updated_at timestamptz NOT NULL DEFAULT now(),\n");
             sql.Append("    PRIMARY KEY (").Append(string.Join(", ", dimCols)).Append(")\n);\n");
 
@@ -75,6 +80,13 @@ public static class ProjectionSchema
                     .Append(' ')
                     .Append(PgType(col.Kind))
                     .Append(";\n");
+            }
+
+            if (def.TracksAgentId)
+            {
+                sql.Append("ALTER TABLE ")
+                    .Append(def.TableName)
+                    .Append(" ADD COLUMN IF NOT EXISTS agent_id uuid;\n");
             }
 
             foreach (ProjectionIndexDef ix in def.Indexes)

@@ -243,6 +243,396 @@ public sealed class HomeAssistantCollectorTests
         Assert.Equal("security|outdoor", Value(facts, $"{dev}.Labels"));
     }
 
+    // ── §4 device-class-scoped enrichment (docs/plans/ha-device-enrichment.md) ─────────────
+
+    [Fact]
+    public async Task Collect_PrinterInkCartridges_MatchedByMarkerTypeNotEntityIdPattern()
+    {
+        // marker_type ("ink-cartridge"/"toner") is the real match signal — verified against
+        // the HA dump to be vendor-agnostic, unlike any entity_id pattern. "unknown" state
+        // (a real HA sentinel for a not-yet-reported cartridge) must not emit a fact.
+        const string devices =
+            """
+            [{"id":"dev-printer","connections":[["mac","10:20:30:40:50:60"]],"identifiers":[],
+              "manufacturer":"Epson","model":"SC-P900"}]
+            """;
+        const string entities =
+            """
+            [{"entity_id": "sensor.epson_sc_p900_series_cyan_ink", "device_id": "dev-printer"},
+             {"entity_id": "sensor.epson_sc_p900_series_gray_ink", "device_id": "dev-printer"},
+             {"entity_id": "sensor.hp_laserjet_black_cartridge_hp_w1340a", "device_id": "dev-printer"}]
+            """;
+        const string states =
+            """
+            [{"entity_id": "sensor.epson_sc_p900_series_cyan_ink", "state": "50",
+              "attributes": {"marker_type": "ink-cartridge", "unit_of_measurement": "%"}},
+             {"entity_id": "sensor.epson_sc_p900_series_gray_ink", "state": "unknown",
+              "attributes": {"marker_type": "ink-cartridge", "unit_of_measurement": "%"}},
+             {"entity_id": "sensor.hp_laserjet_black_cartridge_hp_w1340a", "state": "84",
+              "attributes": {"marker_type": "toner", "unit_of_measurement": "%"}}]
+            """;
+        FakeSocket socket = new(
+            [AuthRequired, AuthOk, Result(1, devices), Result(2, entities), Result(3, "[]"), Result(4, states)]
+        );
+
+        List<Fact> facts = (await Collect(socket, new FakeServiceContext())).ToList();
+
+        // The list key is the entity_id's suffix AFTER the domain dot (e.g. "sensor." is not
+        // part of it) — see HomeAssistantHaDeviceInkCartridgeLevel's remarks.
+        const string dev = "Service[svc-1].HomeAssistant.HaDevice[dev-printer]";
+        Assert.Equal(
+            50.0,
+            facts.First(f => f.Id == $"{dev}.InkCartridge[epson_sc_p900_series_cyan_ink].Level").Value.AsDouble()
+        );
+        Assert.Equal(
+            84.0,
+            facts.First(f => f.Id == $"{dev}.InkCartridge[hp_laserjet_black_cartridge_hp_w1340a].Level")
+                .Value.AsDouble()
+        );
+        Assert.DoesNotContain(facts, f => f.Id.Contains("gray_ink", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Collect_RouterWanStatus_DoesNotCollideWithGenericOnlineAndConvertsSpeeds()
+    {
+        // The WAN status binary_sensor shares device_class "connectivity" with the generic
+        // Online signal — entity_id suffix must be checked first or every router's WAN status
+        // is misread as device reachability. The redundant sensor.*_wan_status text entity
+        // (same underlying value, different platform) is deliberately not read at all.
+        const string devices =
+            """
+            [{"id":"dev-router","connections":[["mac","aa:11:bb:22:cc:33"]],"identifiers":[],
+              "manufacturer":"Google","model":"OnHub"}]
+            """;
+        const string entities =
+            """
+            [{"entity_id": "binary_sensor.kitchen_onhub_wan_status", "device_id": "dev-router"},
+             {"entity_id": "sensor.kitchen_onhub_wan_status", "device_id": "dev-router"},
+             {"entity_id": "sensor.kitchen_onhub_download_speed", "device_id": "dev-router"},
+             {"entity_id": "sensor.kitchen_onhub_upload_speed", "device_id": "dev-router"}]
+            """;
+        const string states =
+            """
+            [{"entity_id": "binary_sensor.kitchen_onhub_wan_status", "state": "on",
+              "attributes": {"device_class": "connectivity"}},
+             {"entity_id": "sensor.kitchen_onhub_wan_status", "state": "Connected", "attributes": {}},
+             {"entity_id": "sensor.kitchen_onhub_download_speed", "state": "1024.0",
+              "attributes": {"unit_of_measurement": "KiB/s", "device_class": "data_rate"}},
+             {"entity_id": "sensor.kitchen_onhub_upload_speed", "state": "0.0",
+              "attributes": {"unit_of_measurement": "Mbit/s", "device_class": "data_rate"}}]
+            """;
+        FakeSocket socket = new(
+            [AuthRequired, AuthOk, Result(1, devices), Result(2, entities), Result(3, "[]"), Result(4, states)]
+        );
+
+        List<Fact> facts = (await Collect(socket, new FakeServiceContext())).ToList();
+
+        const string dev = "Service[svc-1].HomeAssistant.HaDevice[dev-router]";
+        Assert.Equal(true, Bool(facts, $"{dev}.WanOnline"));
+        Assert.Null(Bool(facts, $"{dev}.Online")); // must NOT fall into the generic connectivity case
+        // 1024 KiB/s * 1024 * 8 = 8_388_608 bps.
+        Assert.Equal(8_388_608L, Long(facts, $"{dev}.WanDownloadBps"));
+        // Wrong unit (Mbit/s, not KiB/s) — skipped rather than mis-scaled.
+        Assert.Null(Long(facts, $"{dev}.WanUploadBps"));
+    }
+
+    [Fact]
+    public async Task Collect_Camera_ResolvesEntityPictureToAbsoluteUrl()
+    {
+        const string devices =
+            """
+            [{"id":"dev-cam","connections":[["mac","aa:bb:00:11:22:33"]],"identifiers":[],
+              "manufacturer":"Ring","model":"Doorbell"}]
+            """;
+        const string entities =
+            """[{"entity_id": "camera.front_door_live_view", "device_id": "dev-cam"}]""";
+        const string states =
+            """
+            [{"entity_id": "camera.front_door_live_view", "state": "idle",
+              "attributes": {"entity_picture": "/api/camera_proxy/camera.front_door_live_view?token=abc123"}}]
+            """;
+        FakeSocket socket = new(
+            [AuthRequired, AuthOk, Result(1, devices), Result(2, entities), Result(3, "[]"), Result(4, states)]
+        );
+
+        List<Fact> facts = (await Collect(socket, new FakeServiceContext())).ToList();
+
+        Assert.Equal(
+            "https://ha.home:8123/api/camera_proxy/camera.front_door_live_view?token=abc123",
+            Value(facts, "Service[svc-1].HomeAssistant.HaDevice[dev-cam].CameraUrl")
+        );
+    }
+
+    [Fact]
+    public async Task Collect_Uptime_ParsedFromSecondsDurationSensor()
+    {
+        const string devices =
+            """
+            [{"id":"dev-router2","connections":[["mac","aa:bb:00:11:22:44"]],"identifiers":[],
+              "manufacturer":"Google","model":"OnHub"}]
+            """;
+        const string entities = """[{"entity_id": "sensor.kitchen_onhub_uptime", "device_id": "dev-router2"}]""";
+        const string states =
+            """
+            [{"entity_id": "sensor.kitchen_onhub_uptime", "state": "631866",
+              "attributes": {"unit_of_measurement": "s", "device_class": "duration"}}]
+            """;
+        FakeSocket socket = new(
+            [AuthRequired, AuthOk, Result(1, devices), Result(2, entities), Result(3, "[]"), Result(4, states)]
+        );
+
+        List<Fact> facts = (await Collect(socket, new FakeServiceContext())).ToList();
+
+        Assert.Equal(631866L, Long(facts, "Service[svc-1].HomeAssistant.HaDevice[dev-router2].UptimeSeconds"));
+    }
+
+    [Fact]
+    public async Task Collect_WifiDiagnostics_SkipsUnknownState()
+    {
+        const string devices =
+            """
+            [{"id":"dev-tablet","connections":[["mac","aa:bb:00:11:22:55"]],"identifiers":[],
+              "manufacturer":"Google","model":"Pixel Tablet"}]
+            """;
+        const string entities =
+            """
+            [{"entity_id": "sensor.pixel_tablet_wi_fi_ip_address", "device_id": "dev-tablet"},
+             {"entity_id": "sensor.pixel_tablet_wi_fi_bssid", "device_id": "dev-tablet"},
+             {"entity_id": "sensor.pixel_tablet_wi_fi_link_speed", "device_id": "dev-tablet"},
+             {"entity_id": "sensor.pixel_tablet_wi_fi_signal_strength", "device_id": "dev-tablet"}]
+            """;
+        const string states =
+            """
+            [{"entity_id": "sensor.pixel_tablet_wi_fi_ip_address", "state": "192.168.1.205", "attributes": {}},
+             {"entity_id": "sensor.pixel_tablet_wi_fi_bssid", "state": "unknown", "attributes": {}},
+             {"entity_id": "sensor.pixel_tablet_wi_fi_link_speed", "state": "72", "attributes": {}},
+             {"entity_id": "sensor.pixel_tablet_wi_fi_signal_strength", "state": "-54", "attributes": {}}]
+            """;
+        FakeSocket socket = new(
+            [AuthRequired, AuthOk, Result(1, devices), Result(2, entities), Result(3, "[]"), Result(4, states)]
+        );
+
+        List<Fact> facts = (await Collect(socket, new FakeServiceContext())).ToList();
+
+        const string dev = "Service[svc-1].HomeAssistant.HaDevice[dev-tablet]";
+        Assert.Equal("192.168.1.205", Value(facts, $"{dev}.WifiIp"));
+        Assert.Null(Value(facts, $"{dev}.WifiBssid")); // "unknown" sentinel — not emitted
+        Assert.Equal(72L, Long(facts, $"{dev}.WifiLinkSpeedMbps"));
+        Assert.Equal(-54L, Long(facts, $"{dev}.WifiSignalStrengthDbm"));
+    }
+
+    [Fact]
+    public async Task Collect_DoorbellRingAndMotion_CountsAdvanceOnlyWhenTimestampChanges()
+    {
+        const string devices =
+            """
+            [{"id":"dev-doorbell","connections":[["mac","aa:bb:00:11:22:66"]],"identifiers":[],
+              "manufacturer":"Ring","model":"Doorbell"}]
+            """;
+        const string entities =
+            """
+            [{"entity_id": "event.front_door_ding", "device_id": "dev-doorbell"},
+             {"entity_id": "event.front_door_motion", "device_id": "dev-doorbell"}]
+            """;
+        string StatesAt(string ringAt, string motionAt) =>
+            """
+            [{"entity_id": "event.front_door_ding", "state": "RING_AT",
+              "attributes": {"device_class": "doorbell"}},
+             {"entity_id": "event.front_door_motion", "state": "MOTION_AT",
+              "attributes": {"device_class": "motion"}}]
+            """.Replace("RING_AT", ringAt).Replace("MOTION_AT", motionAt);
+
+        const string dev = "Service[svc-1].HomeAssistant.HaDevice[dev-doorbell]";
+        Queue<FakeSocket> sockets = new(
+            [
+                new FakeSocket(
+                    [
+                        AuthRequired, AuthOk, Result(1, devices), Result(2, entities), Result(3, "[]"),
+                        Result(4, StatesAt("2026-07-12T21:01:57.880+00:00", "2026-07-13T00:37:10.306+00:00")),
+                    ]
+                ),
+                new FakeSocket( // poll 2: unchanged timestamps — counts must NOT advance
+                    [
+                        AuthRequired, AuthOk, Result(1, devices), Result(2, entities), Result(3, "[]"),
+                        Result(4, StatesAt("2026-07-12T21:01:57.880+00:00", "2026-07-13T00:37:10.306+00:00")),
+                    ]
+                ),
+                new FakeSocket( // poll 3: the doorbell rang again — RingCount advances, MotionCount doesn't
+                    [
+                        AuthRequired, AuthOk, Result(1, devices), Result(2, entities), Result(3, "[]"),
+                        Result(4, StatesAt("2026-07-14T08:00:00.000+00:00", "2026-07-13T00:37:10.306+00:00")),
+                    ]
+                ),
+            ]
+        );
+        // Same collector instance across all three polls — production reuses one instance
+        // per target for the agent process's lifetime (see Program.cs / the _eventTracking
+        // field remarks), which is exactly the state this test needs to exercise.
+        HomeAssistantCollector collector = new(() => sockets.Dequeue());
+        FakeServiceContext ctx = new();
+        Target target = new()
+        {
+            CollectorType = "home-assistant",
+            Endpoint = "https://ha.home:8123",
+            Credentials = new ApiTokenCredentials { Token = "tok" },
+        };
+
+        List<Fact> poll1 = (await collector.CollectAsync(target, ctx, CancellationToken.None)).ToList();
+        Assert.Equal(1L, Long(poll1, $"{dev}.RingCount"));
+        Assert.Equal(1L, Long(poll1, $"{dev}.MotionCount"));
+
+        List<Fact> poll2 = (await collector.CollectAsync(target, ctx, CancellationToken.None)).ToList();
+        Assert.Equal(1L, Long(poll2, $"{dev}.RingCount"));
+        Assert.Equal(1L, Long(poll2, $"{dev}.MotionCount"));
+
+        List<Fact> poll3 = (await collector.CollectAsync(target, ctx, CancellationToken.None)).ToList();
+        Assert.Equal(2L, Long(poll3, $"{dev}.RingCount"));
+        Assert.Equal(1L, Long(poll3, $"{dev}.MotionCount"));
+    }
+
+    [Fact]
+    public async Task Collect_MacLessDeviceWithResolvableWifiIp_NowAdmitted()
+    {
+        // §5: a mobile_app-style device with none of the previously-allowed identity signals
+        // is now admitted specifically because it has a resolvable Wi-Fi IP — the server-side
+        // IP-join (HomeAssistantDevicePromotion) is what turns this into a real device later.
+        const string devices =
+            """
+            [{"id":"dev-phone","connections":[],"identifiers":[["mobile_app","abc123"]],
+              "manufacturer":"Google","model":"Pixel 8a"}]
+            """;
+        const string entities =
+            """[{"entity_id": "sensor.pixel_8a_wi_fi_ip_address", "device_id": "dev-phone"}]""";
+        const string states =
+            """
+            [{"entity_id": "sensor.pixel_8a_wi_fi_ip_address", "state": "192.168.1.99", "attributes": {}}]
+            """;
+        FakeSocket socket = new(
+            [AuthRequired, AuthOk, Result(1, devices), Result(2, entities), Result(3, "[]"), Result(4, states)]
+        );
+
+        List<Fact> facts = (await Collect(socket, new FakeServiceContext())).ToList();
+
+        const string dev = "Service[svc-1].HomeAssistant.HaDevice[dev-phone]";
+        Assert.Equal("192.168.1.99", Value(facts, $"{dev}.WifiIp"));
+        Assert.Equal("Google", Value(facts, $"{dev}.Manufacturer"));
+    }
+
+    [Fact]
+    public async Task Collect_MacLessDeviceWithUnknownWifiIp_StillSkipped()
+    {
+        // Same domain as above but the IP sensor's state is HA's "unknown" sentinel — no
+        // resolvable IP, so none of the admission reasons apply and the device is dropped.
+        const string devices =
+            """
+            [{"id":"dev-phone2","connections":[],"identifiers":[["mobile_app","def456"]],
+              "manufacturer":"Google","model":"Pixel 8a"}]
+            """;
+        const string entities =
+            """[{"entity_id": "sensor.pixel_8a_2_wi_fi_ip_address", "device_id": "dev-phone2"}]""";
+        const string states =
+            """[{"entity_id": "sensor.pixel_8a_2_wi_fi_ip_address", "state": "unknown", "attributes": {}}]""";
+        FakeSocket socket = new(
+            [AuthRequired, AuthOk, Result(1, devices), Result(2, entities), Result(3, "[]"), Result(4, states)]
+        );
+
+        List<Fact> facts = (await Collect(socket, new FakeServiceContext())).ToList();
+
+        Assert.DoesNotContain(facts, f => f.Id.Contains("dev-phone2", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Collect_FirmwareFallback_OnlyFromFirmwareNamedUpdateEntityWhenSwVersionMissing()
+    {
+        const string devices =
+            """
+            [{"id":"dev-radio","connections":[["mac","aa:bb:00:11:22:77"]],"identifiers":[],
+              "manufacturer":"Nabu Casa","model":"Connect ZBT-2","sw_version":null}]
+            """;
+        const string entities =
+            """
+            [{"entity_id": "update.home_assistant_connect_zbt_2_firmware", "device_id": "dev-radio"},
+             {"entity_id": "update.matter_server_update", "device_id": "dev-radio"}]
+            """;
+        const string states =
+            """
+            [{"entity_id": "update.home_assistant_connect_zbt_2_firmware", "state": "off",
+              "attributes": {"installed_version": "7.5.1.0"}},
+             {"entity_id": "update.matter_server_update", "state": "off",
+              "attributes": {"installed_version": "9.0.4"}}]
+            """;
+        FakeSocket socket = new(
+            [AuthRequired, AuthOk, Result(1, devices), Result(2, entities), Result(3, "[]"), Result(4, states)]
+        );
+
+        List<Fact> facts = (await Collect(socket, new FakeServiceContext())).ToList();
+
+        // Exactly one SwVersion fact — from the firmware-named entity, not the unrelated one.
+        List<Fact> swVersionFacts = facts
+            .Where(f => f.Id == "Service[svc-1].HomeAssistant.HaDevice[dev-radio].SwVersion")
+            .ToList();
+        Assert.Single(swVersionFacts);
+        Assert.Equal("7.5.1.0", swVersionFacts[0].Value.AsString());
+    }
+
+    [Fact]
+    public async Task Collect_FirmwareFallback_NeverOverwritesExistingSwVersion()
+    {
+        // A device already carries a device-registry sw_version; its update.*_firmware
+        // entity's installed_version differs ("9.9.9") — proving the fallback is genuinely
+        // gated on device.SwVersion being null, not just coincidentally matching.
+        const string devices =
+            """
+            [{"id":"dev-radio2","connections":[["mac","aa:bb:00:11:22:99"]],"identifiers":[],
+              "manufacturer":"Nabu Casa","sw_version":"1.2.3"}]
+            """;
+        const string entities =
+            """[{"entity_id": "update.radio_firmware", "device_id": "dev-radio2"}]""";
+        const string states =
+            """
+            [{"entity_id": "update.radio_firmware", "state": "on",
+              "attributes": {"installed_version": "9.9.9", "latest_version": "9.9.9"}}]
+            """;
+        FakeSocket socket = new(
+            [AuthRequired, AuthOk, Result(1, devices), Result(2, entities), Result(3, "[]"), Result(4, states)]
+        );
+
+        List<Fact> facts = (await Collect(socket, new FakeServiceContext())).ToList();
+
+        List<Fact> swVersionFacts = facts
+            .Where(f => f.Id == "Service[svc-1].HomeAssistant.HaDevice[dev-radio2].SwVersion")
+            .ToList();
+        Assert.Single(swVersionFacts);
+        Assert.Equal("1.2.3", swVersionFacts[0].Value.AsString()); // device-registry value survives, not "9.9.9"
+    }
+
+    [Fact]
+    public async Task Collect_BulkSensorTelemetry_StillNotCollected()
+    {
+        // The firehose guardrail (AddHealthFacts remarks) must still hold for a domain/
+        // device_class this plan's enrichment doesn't name — a temperature sensor is not
+        // one of the bounded exceptions.
+        const string devices =
+            """
+            [{"id":"dev-therm","connections":[["mac","aa:bb:00:11:22:88"]],"identifiers":[],
+              "manufacturer":"Acme","model":"Thermostat"}]
+            """;
+        const string entities =
+            """[{"entity_id": "sensor.living_room_temperature", "device_id": "dev-therm"}]""";
+        const string states =
+            """
+            [{"entity_id": "sensor.living_room_temperature", "state": "21.5",
+              "attributes": {"device_class": "temperature", "unit_of_measurement": "°C"}}]
+            """;
+        FakeSocket socket = new(
+            [AuthRequired, AuthOk, Result(1, devices), Result(2, entities), Result(3, "[]"), Result(4, states)]
+        );
+
+        List<Fact> facts = (await Collect(socket, new FakeServiceContext())).ToList();
+
+        Assert.DoesNotContain(facts, f => f.Id.Contains("living_room_temperature", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task Collect_NoToken_ReturnsEmpty()
     {

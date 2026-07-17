@@ -167,7 +167,8 @@ public static class FactsEndpoint
                     List<Fact> serviceFacts = RewriteServiceFactIds(
                         batchElement.Facts,
                         serviceId,
-                        request.CollectedAt
+                        request.CollectedAt,
+                        authenticatedAgentId
                     );
 
                     // Self-referential ServiceId fact so projections keyed on the
@@ -183,7 +184,13 @@ public static class FactsEndpoint
                     if (probe.ServiceType == "home-assistant")
                     {
                         ILogger promotionLogger = loggerFactory.CreateLogger(typeof(HomeAssistantDevicePromotion));
-                        await HomeAssistantDevicePromotion.PromoteAsync(batchConn, serviceFacts, promotionLogger, ct);
+                        await HomeAssistantDevicePromotion.PromoteAsync(
+                            batchConn,
+                            pipeline,
+                            serviceFacts,
+                            promotionLogger,
+                            ct
+                        );
                     }
                 }
 
@@ -214,7 +221,12 @@ public static class FactsEndpoint
             // Must use Fact.Create() to keep all derived fields (AttributePath, KeyValuesJson, etc.) consistent.
             if (batchElement.Facts.Count > 0)
             {
-                List<Fact> rewrittenFacts = RewriteFactIds(batchElement.Facts, deviceId, request.CollectedAt);
+                List<Fact> rewrittenFacts = RewriteFactIds(
+                    batchElement.Facts,
+                    deviceId,
+                    request.CollectedAt,
+                    authenticatedAgentId
+                );
                 touchedTables.UnionWith(
                     await pipeline.IngestAsync(rewrittenFacts, ct)
                 );
@@ -305,7 +317,8 @@ public static class FactsEndpoint
     private static List<Fact> RewriteFactIds(
         IReadOnlyList<Fact> facts,
         string deviceId,
-        DateTimeOffset collectedAt
+        DateTimeOffset collectedAt,
+        Guid agentId
     )
     {
         List<Fact> result = new(facts.Count);
@@ -316,6 +329,7 @@ public static class FactsEndpoint
                 Fact.Create(RewriteRootKey(fact.Id, deviceId), ClampStringValue(fact.Value), collectedAt) with
                 {
                     Source = fact.Source,
+                    AgentId = agentId,
                 }
             );
         }
@@ -329,7 +343,8 @@ public static class FactsEndpoint
     private static List<Fact> RewriteServiceFactIds(
         IReadOnlyList<Fact> facts,
         string serviceId,
-        DateTimeOffset collectedAt
+        DateTimeOffset collectedAt,
+        Guid agentId
     )
     {
         List<Fact> result = new(facts.Count + 1);
@@ -340,6 +355,7 @@ public static class FactsEndpoint
                 Fact.Create(RewriteRootKey(fact.Id, serviceId), ClampStringValue(fact.Value), collectedAt) with
                 {
                     Source = fact.Source,
+                    AgentId = agentId,
                 }
             );
         }

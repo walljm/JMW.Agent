@@ -114,7 +114,12 @@ public static class ProjectionLibrary
                 new(FactPaths.InterfaceIPv4PrefixLength, "ipv4_prefix_length", NpgsqlDbType.Integer),
                 new(FactPaths.InterfaceIPv6PrefixLength, "ipv6_prefix_length", NpgsqlDbType.Integer),
             ]
-        ),
+        )
+        {
+            // Scopes DiscoveryMaterializer's obscured-MAC-by-IP join to the reporting agent's
+            // own LAN — see ProjectionDef.TracksAgentId and docs/plans/ha-device-enrichment.md §5.
+            TracksAgentId = true,
+        },
 
         // Key = serial number (or disk name when no serial available).
         new ProjectionDef(
@@ -288,7 +293,11 @@ public static class ProjectionLibrary
                 new(ServicePaths.DhcpLeaseHostname, "hostname", NpgsqlDbType.Text),
                 new(ServicePaths.DhcpLeaseExpires, "expires_at", NpgsqlDbType.TimestampTz),
             ]
-        ),
+        )
+        {
+            // See ProjectionDef.TracksAgentId / docs/plans/ha-device-enrichment.md §5.
+            TracksAgentId = true,
+        },
 
         // ── Device routing ────────────────────────────────────────────────────
 
@@ -322,6 +331,8 @@ public static class ProjectionLibrary
                 new("ix_proj_device_arp_mac_trgm", ["mac"], ProjectionIndexMethod.GinTrgm),
                 new("ix_proj_device_arp_arp_trgm", ["arp"], ProjectionIndexMethod.GinTrgm),
             ],
+            // See ProjectionDef.TracksAgentId / docs/plans/ha-device-enrichment.md §5.
+            TracksAgentId = true,
         },
 
         // ── Hardware component inventory ─────────────────────────────────────
@@ -378,7 +389,11 @@ public static class ProjectionLibrary
                 new(FactPaths.DhcpLocalLeaseExpires, "expires_at", NpgsqlDbType.Text),
                 new(FactPaths.DhcpLocalLeaseSource, "source", NpgsqlDbType.Text),
             ]
-        ),
+        )
+        {
+            // See ProjectionDef.TracksAgentId / docs/plans/ha-device-enrichment.md §5.
+            TracksAgentId = true,
+        },
 
         // BACnet device identity (device_instance, vendor_id, model_name, object_name,
         // firmware_revision, app_software_version, description, location, system_status,
@@ -413,7 +428,11 @@ public static class ProjectionLibrary
                 // "Sighting Telemetry" / "Discovered (Probed)" fact views (FactViewLibrary.cs) —
                 // display-only, no cross-device query, no materializer promotion need.
             ]
-        ),
+        )
+        {
+            // See ProjectionDef.TracksAgentId / docs/plans/ha-device-enrichment.md §5.
+            TracksAgentId = true,
+        },
 
         // TLS cert presented by a discovered neighbor (TlsCertScanner, via
         // NetworkDiscoveryCollector). The "observed-in-traffic" CA signal on /terrain/ca —

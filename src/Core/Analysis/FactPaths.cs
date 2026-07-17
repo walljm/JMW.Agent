@@ -919,4 +919,75 @@ public static class ServicePaths
     public const string HomeAssistantHaDeviceBatteryPercent = "Service[].HomeAssistant.HaDevice[].BatteryPercent";
     public const string HomeAssistantHaDeviceUpdateAvailable = "Service[].HomeAssistant.HaDevice[].UpdateAvailable";
     public const string HomeAssistantHaDeviceLatestVersion = "Service[].HomeAssistant.HaDevice[].LatestVersion";
+
+    // ── Device-class-scoped enrichment (docs/plans/ha-device-enrichment.md §4) ──────────────
+    //
+    // Curated, bounded exceptions to the "no bulk sensor telemetry" stance above — see the
+    // AddHealthFacts remarks in HomeAssistantCollector. Not a general sensor firehose: only
+    // these named device-classes.
+
+    // sensor.*_wi_fi_ip_address (mobile_app integration) — also the join key for the IP-join
+    // resolution of MAC-less HA devices (§5); a server-side pass, not this agent, does the
+    // IP→MAC join. NOTE: HA's mobile_app integration ships these four Wi-Fi diagnostic
+    // entities (Ip/Bssid/LinkSpeed/SignalStrength) disabled by default
+    // (entity_registry.disabled_by = "integration") — verified present in the registry
+    // capture but with no corresponding state (disabled entities have none), so the state
+    // shape below is the documented mobile_app convention, not independently re-verified
+    // against a live value. They only populate once the homeowner enables them in HA.
+    public const string HomeAssistantHaDeviceWifiIp = "Service[].HomeAssistant.HaDevice[].WifiIp";
+
+    // sensor.*_wi_fi_bssid — the AP this device is currently associated with.
+    public const string HomeAssistantHaDeviceWifiBssid = "Service[].HomeAssistant.HaDevice[].WifiBssid";
+
+    // sensor.*_wi_fi_link_speed, unit "Mbit/s" per mobile_app — see WifiIp remarks.
+    public const string HomeAssistantHaDeviceWifiLinkSpeedMbps =
+        "Service[].HomeAssistant.HaDevice[].WifiLinkSpeedMbps";
+
+    // sensor.*_wi_fi_signal_strength, unit "dBm" per mobile_app — see WifiIp remarks.
+    public const string HomeAssistantHaDeviceWifiSignalStrengthDbm =
+        "Service[].HomeAssistant.HaDevice[].WifiSignalStrengthDbm";
+
+    // sensor.*_uptime — verified: unit "s", device_class "duration" (e.g. sensor.kitchen_onhub_uptime).
+    public const string HomeAssistantHaDeviceUptimeSeconds = "Service[].HomeAssistant.HaDevice[].UptimeSeconds";
+
+    // Printer ink/toner level, one row per cartridge — matched via attributes.marker_type ==
+    // "ink-cartridge" | "toner" (verified: every ink/toner sensor in the dump carries this,
+    // regardless of vendor — a more reliable match than any entity_id pattern). The list key
+    // is the entity_id's own suffix after the domain (e.g. "epson_sc_p900_series_cyan_ink",
+    // "hp_laserjet_m207_m212_black_cartridge_hp_w1340a") — vendor naming isn't normalized
+    // (Epson's color names and HP's part-number-suffixed names have no common vocabulary
+    // worth building a mapping for), and not trimmed to just the color/part, since HA doesn't
+    // expose the device-name prefix as a separate, reliably strippable segment.
+    public const string HomeAssistantHaDeviceInkCartridgeLevel =
+        "Service[].HomeAssistant.HaDevice[].InkCartridge[].Level";
+
+    // binary_sensor.*_wan_status (router, e.g. OnHub via the HA integration) — device_class
+    // "connectivity", same as the generic Online signal above, so the collector must match
+    // the entity_id suffix FIRST or every WAN-status entity gets misread as device Online.
+    // (HA also exposes a redundant sensor.*_wan_status text entity — "Connected"/etc — for
+    // the same underlying value; deliberately not read, since the binary_sensor is authoritative.)
+    public const string HomeAssistantHaDeviceWanOnline = "Service[].HomeAssistant.HaDevice[].WanOnline";
+
+    // sensor.*_download_speed / _upload_speed — verified unit "KiB/s" (kibibytes/sec, NOT
+    // Mbit/s), device_class "data_rate". Converted to bits/sec (×8192) to match this
+    // codebase's Bps convention (FactPaths.InterfaceSpeedBps).
+    public const string HomeAssistantHaDeviceWanDownloadBps = "Service[].HomeAssistant.HaDevice[].WanDownloadBps";
+    public const string HomeAssistantHaDeviceWanUploadBps = "Service[].HomeAssistant.HaDevice[].WanUploadBps";
+
+    // camera.* attributes.entity_picture — a path relative to the HA base URL
+    // ("/api/camera_proxy/<entity_id>?token=..."), resolved to an absolute URL and stored as
+    // HA returns it including its rotating access_token; re-fetched from the entity each
+    // poll, so a stale token is only ever as old as the last collection cycle (see
+    // docs/plans/ha-device-enrichment.md §8).
+    public const string HomeAssistantHaDeviceCameraUrl = "Service[].HomeAssistant.HaDevice[].CameraUrl";
+
+    // event.*_ding / event.*_motion (device_class doorbell/motion). LastXAt is the
+    // last-occurrence ISO timestamp (state value); XCount is a rolling count this agent
+    // maintains itself (event.* entities carry no attribute for it) by comparing the new
+    // timestamp against the last-seen one each poll and incrementing when it advances — not
+    // an event bus, just "how many distinct rings/motions have we now observed."
+    public const string HomeAssistantHaDeviceLastRingAt = "Service[].HomeAssistant.HaDevice[].LastRingAt";
+    public const string HomeAssistantHaDeviceRingCount = "Service[].HomeAssistant.HaDevice[].RingCount";
+    public const string HomeAssistantHaDeviceLastMotionAt = "Service[].HomeAssistant.HaDevice[].LastMotionAt";
+    public const string HomeAssistantHaDeviceMotionCount = "Service[].HomeAssistant.HaDevice[].MotionCount";
 }

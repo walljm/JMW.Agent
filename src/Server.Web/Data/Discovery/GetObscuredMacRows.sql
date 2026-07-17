@@ -19,6 +19,7 @@ SELECT
   , idf.cast_id
   , d.vendor
   , idf.os
+  , d.agent_id
 FROM
     proj_discovered d
     LEFT JOIN (

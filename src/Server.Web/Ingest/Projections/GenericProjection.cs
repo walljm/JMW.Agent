@@ -134,7 +134,7 @@ public sealed class GenericProjection : IProjection
         CancellationToken ct
     )
     {
-        List<(string[] DimKeys, Dictionary<string, FactValue> Attrs, DateTimeOffset UpdatedAt)> groups =
+        List<(string[] DimKeys, Dictionary<string, FactValue> Attrs, DateTimeOffset UpdatedAt, Guid? AgentId)> groups =
             GroupByEntity(facts);
         if (groups.Count == 0)
         {
@@ -145,7 +145,9 @@ public sealed class GenericProjection : IProjection
         // Entities whose combined column values haven't changed are dropped here.
         // The cache tracks full entity state so partial-column batches are handled
         // correctly: an attribute not in this batch is preserved from prior state.
-        List<(string[] DimKeys, Dictionary<string, FactValue> Attrs, DateTimeOffset UpdatedAt)> changed =
+        // AgentId rides along unfiltered — it never gates the change check on its own
+        // (see ProjectionDef.TracksAgentId) — so it passes through Filter() as-is.
+        List<(string[] DimKeys, Dictionary<string, FactValue> Attrs, DateTimeOffset UpdatedAt, Guid? AgentId)> changed =
             _cache.Filter(groups);
         if (changed.Count == 0)
         {
@@ -162,9 +164,11 @@ public sealed class GenericProjection : IProjection
         for (int c = 0; c < colArrays.Length; c++) { colArrays[c] = ColumnArray.Create(Def.Columns[c], n); }
 
         DateTimeOffset[] updatedAts = new DateTimeOffset[n];
+        Guid?[]? agentIds = Def.TracksAgentId ? new Guid?[n] : null;
 
         int i = 0;
-        foreach ((string[] dimKeys, Dictionary<string, FactValue> attrs, DateTimeOffset updatedAt) in changed)
+        foreach ((string[] dimKeys, Dictionary<string, FactValue> attrs, DateTimeOffset updatedAt, Guid? agentId)
+            in changed)
         {
             for (int d = 0; d < dimKeys.Length; d++)
             {
@@ -178,6 +182,11 @@ public sealed class GenericProjection : IProjection
             }
 
             updatedAts[i] = updatedAt;
+            if (agentIds is not null)
+            {
+                agentIds[i] = agentId;
+            }
+
             i++;
         }
 
@@ -194,6 +203,11 @@ public sealed class GenericProjection : IProjection
             cmd.Parameters.Add(col.ToParameter());
         }
 
+        if (agentIds is not null)
+        {
+            cmd.Parameters.Add(Param.UuidArray(agentIds));
+        }
+
         cmd.Parameters.Add(Param.TimestampTzArray(updatedAts));
 
         await cmd.ExecuteNonQueryAsync(ct);
@@ -201,11 +215,11 @@ public sealed class GenericProjection : IProjection
 
     // ── Grouping ──────────────────────────────────────────────────────────────
 
-    private static List<(string[] DimKeys, Dictionary<string, FactValue> Attrs, DateTimeOffset UpdatedAt)>
-        GroupByEntity(IReadOnlyList<RoutedFact> facts)
+    private static List<(string[] DimKeys, Dictionary<string, FactValue> Attrs, DateTimeOffset UpdatedAt, Guid?
+        AgentId)> GroupByEntity(IReadOnlyList<RoutedFact> facts)
     {
-        Dictionary<string, (string[] DimKeys, Dictionary<string, FactValue> Attrs, DateTimeOffset UpdatedAt)>
-            map = new();
+        Dictionary<string, (string[] DimKeys, Dictionary<string, FactValue> Attrs, DateTimeOffset UpdatedAt, Guid?
+            AgentId)> map = new();
 
         foreach (RoutedFact fact in facts)
         {
@@ -217,19 +231,24 @@ public sealed class GenericProjection : IProjection
             };
             if (!map.TryGetValue(
                 key,
-                out (string[] DimKeys, Dictionary<string, FactValue> Attrs, DateTimeOffset UpdatedAt) entry
+                out (string[] DimKeys, Dictionary<string, FactValue> Attrs, DateTimeOffset UpdatedAt, Guid? AgentId)
+                    entry
             ))
             {
-                entry = (fact.DimensionKeys, [], fact.CollectedAt);
+                entry = (fact.DimensionKeys, [], fact.CollectedAt, fact.AgentId);
                 map[key] = entry;
             }
 
             entry.Attrs[fact.Attribute] = fact.Value;
+            // AgentId travels with whichever fact carries the freshest CollectedAt in the
+            // group, the same rule UpdatedAt already uses — the row's agent_id should
+            // reflect its most recent observer, not an arbitrary fact in the batch.
             if (fact.CollectedAt > entry.UpdatedAt)
             {
                 map[key] = entry with
                 {
                     UpdatedAt = fact.CollectedAt,
+                    AgentId = fact.AgentId,
                 };
             }
         }
@@ -242,7 +261,8 @@ public sealed class GenericProjection : IProjection
     // Parameter layout (1-based):
     //   $1 .. $D      : dimension text[] arrays      (D = DimensionNames.Count)
     //   $D+1 .. $D+C  : column typed[] arrays        (C = Columns.Count)
-    //   $D+C+1        : updated_at timestamptz[]
+    //   $D+C+1        : agent_id uuid[]   (only when Def.TracksAgentId)
+    //   last          : updated_at timestamptz[]
     //
     // WHERE clause uses (EXCLUDED.col IS NOT NULL AND col IS DISTINCT FROM EXCLUDED.col)
     // rather than the COALESCE form. Both are logically equivalent but this avoids
@@ -255,27 +275,40 @@ public sealed class GenericProjection : IProjection
         string table = def.TableName;
         string[] dimCols = def.DimensionNames.Select(n => n.ToLowerInvariant()).ToArray();
         string[] dataCols = def.Columns.Select(c => c.ColumnName).ToArray();
+        string[] insertCols = def.TracksAgentId ? [.. dataCols, "agent_id"] : dataCols;
 
         int p = 1;
         string[] dimSelects = dimCols.Select(_ => $"unnest(${p++}::text[])").ToArray();
         string[] dataSelects = def.Columns.Select(c => $"unnest(${p++}::{PgType(c.Kind)}[])").ToArray();
+        string? agentIdSelect = def.TracksAgentId ? $"unnest(${p++}::uuid[])" : null;
         string tsSelect = $"unnest(${p}::timestamptz[])";
+
+        IEnumerable<string> dataAndAgentSelects = agentIdSelect is null
+            ? dataSelects
+            : dataSelects.Append(agentIdSelect);
 
         StringBuilder sb = new();
         sb.AppendLine(
             CultureInfo.InvariantCulture,
-            $"INSERT INTO {table} ({Join(dimCols)}, {Join(dataCols)}, updated_at)"
+            $"INSERT INTO {table} ({Join(dimCols)}, {Join(insertCols)}, updated_at)"
         );
         sb.AppendLine("SELECT");
         sb.AppendLine(
             CultureInfo.InvariantCulture,
-            $"    {string.Join(",\n    ", dimSelects.Concat(dataSelects).Append(tsSelect))}"
+            $"    {string.Join(",\n    ", dimSelects.Concat(dataAndAgentSelects).Append(tsSelect))}"
         );
         sb.AppendLine(CultureInfo.InvariantCulture, $"ON CONFLICT ({Join(dimCols)}) DO UPDATE SET");
 
-        IEnumerable<string> sets = dataCols
-            .Select(c => $"    {c} = COALESCE(EXCLUDED.{c}, {table}.{c})")
-            .Append($"    updated_at = GREATEST(EXCLUDED.updated_at, {table}.updated_at)");
+        // agent_id is COALESCE'd exactly like a data column but deliberately left out of the
+        // WHERE guard below — see ProjectionDef.TracksAgentId — so an agent-only difference
+        // never forces a write, only rides along when some tracked column also changed.
+        List<string> sets = [.. dataCols.Select(c => $"    {c} = COALESCE(EXCLUDED.{c}, {table}.{c})")];
+        if (def.TracksAgentId)
+        {
+            sets.Add($"    agent_id = COALESCE(EXCLUDED.agent_id, {table}.agent_id)");
+        }
+
+        sets.Add($"    updated_at = GREATEST(EXCLUDED.updated_at, {table}.updated_at)");
         sb.AppendLine(string.Join(",\n", sets));
 
         // IS NOT NULL short-circuits when the column wasn't in this batch (NULL),
@@ -316,12 +349,16 @@ public sealed class GenericProjection : IProjection
         private readonly ConcurrentDictionary<string, EntityState> _state = new();
         private int _count;
 
-        public List<(string[] DimKeys, Dictionary<string, FactValue> Attrs, DateTimeOffset UpdatedAt)>
-            Filter(List<(string[] DimKeys, Dictionary<string, FactValue> Attrs, DateTimeOffset UpdatedAt)> entities)
+        public List<(string[] DimKeys, Dictionary<string, FactValue> Attrs, DateTimeOffset UpdatedAt, Guid? AgentId)>
+            Filter(
+                List<(string[] DimKeys, Dictionary<string, FactValue> Attrs, DateTimeOffset UpdatedAt, Guid? AgentId)>
+                    entities
+            )
         {
-            List<(string[], Dictionary<string, FactValue>, DateTimeOffset)> changed = new(entities.Count);
+            List<(string[], Dictionary<string, FactValue>, DateTimeOffset, Guid?)> changed = new(entities.Count);
 
-            foreach ((string[] dimKeys, Dictionary<string, FactValue> batchAttrs, DateTimeOffset updatedAt) in entities)
+            foreach ((string[] dimKeys, Dictionary<string, FactValue> batchAttrs, DateTimeOffset updatedAt, Guid?
+                agentId) in entities)
             {
                 string key = string.Join('\0', dimKeys);
 
@@ -330,7 +367,7 @@ public sealed class GenericProjection : IProjection
                     // Cache full: pass through and let the SQL WHERE guard decide
                     if (_count >= _maxEntries)
                     {
-                        changed.Add((dimKeys, batchAttrs, updatedAt));
+                        changed.Add((dimKeys, batchAttrs, updatedAt, agentId));
                         continue;
                     }
 
@@ -362,7 +399,7 @@ public sealed class GenericProjection : IProjection
 
                 if (hasChange)
                 {
-                    changed.Add((dimKeys, batchAttrs, updatedAt));
+                    changed.Add((dimKeys, batchAttrs, updatedAt, agentId));
                 }
             }
 

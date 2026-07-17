@@ -59,11 +59,14 @@ public static partial class DiscoveryQueries
     /// Returns all discovered rows carrying an obscured MAC (reconstructed or not),
     /// with the intrinsic attributes the resolved device should inherit. The
     /// materializer reconstructs null-mac rows, then promotes every row.
+    /// AgentId (proj_discovered.agent_id — the row's own reporting agent) scopes the
+    /// reconstruction's IP→MAC lookup to that agent's own LAN; see
+    /// docs/plans/ha-device-enrichment.md §5.
     /// </summary>
     [DatabaseCommand]
     public static partial IAsyncEnumerable<(string Device, string Ip, string? ObscuredMac, string? Mac, string?
         Hostname, string? Model, string? FriendlyName, string? DeviceType, string? CastId, string? Vendor,
-        string? Os)> GetObscuredMacRowsAsync(
+        string? Os, Guid? AgentId)> GetObscuredMacRowsAsync(
         this NpgsqlConnection connection,
         CancellationToken cancellationToken
     );
@@ -112,14 +115,37 @@ public static partial class DiscoveryQueries
 
     /// <summary>
     /// Returns the real full MACs (12 lowercase hex, no separators) the server has
-    /// attested for <paramref name="ip" /> — from the ARP cache, both DHCP-lease
-    /// projections, and previously-discovered non-obscured MACs. Used to reconstruct
-    /// an obscured Google Wifi MAC by IP join (the caller then corroborates by OUI).
+    /// attested for <paramref name="ip" />, scoped to <paramref name="agentId" />'s own
+    /// LAN — from that agent's ARP cache, DHCP leases (both service-polled and local), and
+    /// previously-discovered non-obscured MACs. Rows with no recorded agent_id (written
+    /// before this scoping existed) are treated as unscoped rather than excluded. Pass null
+    /// for <paramref name="agentId" /> when the caller's own agent is unknown — this matches
+    /// only other unscoped rows, never a row belonging to a known different agent. Used to
+    /// reconstruct an obscured Google Wifi MAC by IP join (the caller then corroborates by
+    /// OUI), and by the Home Assistant IP-join (see docs/plans/ha-device-enrichment.md §5).
+    /// Scoping matters because RFC1918 addresses can be reused across independent LANs this
+    /// server ingests from.
     /// </summary>
     [DatabaseCommand]
     public static partial IAsyncEnumerable<DiscoveredMacResult> GetKnownMacsForIpAsync(
         this NpgsqlConnection connection,
         string ip,
+        Guid? agentId,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// Twin of <see cref="GetKnownMacsForIpAsync" /> that also resolves each candidate's OUI
+    /// vendor (see GetKnownMacsWithVendorForIp.sql) — the second corroboration signal for the
+    /// Home Assistant IP-join (docs/plans/ha-device-enrichment.md §5), cross-checked against
+    /// the HA device's own self-reported manufacturer before a MAC-less device's recovered
+    /// identity is accepted.
+    /// </summary>
+    [DatabaseCommand]
+    public static partial IAsyncEnumerable<(string? Mac, string? Vendor)> GetKnownMacsWithVendorForIpAsync(
+        this NpgsqlConnection connection,
+        string ip,
+        Guid? agentId,
         CancellationToken cancellationToken
     );
 
@@ -129,10 +155,12 @@ public static partial class DiscoveryQueries
     /// materializer reconstructs mac_address on first sight and re-feeds the real MAC into
     /// the AP device resolve each pass so a later-appearing real-MAC observer still merges.
     /// <c>MacAddress</c> is the already-reconstructed real MAC (null until reconstructed).
+    /// AgentId (proj_interfaces.agent_id) scopes the reconstruction's IP→MAC lookup to that
+    /// agent's own LAN; see docs/plans/ha-device-enrichment.md §5.
     /// </summary>
     [DatabaseCommand]
     public static partial IAsyncEnumerable<(string Device, string Interface, string? Ip, string? ObscuredMac,
-            string? MacAddress)>
+            string? MacAddress, Guid? AgentId)>
         GetInterfaceObscuredMacRowsAsync(
             this NpgsqlConnection connection,
             CancellationToken cancellationToken
@@ -204,6 +232,19 @@ public static partial class DiscoveryQueries
         string? vendor,
         string? model,
         string? serial,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// Upserts a firmware/software version into proj_hardware. COALESCE ensures a
+    /// previously-set value is never overwritten. See
+    /// docs/plans/ha-device-enrichment.md §6. Returns the device ID.
+    /// </summary>
+    [DatabaseCommand]
+    public static partial IAsyncEnumerable<DeviceRefResult> UpsertDeviceFirmwareAsync(
+        this NpgsqlConnection connection,
+        string device,
+        string firmwareVersion,
         CancellationToken cancellationToken
     );
 

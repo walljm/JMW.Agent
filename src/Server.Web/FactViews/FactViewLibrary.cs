@@ -1005,6 +1005,34 @@ public static class FactViewLibrary
                 FactViewColumn.Fact("Battery %", ServicePaths.HomeAssistantHaDeviceBatteryPercent),
                 FactViewColumn.Fact("Update available", ServicePaths.HomeAssistantHaDeviceUpdateAvailable),
                 FactViewColumn.Fact("Latest version", ServicePaths.HomeAssistantHaDeviceLatestVersion),
+                // docs/plans/ha-device-enrichment.md §4 — device-class-scoped enrichment,
+                // sharing this view's DimKey (Service|HaDevice).
+                FactViewColumn.Fact("Wi-Fi IP", ServicePaths.HomeAssistantHaDeviceWifiIp),
+                FactViewColumn.Fact("Wi-Fi BSSID", ServicePaths.HomeAssistantHaDeviceWifiBssid),
+                FactViewColumn.Fact("Wi-Fi link speed (Mbps)", ServicePaths.HomeAssistantHaDeviceWifiLinkSpeedMbps),
+                FactViewColumn.Fact("Wi-Fi signal (dBm)", ServicePaths.HomeAssistantHaDeviceWifiSignalStrengthDbm),
+                FactViewColumn.Fact("Uptime (s)", ServicePaths.HomeAssistantHaDeviceUptimeSeconds),
+                FactViewColumn.Fact("WAN online", ServicePaths.HomeAssistantHaDeviceWanOnline),
+                FactViewColumn.Fact("WAN download (bps)", ServicePaths.HomeAssistantHaDeviceWanDownloadBps),
+                FactViewColumn.Fact("WAN upload (bps)", ServicePaths.HomeAssistantHaDeviceWanUploadBps),
+                FactViewColumn.Fact("Camera URL", ServicePaths.HomeAssistantHaDeviceCameraUrl),
+                FactViewColumn.Fact("Last ring", ServicePaths.HomeAssistantHaDeviceLastRingAt),
+                FactViewColumn.Fact("Ring count", ServicePaths.HomeAssistantHaDeviceRingCount),
+                FactViewColumn.Fact("Last motion", ServicePaths.HomeAssistantHaDeviceLastMotionAt),
+                FactViewColumn.Fact("Motion count", ServicePaths.HomeAssistantHaDeviceMotionCount),
+            ],
+            Kind: FactViewKind.List,
+            Group: FactViewGroup.Discovery
+        ),
+        // Ink/toner cartridges, one row per cartridge — nested one level deeper than "Home
+        // Assistant Devices" above (Service|HaDevice|InkCartridge vs Service|HaDevice), so a
+        // separate view, same fix as "Discovered: NBNS Names" (a List view's columns must
+        // share one DimKey). No projection: single-device detail only, no cross-device query.
+        new(
+            "Home Assistant Device Ink Cartridges",
+            [
+                FactViewColumn.Key("Device / Cartridge"),
+                FactViewColumn.Fact("Level %", ServicePaths.HomeAssistantHaDeviceInkCartridgeLevel),
             ],
             Kind: FactViewKind.List,
             Group: FactViewGroup.Discovery

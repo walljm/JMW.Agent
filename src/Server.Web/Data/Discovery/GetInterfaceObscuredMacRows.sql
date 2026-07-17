@@ -10,6 +10,7 @@ SELECT
   , ipv4 AS ip
   , obscured_mac
   , mac_address
+  , agent_id
 FROM
     proj_interfaces
 WHERE

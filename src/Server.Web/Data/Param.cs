@@ -48,4 +48,7 @@ public static class Param
 
     public static NpgsqlParameter TimestampTzArray(DateTimeOffset[] values) =>
         new() { Value = values, NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.TimestampTz };
+
+    public static NpgsqlParameter UuidArray(Guid?[] values) =>
+        new() { Value = values, NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Uuid };
 }

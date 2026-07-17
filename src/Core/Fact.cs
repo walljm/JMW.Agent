@@ -47,6 +47,16 @@ public readonly record struct Fact
     /// </summary>
     public string? SourceName { get; init; }
 
+    /// <summary>
+    /// The agent that reported this fact, when known. Not derivable from Id — stamped by
+    /// <c>FactsEndpoint</c> from the authenticated agent's id when rewriting the placeholder
+    /// root — and excluded from equality like <see cref="Source" />, since it's provenance,
+    /// not identity. Used to scope IP/MAC-join lookups to the reporting agent's own LAN
+    /// (RFC1918 addresses are commonly reused across independent LANs this server ingests
+    /// from) — see docs/plans/ha-device-enrichment.md §5.
+    /// </summary>
+    public Guid? AgentId { get; init; }
+
     // ── Derived fields (computed once from Id, excluded from equality) ────────
 
     /// <summary>

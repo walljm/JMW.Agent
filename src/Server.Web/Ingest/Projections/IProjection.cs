@@ -36,5 +36,6 @@ public sealed record RoutedFact(
     string[] DimensionKeys, // e.g. ["router-1", "eth0"]
     string Attribute, // e.g. "Speed"
     FactValue Value,
-    DateTimeOffset CollectedAt
+    DateTimeOffset CollectedAt,
+    Guid? AgentId = null
 );

@@ -505,6 +505,15 @@ values are harmless.
 discovered-only devices — the original §10.1 gap). Do **not** ship the emit-facts change until one
 of (a)/(b)/(c) is chosen, or the "never clobbers" guarantee is knowingly dropped.
 
+**Confirming data point (2026-07-17, `docs/plans/ha-device-enrichment.md` §6):** HA's promoted
+battery percent (`Device[].Battery.ChargePercent`) was routed through the real ingest pipeline
+directly, not a fill-only upsert — safely, because that path has **no projection column at all**
+(`proj_batteries` was dropped years ago; the "Battery" fact view reads `facts_history` straight),
+so there was no existing fill-only guarantee to invert in the first place. This is exactly the
+condition (a)/(b)/(c) above are trying to generalize for columns that *do* still carry one —
+battery just happens to be a fact with none, making it a free instance of "route through the real
+pipeline," not evidence that doing so is safe in general.
+
 ## 11. Related, broader problem — derivation batch-clobbering (decided 2026-07-16, not yet built)
 
 > **Directive (Boss, 2026-07-16):** "derivations, in order to be really useful, need to be able to

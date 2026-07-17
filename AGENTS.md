@@ -348,6 +348,20 @@ expired ones. Any query that reads "current value of a fact" across both possibi
 (e.g. `GetDeviceAllFacts.sql`) must union in `metrics_raw` for these paths — see its
 `own_metrics`/`sighting_metrics` CTEs.
 
+**IP/MAC-join lookups must be scoped to the reporting agent's own LAN, not global.** RFC1918
+addresses are commonly reused across independent LANs/sites this server ingests from — an
+IP→MAC lookup with no site scope can pair a MAC observed on a completely different network (see
+`docs/plans/ha-device-enrichment.md` §5/§9.2 for the incident that found this). `ProjectionDef.TracksAgentId`
+opts a projection into carrying the id of the agent that reported each row (`Fact.AgentId`,
+stamped by `FactsEndpoint` from the authenticated agent, threaded through `RoutedFact` the same
+way `updated_at` already rides along every write without being a `Columns` entry — present but
+excluded from the change-detection guard, so an agent-only difference never forces a write on
+its own). `proj_device_arp`, `proj_dhcp_leases`, `proj_dhcp_local_leases`, `proj_discovered`, and
+`proj_interfaces` opt in today (`GetKnownMacsForIp.sql`/`GetKnownMacsWithVendorForIp.sql` scope
+by it); a legacy row with no recorded `agent_id` is treated as unscoped/still-matchable rather
+than excluded, so pre-migration data doesn't lose recall. Any new IP/MAC-join consumer should
+scope through this mechanism rather than querying a projection unscoped.
+
 **"Guess" facts are a separate namespace from canonical facts, not another writer of
 the same path.** `Derived.DeviceVendorGuess`/`Derived.DeviceOsGuess` hold best-effort
 inference from a proxy signal (SNMP sysDescr, hostname/model prefix, OS distro —

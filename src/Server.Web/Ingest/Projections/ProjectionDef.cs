@@ -50,4 +50,14 @@ public sealed record ProjectionDef(
     /// , so they no-op against an index a migration already created by the same name.
     /// </summary>
     public IReadOnlyList<ProjectionIndexDef> Indexes { get; init; } = [];
+
+    /// <summary>
+    /// When true, every row carries the id of the agent that reported it (from
+    /// <see cref="JMW.Discovery.Core.Fact.AgentId" />), written/updated the same way as
+    /// <c>updated_at</c> — present but excluded from the change-detection guard, so an
+    /// agent-only difference never forces a write on its own. Opt-in per projection rather
+    /// than universal: only sources an IP/MAC join needs to scope to "same LAN" carry it —
+    /// see docs/plans/ha-device-enrichment.md §5 for why unscoped IP joins are unsafe.
+    /// </summary>
+    public bool TracksAgentId { get; init; } = false;
 }
