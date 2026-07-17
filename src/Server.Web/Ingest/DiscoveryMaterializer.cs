@@ -74,11 +74,11 @@ public sealed class DiscoveryMaterializer
         new("proj_device_arp", "mac", IdentityInputKind.Value), // GetNewArpMacs, GetKnownMacsForIp
         new("proj_discovered", "mac", IdentityInputKind.Value), // GetNewDiscoveredMacs, GetKnownMacsForIp
         new("proj_discovered", "obscured_mac", IdentityInputKind.Value), // GetObscuredMacRows
-        new("proj_discovered", "onvif_serial", IdentityInputKind.Value), // GetPromotionGapRows (GetNewDiscoveredSerials moved to materialization_facts, Phase 2c)
-        new("proj_discovered", "roku_serial", IdentityInputKind.Value), // GetPromotionGapRows (GetNewDiscoveredSerials moved to materialization_facts, Phase 2c)
-        new("proj_discovered", "snmp_serial", IdentityInputKind.Value), // GetPromotionGapRows (GetNewDiscoveredSerials moved to materialization_facts, Phase 2c)
-        new("proj_discovered", "ssdp_uuid", IdentityInputKind.Value), // GetPromotionGapRows (GetNewDiscoveredSerials moved to materialization_facts, Phase 2c)
-        new("proj_discovered", "wsd_uuid", IdentityInputKind.Value), // GetPromotionGapRows (GetNewDiscoveredSerials moved to materialization_facts, Phase 2c)
+        new("proj_discovered", "onvif_serial", IdentityInputKind.Value), // GetPromotionGapRows (GetNewDiscoveredSerials/GetNewDiscoveredMacs moved to materialization_facts, Phase 2c/2d)
+        new("proj_discovered", "roku_serial", IdentityInputKind.Value), // GetPromotionGapRows (GetNewDiscoveredSerials/GetNewDiscoveredMacs moved to materialization_facts, Phase 2c/2d)
+        new("proj_discovered", "snmp_serial", IdentityInputKind.Value), // GetPromotionGapRows (GetNewDiscoveredSerials/GetNewDiscoveredMacs moved to materialization_facts, Phase 2c/2d)
+        new("proj_discovered", "ssdp_uuid", IdentityInputKind.Value), // GetPromotionGapRows (GetNewDiscoveredSerials/GetNewDiscoveredMacs moved to materialization_facts, Phase 2c/2d)
+        new("proj_discovered", "wsd_uuid", IdentityInputKind.Value), // GetPromotionGapRows (GetNewDiscoveredSerials/GetNewDiscoveredMacs moved to materialization_facts, Phase 2c/2d)
         new("proj_discovered", "ssh_host_key", IdentityInputKind.Value), // GetSshHostKeyRows moved to materialization_facts, Phase 2b (column stays wide until Phase 3)
         new("proj_discovered", "hue_bridge_id", IdentityInputKind.Value), // GetScannerIdRows moved to materialization_facts, Phase 2b (column stays wide until Phase 3)
         new("proj_discovered", "onvif_hardware_id", IdentityInputKind.Value), // GetScannerIdRows moved to materialization_facts, Phase 2b (column stays wide until Phase 3)
@@ -93,7 +93,7 @@ public sealed class DiscoveryMaterializer
         new("proj_discovered", "friendly_name", IdentityInputKind.Value), // GetObscuredMacRows, GetPromotionGapRows
         new("proj_discovered", "vendor", IdentityInputKind.Value), // discovered promote, GetPromotionGapRows, GetObscuredMacRows
         new("proj_discovered", "model", IdentityInputKind.Value), // discovered promote, GetPromotionGapRows
-        new("proj_discovered", "os", IdentityInputKind.Value), // discovered promote, GetPromotionGapRows, GetObscuredMacRows (GetNewDiscoveredSerials moved to materialization_facts, Phase 2c)
+        new("proj_discovered", "os", IdentityInputKind.Value), // discovered promote, GetPromotionGapRows, GetObscuredMacRows (GetNewDiscoveredSerials/GetNewDiscoveredMacs moved to materialization_facts, Phase 2c/2d)
         new("proj_discovered", "device_type", IdentityInputKind.Value), // GetObscuredMacRows
         new("proj_hardware", "system_vendor", IdentityInputKind.Value), // GetPromotionGapRows gap detection
         new("proj_hardware", "system_model", IdentityInputKind.Value), // GetPromotionGapRows gap detection

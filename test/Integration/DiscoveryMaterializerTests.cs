@@ -1359,6 +1359,13 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
         cmd.Parameters.AddWithValue("model", (object?)model ?? DBNull.Value);
         cmd.Parameters.AddWithValue("os", (object?)os ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync();
+
+        // GetNewDiscoveredMacs now reads materialization_facts for Os (docs/plans/
+        // architecture-identity-facts.md §5 Phase 2d) — mirror the router's dual write.
+        if (os is not null)
+        {
+            await InsertMaterializationFactAsync(observer, ip, "Device[].Discovered[].Os", os);
+        }
     }
 
     private async Task InsertSshDiscoveredRowAsync(
