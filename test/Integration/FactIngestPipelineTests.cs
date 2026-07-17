@@ -73,6 +73,26 @@ public sealed class FactIngestPipelineTests : IAsyncLifetime
         Assert.Equal(afterFirst, afterSecond);
     }
 
+    [Fact]
+    public async Task Ingest_HwSystemVendor_PopulatesBothProjDevicesAndProjHardwareFromOneDerivation()
+    {
+        // DeviceVendorDerivation is the single decision-maker for "vendor" — proj_devices.vendor
+        // (DeviceVendorCanonical, the fan-in's output) and proj_hardware.system_vendor both read
+        // that SAME derived fact now, rather than proj_hardware reading the raw HwSystemVendor
+        // input independently. One raw report, one derivation, one decision, two projections.
+        string deviceId = DeviceId;
+
+        await _pipeline.IngestAsync([Fact.Create($"Device[{deviceId}].Hardware.SystemVendor", "Acme")]);
+
+        string? projDevicesVendor =
+            await ReadScalarAsync($"SELECT vendor FROM proj_devices WHERE device = '{deviceId}'");
+        string? projHardwareVendor =
+            await ReadScalarAsync($"SELECT system_vendor FROM proj_hardware WHERE device = '{deviceId}'");
+
+        Assert.Equal("Acme", projDevicesVendor);
+        Assert.Equal("Acme", projHardwareVendor);
+    }
+
     // ── proj_systems ──────────────────────────────────────────────────────────
 
     [Fact]

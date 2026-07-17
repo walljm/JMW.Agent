@@ -701,3 +701,23 @@ migrations + fitness amendment). Sequenced after Phase 5; not a prerequisite for
   telling the caller *which* input won. Preserving it would mean provenance-aware writes, which §11.2
   explicitly rejected as a design direction. Not raised as an open question — it's the direct,
   foreseeable consequence of the repoint Boss already directed.
+
+**Follow-up (2026-07-17, same session): `proj_hardware.system_vendor` repointed to the fan-in too.**
+Boss's framing: "the whole point of the derivation is to take all the vendor facts and decide which
+one is best, so the system uses that" — `proj_hardware.system_vendor` was still reading the raw
+`FactPaths.HwSystemVendor` fact directly (a second, independent 1:1 projection of one of
+`DeviceVendorDerivation`'s five inputs) rather than the derivation's own decision. Repointed its
+`ProjectionLibrary` column def to `Derived.DeviceVendorCanonical` — the same output
+`proj_devices.vendor` reads — so one derivation decision now fans out to both projections
+(`ProjectionRouter` already supports one fact routing to multiple projections; no new mechanism
+needed). `HwSystemVendor` remains one of the derivation's inputs, unchanged.
+- **NFR-8 ripple:** `OperatorFactCatalog.IdentityBearingFactPaths` mapped `HwSystemVendor` →
+  `proj_hardware.system_vendor` specifically because that was the direct materializer gap-detection
+  read; swapped to `Derived.DeviceVendorCanonical` to match. `HwSystemVendor` itself drops out of
+  the identity-bearing set — but this isn't a new gap: the other three raw fan-in inputs
+  (`DeviceVendor`, `BacnetVendorName`, `ModbusVendorName`) were *never* in that set either, because
+  the set has only ever tracked what `DiscoveryMaterializer` reads directly, not every upstream input
+  to a derivation that happens to feed something it reads. `HwSystemVendor` becoming
+  operator-writable now just matches its three siblings' pre-existing status, not a new exposure.
+- Covered by `FactIngestPipelineTests.Ingest_HwSystemVendor_PopulatesBothProjDevicesAndProjHardwareFromOneDerivation`.
+- Verified: 1265 unit + 405 integration tests green.

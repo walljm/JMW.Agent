@@ -73,7 +73,13 @@ public static class ProjectionLibrary
                 new(FactPaths.HwCpuLogicalCores, "cpu_logical_cores", NpgsqlDbType.Bigint),
                 new(FactPaths.HwCpuMhz, "cpu_mhz", NpgsqlDbType.Double),
                 new(FactPaths.HwTotalMemBytes, "total_mem_bytes", NpgsqlDbType.Bigint),
-                new(FactPaths.HwSystemVendor, "system_vendor", NpgsqlDbType.Text),
+                // Fed by DeviceVendorDerivation's output, not FactPaths.HwSystemVendor directly —
+                // that raw fact is one of several inputs fanned into the canonical output (same
+                // fan-in that feeds proj_devices.vendor, see ProjectionLibrary's "proj_devices" def
+                // above). One derivation decides the best vendor across every source; both
+                // projections read that single decision rather than each reading a different raw
+                // input independently.
+                new(FactPaths.Derived.DeviceVendorCanonical, "system_vendor", NpgsqlDbType.Text),
                 new(FactPaths.HwSystemModel, "system_model", NpgsqlDbType.Text),
                 new(FactPaths.HwSystemSerial, "system_serial", NpgsqlDbType.Text),
                 new(FactPaths.HwBiosVersion, "bios_version", NpgsqlDbType.Text),
