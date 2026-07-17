@@ -79,9 +79,9 @@ public sealed class DiscoveryMaterializer
         new("proj_discovered", "snmp_serial", IdentityInputKind.Value), // GetNewDiscoveredSerials, GetPromotionGapRows
         new("proj_discovered", "ssdp_uuid", IdentityInputKind.Value), // GetNewDiscoveredSerials, GetPromotionGapRows
         new("proj_discovered", "wsd_uuid", IdentityInputKind.Value), // GetNewDiscoveredSerials, GetPromotionGapRows
-        new("proj_discovered", "ssh_host_key", IdentityInputKind.Value), // GetSshHostKeyRows
-        new("proj_discovered", "hue_bridge_id", IdentityInputKind.Value), // GetScannerIdRows
-        new("proj_discovered", "onvif_hardware_id", IdentityInputKind.Value), // GetScannerIdRows
+        new("proj_discovered", "ssh_host_key", IdentityInputKind.Value), // GetSshHostKeyRows moved to materialization_facts, Phase 2b (column stays wide until Phase 3)
+        new("proj_discovered", "hue_bridge_id", IdentityInputKind.Value), // GetScannerIdRows moved to materialization_facts, Phase 2b (column stays wide until Phase 3)
+        new("proj_discovered", "onvif_hardware_id", IdentityInputKind.Value), // GetScannerIdRows moved to materialization_facts, Phase 2b (column stays wide until Phase 3)
         new("proj_discovered", "cast_id", IdentityInputKind.Value), // GetObscuredMacRows (GetCastIdIpCounts moved to materialization_facts, Phase 2a)
         new("proj_interfaces", "mac_address", IdentityInputKind.Value), // GetInterfaceObscuredMacRows
         new("proj_interfaces", "obscured_mac", IdentityInputKind.Value), // GetInterfaceObscuredMacRows
@@ -216,16 +216,11 @@ public sealed class DiscoveryMaterializer
 
     private async Task MaterializeSshHostKeysAsync(NpgsqlConnection conn, CancellationToken ct)
     {
-        List<(string? Mac, string? SshHostKey)> rows = await conn.GetSshHostKeyRowsAsync(ct).ToListAsync(ct);
+        List<(string? Mac, string SshHostKey)> rows = await conn.GetSshHostKeyRowsAsync(ct).ToListAsync(ct);
         // Reader closed — conn is free for the resolves below.
 
-        foreach ((string? mac, string? sshHostKey) in rows)
+        foreach ((string? mac, string sshHostKey) in rows)
         {
-            if (string.IsNullOrEmpty(sshHostKey))
-            {
-                continue;
-            }
-
             // The host key is a stable per-host identity; unioning it with the row's MAC
             // merges any device already resolved by that MAC, and cross-observer rows that
             // share the key converge onto one device. (Caveat: VMs cloned from one image

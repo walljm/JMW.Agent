@@ -142,9 +142,11 @@ public static partial class DiscoveryQueries
     /// Returns discovered rows carrying an SSH host-key fingerprint (+ the row's MAC when
     /// present). The materializer resolves each as a <c>FingerprintType.SshHostKey</c>
     /// (unioned with the MAC) so observations of the same host converge onto one device.
+    /// Reads materialization_facts, whose <c>value</c> column is NOT NULL — SshHostKey is
+    /// non-nullable here (unlike the old proj_discovered.ssh_host_key-backed query).
     /// </summary>
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<(string? Mac, string? SshHostKey)> GetSshHostKeyRowsAsync(
+    public static partial IAsyncEnumerable<(string? Mac, string SshHostKey)> GetSshHostKeyRowsAsync(
         this NpgsqlConnection connection,
         CancellationToken cancellationToken
     );

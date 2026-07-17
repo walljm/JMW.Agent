@@ -3297,6 +3297,7 @@ public sealed class TargetCandidatesTests : IAsyncLifetime
             "targets",
             "proj_discovered_services",
             "proj_discovered",
+            "materialization_facts",
             "agents"
         );
 
@@ -3379,6 +3380,18 @@ public sealed class TargetCandidatesTests : IAsyncLifetime
         cmd.Parameters.AddWithValue("discovered", discovered);
         cmd.Parameters.AddWithValue("hostKey", "ssh-ed25519 AAAAtest");
         await cmd.ExecuteNonQueryAsync();
+
+        // ListTargetCandidates' ssh predicate now reads materialization_facts
+        // (docs/plans/architecture-identity-facts.md §5 Phase 2b) — this direct-SQL seed bypasses
+        // the router's dual write, so mirror it here.
+        const string identitySql = """
+            INSERT INTO materialization_facts (device, entity_key, attribute_path, value)
+            VALUES ('observer-device', @discovered, 'Device[].Discovered[].SshHostKey', @hostKey)
+            """;
+        await using NpgsqlCommand identityCmd = new(identitySql, conn);
+        identityCmd.Parameters.AddWithValue("discovered", discovered);
+        identityCmd.Parameters.AddWithValue("hostKey", "ssh-ed25519 AAAAtest");
+        await identityCmd.ExecuteNonQueryAsync();
     }
 
     [Fact]

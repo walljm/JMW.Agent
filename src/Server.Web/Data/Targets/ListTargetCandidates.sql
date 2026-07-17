@@ -30,7 +30,11 @@ FROM
     CROSS JOIN LATERAL (
         VALUES
             ('ssh', (string_to_array(d.sources, ',') && ARRAY['SshBannerScanner'])
-                OR d.ssh_host_key IS NOT NULL),
+                OR EXISTS (
+                    SELECT 1 FROM materialization_facts f
+                    WHERE f.device = d.device AND f.entity_key = d.discovered
+                      AND f.attribute_path = 'Device[].Discovered[].SshHostKey'
+                )),
             ('snmp', string_to_array(d.sources, ',')
                 && ARRAY['SnmpBroadcastScanner', 'GatewaySnmpArpScanner']),
             ('cert', string_to_array(d.sources, ',') && ARRAY['TlsCertScanner']),

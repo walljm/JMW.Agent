@@ -1381,6 +1381,10 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
         cmd.Parameters.AddWithValue("mac", (object?)mac ?? DBNull.Value);
         cmd.Parameters.AddWithValue("key", sshHostKey);
         await cmd.ExecuteNonQueryAsync();
+
+        // GetSshHostKeyRows now reads materialization_facts (docs/plans/architecture-identity-facts.md
+        // §5 Phase 2b) — this direct-SQL seed bypasses the router's dual write, so mirror it here.
+        await InsertMaterializationFactAsync(observer, ip, "Device[].Discovered[].SshHostKey", sshHostKey);
     }
 
     private async Task InsertObscuredDiscoveredRowAsync(
