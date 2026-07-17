@@ -1,5 +1,6 @@
 using JMW.Discovery.Core;
 using JMW.Discovery.Server;
+using JMW.Discovery.Server.Projections;
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -113,6 +114,8 @@ public sealed class HomeAssistantDevicePromotionTests : IAsyncLifetime
         // merge onto that device rather than minting a second one.
         DiscoveryMaterializer materializer = new(
             _fixture.DataSource,
+            new FactRepository(_fixture.DataSource, new MetricsRepository(_fixture.DataSource)),
+            new ProjectionRouter(_fixture.DataSource, ProjectionLibrary.CreateAll(_fixture.DataSource)),
             NullLoggerFactory.Instance.CreateLogger<DiscoveryMaterializer>()
         );
         await InsertArpRowAsync("observer-device-1", "192.168.1.150", "001122334488", "eth0");

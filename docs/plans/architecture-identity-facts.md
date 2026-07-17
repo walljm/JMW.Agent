@@ -415,6 +415,28 @@ Runs as **Phase 5**, after the intrinsic identity signals are fact-shaped (Phase
 re-emit iterates `materialization_facts` + the surviving wide intrinsics uniformly. It is not a
 prerequisite for Phases 1–4 and does not change their acceptance criteria.
 
+### 10.7 (resolved) + Phase 5 as built (2026-07-16)
+
+**§10.7's precedence question is resolved by Phase 4.5 hydration, not by the guess-split stopgap.**
+With the hydrated fan-in as the precedence layer (§11), promotion emits through the ingest path
+without the last-write-wins inversion §10.7 feared — for the *derived* paths. Implementation:
+
+- `DiscoveryMaterializer.EmitPromotedIntrinsicsAsync` builds `Device[deviceId].*` facts and runs
+  them through `FactRepository.AppendAsync` + `ProjectionRouter.RouteAsync` (the normal ingest
+  sinks), `source_name` = the observing collector. Emitted intrinsics: hostname → `OS.Hostname`,
+  friendly_name → `OS.FriendlyName`, model → `Hardware.SystemModel`, device_type → `Kind`,
+  serial → `Hardware.SystemSerial`, os → `OS.Family` — the same projection columns the old direct
+  upserts populated, so display is unchanged; the new part is that they now land in `facts_history`
+  with provenance (the empty-All-Facts fix, AC7/8). Idempotent via dedup-on-write + EntityStateCache.
+- `last_seen_ip` is not a fact — kept on a slimmed `UpsertDeviceSystem` (IP only).
+- `Link.*` is never emitted (AC9) — only intrinsics are passed in.
+- Covered by `DiscoveryMaterializerTests.MaterializeAsync_DiscoveredMac_PromotedIntrinsicsLandInFactsHistoryWithProvenance`.
+- **Vendor deferred to Phase 6.** `proj_devices.vendor` is a *derived* column
+  (`DeviceVendorCanonical`), so promoting into it cleanly means feeding the fan-in a low-priority
+  input — entangled with removing the `*_guess` chain. Until Phase 6, vendor stays on the existing
+  fill-only `UpsertDeviceHardware`/`UpsertDeviceSummary` upserts, exactly as before (no behavior
+  change). This is the one intrinsic not yet a routed fact.
+
 ### 10.7 Open question — promoted-fact precedence vs the last-write-wins projection (UNSETTLED)
 
 > **Status (2026-07-16):** Flagged during review, **not yet resolved**. §10.4 asserts "promotion

@@ -104,6 +104,8 @@ public sealed class FullPipelineEndToEndTests : IAsyncLifetime
 
         DiscoveryMaterializer materializer = new(
             _fixture.DataSource,
+            factRepo,
+            router,
             NullLoggerFactory.Instance.CreateLogger<DiscoveryMaterializer>()
         );
 
@@ -675,6 +677,8 @@ public sealed class FullPipelineEndToEndTests : IAsyncLifetime
 
         DiscoveryMaterializer materializer2 = new(
             _fixture.DataSource,
+            new FactRepository(_fixture.DataSource, new MetricsRepository(_fixture.DataSource)),
+            new ProjectionRouter(_fixture.DataSource, ProjectionLibrary.CreateAll(_fixture.DataSource)),
             NullLoggerFactory.Instance.CreateLogger<DiscoveryMaterializer>()
         );
 

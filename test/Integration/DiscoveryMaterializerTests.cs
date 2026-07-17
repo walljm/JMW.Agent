@@ -1,5 +1,6 @@
 using JMW.Discovery.Core;
 using JMW.Discovery.Server;
+using JMW.Discovery.Server.Projections;
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -28,6 +29,8 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
     {
         _materializer = new DiscoveryMaterializer(
             _fixture.DataSource,
+            new FactRepository(_fixture.DataSource, new MetricsRepository(_fixture.DataSource)),
+            new ProjectionRouter(_fixture.DataSource, ProjectionLibrary.CreateAll(_fixture.DataSource)),
             NullLoggerFactory.Instance.CreateLogger<DiscoveryMaterializer>()
         );
         return Task.CompletedTask;
@@ -45,6 +48,7 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
             "proj_dhcp_leases",
             "proj_dhcp_local_leases",
             "materialization_facts",
+            "facts_history",
             "device_aliases",
             "device_fingerprints",
             "devices"
@@ -168,6 +172,59 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
             """
         );
         Assert.Equal("Acme", vendor);
+    }
+
+    [Fact]
+    public async Task MaterializeAsync_DiscoveredMac_PromotedIntrinsicsLandInFactsHistoryWithProvenance()
+    {
+        // §10.5 AC7/8: promotion emits the device's intrinsics through the ingest path, so a
+        // discovered-only device's All Facts tab is non-empty and its name is a real, attributed
+        // fact — not just a projection write. AC9: Link.* sighting telemetry is never promoted.
+        await InsertDiscoveredRowAsync(
+            observer: "observer-facts-1",
+            ip: "10.0.0.52",
+            mac: "001122334466",
+            hostname: "promoted-cam",
+            vendor: "Acme",
+            model: "IPCam600",
+            os: "linux"
+        );
+
+        await _materializer.MaterializeAsync(CancellationToken.None);
+
+        string? deviceId = await ReadScalarAsync(
+            "SELECT device_id::text FROM device_fingerprints WHERE fp_type = 'mac' AND fp_value = '001122334466'"
+        );
+        Assert.NotNull(deviceId);
+
+        // Hostname is a real Device[] fact in facts_history, attributed to the observing collector.
+        string? hostnameSource = await ReadScalarAsync(
+            $"""
+            SELECT source_name FROM facts_history
+            WHERE key_values ->> 'Device' = '{deviceId}'
+              AND attribute_path = 'Device[].OS.Hostname' AND value_str = 'promoted-cam'
+            """
+        );
+        Assert.Equal("scanner", hostnameSource);
+
+        // Model + OS likewise present as attributed facts (the "every intrinsic" part of AC7).
+        long modelFacts = await _fixture.CountAsync(
+            "facts_history",
+            $"key_values ->> 'Device' = '{deviceId}' AND attribute_path = 'Device[].Hardware.SystemModel'"
+        );
+        Assert.Equal(1, modelFacts);
+        long osFacts = await _fixture.CountAsync(
+            "facts_history",
+            $"key_values ->> 'Device' = '{deviceId}' AND attribute_path = 'Device[].OS.Family'"
+        );
+        Assert.Equal(1, osFacts);
+
+        // AC9: no Link.* sighting telemetry promoted onto the device.
+        long linkFacts = await _fixture.CountAsync(
+            "facts_history",
+            $"key_values ->> 'Device' = '{deviceId}' AND attribute_path LIKE 'Device[].Discovered[].Link.%'"
+        );
+        Assert.Equal(0, linkFacts);
     }
 
     [Fact]

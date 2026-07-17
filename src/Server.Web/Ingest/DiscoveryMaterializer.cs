@@ -1,4 +1,5 @@
 using JMW.Discovery.Core;
+using JMW.Discovery.Core.Analysis;
 using JMW.Discovery.Server.Queries;
 
 using Npgsql;
@@ -103,10 +104,19 @@ public sealed class DiscoveryMaterializer
 
     private readonly ILogger<DiscoveryMaterializer> _logger;
     private readonly NpgsqlDataSource _db;
+    private readonly FactRepository _facts;
+    private readonly Projections.ProjectionRouter _router;
 
-    public DiscoveryMaterializer(NpgsqlDataSource db, ILogger<DiscoveryMaterializer> logger)
+    public DiscoveryMaterializer(
+        NpgsqlDataSource db,
+        FactRepository facts,
+        Projections.ProjectionRouter router,
+        ILogger<DiscoveryMaterializer> logger
+    )
     {
         _db = db;
+        _facts = facts;
+        _router = router;
         _logger = logger;
     }
 
@@ -134,7 +144,7 @@ public sealed class DiscoveryMaterializer
         await MaterializePromotionGapsAsync(conn, ct);
     }
 
-    private static async Task MaterializePromotionGapsAsync(NpgsqlConnection conn, CancellationToken ct)
+    private async Task MaterializePromotionGapsAsync(NpgsqlConnection conn, CancellationToken ct)
     {
         List<(string? Device, string? Vendor, string? Model, string? Os, string? Hostname, string? FriendlyName)>
             rows = await conn.GetPromotionGapRowsAsync(ct).ToListAsync(ct);
@@ -148,26 +158,28 @@ public sealed class DiscoveryMaterializer
                 continue;
             }
 
-            // UpsertDeviceHardware/UpsertDeviceSystem/UpsertDeviceSummary COALESCE against the
-            // existing column, so calling them with a still-null value is a safe no-op — but skip
-            // entirely when there's nothing to offer, so a permanently-unfillable gap doesn't
-            // churn updated_at.
-            if (vendor is not null || model is not null)
-            {
-                await conn.UpsertDeviceHardwareAsync(device, vendor, model, serial: null, ct).ExecuteAsync(ct);
-            }
+            // Emit the gap-fill intrinsics as Device[] facts through the ingest path (§10.4). The
+            // gap query only returns still-empty fields, so this is inherently fill-shaped. No IP
+            // here (gap-fill pass has none). The observing collector isn't singular for a gap row
+            // (it aggregates across sightings), so the provenance is the generic "discovery".
+            await EmitPromotedIntrinsicsAsync(
+                device,
+                source: "discovery",
+                hostname: hostname,
+                friendlyName: friendlyName,
+                model: model,
+                kind: null,
+                serial: null,
+                os: os,
+                ct
+            );
 
-            // Also reaches the unified proj_devices.vendor (DeviceVendorDerivation covers the
-            // agent-direct path; this covers passive-discovery promotion for agentless devices).
+            // Vendor stays on the existing fill-only upserts (proj_hardware.system_vendor +
+            // proj_devices.vendor), unchanged — Phase 6 folds vendor into the hydrated fan-in.
             if (vendor is not null)
             {
+                await conn.UpsertDeviceHardwareAsync(device, vendor, model: null, serial: null, ct).ExecuteAsync(ct);
                 await conn.UpsertDeviceSummaryAsync(device, vendor, kind: null, ct).ExecuteAsync(ct);
-            }
-
-            if (os is not null || hostname is not null || friendlyName is not null)
-            {
-                await conn.UpsertDeviceSystemAsync(device, hostname, friendlyName, lastSeenIp: null, os, ct)
-                    .ExecuteAsync(ct);
             }
         }
     }
@@ -365,28 +377,36 @@ public sealed class DiscoveryMaterializer
 
         foreach ((string deviceId, DiscoveredRow row) in resolved)
         {
-            string? ip = src.PromoteIp ? row.Ip : null;
-            if (row.Hostname is not null || ip is not null || row.Os is not null)
+            // last_seen_ip is not a fact — keep the direct upsert for it (IP only).
+            if (src.PromoteIp && NullIfBlank(row.Ip) is { } ip)
             {
-                // No friendly-name-ish source available on this row (proj_discovered.friendly_name
-                // isn't selected here) — MaterializePromotionGapsAsync fills it in on a later pass.
-                await conn.UpsertDeviceSystemAsync(deviceId, row.Hostname, friendlyName: null, ip, row.Os, ct)
+                await conn.UpsertDeviceSystemAsync(deviceId, hostname: null, friendlyName: null, ip, osFamily: null, ct)
                     .ExecuteAsync(ct);
             }
 
-            if (src.PromoteHardware)
-            {
-                string? serial = row.OnvifSerial ?? row.RokuSerial ?? row.SnmpSerial;
-                if (row.Vendor is not null || row.Model is not null || serial is not null)
-                {
-                    await conn.UpsertDeviceHardwareAsync(deviceId, row.Vendor, row.Model, serial, ct).ExecuteAsync(ct);
-                }
+            // No friendly-name-ish source on this row (proj_discovered.friendly_name isn't selected
+            // here) — MaterializePromotionGapsAsync fills it in on a later pass. Hardware intrinsics
+            // (model/serial) only for sources that carry them.
+            string? serial = src.PromoteHardware ? (row.OnvifSerial ?? row.RokuSerial ?? row.SnmpSerial) : null;
+            await EmitPromotedIntrinsicsAsync(
+                deviceId,
+                src.Source,
+                hostname: row.Hostname,
+                friendlyName: null,
+                model: src.PromoteHardware ? row.Model : null,
+                kind: null,
+                serial: serial,
+                os: row.Os,
+                ct
+            );
 
-                // Also reaches the unified proj_devices.vendor (see DeviceVendorDerivation).
-                if (row.Vendor is not null)
-                {
-                    await conn.UpsertDeviceSummaryAsync(deviceId, row.Vendor, kind: null, ct).ExecuteAsync(ct);
-                }
+            // Vendor stays on the existing fill-only upserts (proj_hardware.system_vendor +
+            // proj_devices.vendor), unchanged from before — see EmitPromotedIntrinsics for why
+            // vendor isn't a routed fact yet (Phase 6 folds it into the hydrated fan-in).
+            if (src.PromoteHardware && NullIfBlank(row.Vendor) is { } vendor)
+            {
+                await conn.UpsertDeviceHardwareAsync(deviceId, vendor, model: null, serial: null, ct).ExecuteAsync(ct);
+                await conn.UpsertDeviceSummaryAsync(deviceId, vendor, kind: null, ct).ExecuteAsync(ct);
             }
         }
     }
@@ -612,39 +632,35 @@ public sealed class DiscoveryMaterializer
             // Audio") is display-only. OS rides along the same COALESCE upsert (the row's os column
             // is the station-level hint — e.g. VendorOsFromDiscoveredTypeDerivation's "linux" for an
             // OnHub mesh unit — never overwriting an agent-collected os_family).
-            string? cleanHostname = NullIfBlank(r.Hostname);
-            string? cleanFriendlyName = NullIfBlank(r.FriendlyName);
-            string? cleanOs = NullIfBlank(r.Os);
-            if (cleanHostname != null || cleanFriendlyName != null || cleanOs != null)
+            // last_seen_ip is not a fact — keep the direct upsert for it (IP only).
+            if (NullIfBlank(r.Ip) is { } cleanIp)
             {
-                await conn.UpsertDeviceSystemAsync(
-                        deviceId,
-                        cleanHostname,
-                        cleanFriendlyName,
-                        NullIfBlank(r.Ip),
-                        cleanOs,
-                        ct
-                    )
+                await conn.UpsertDeviceSystemAsync(deviceId, hostname: null, friendlyName: null, cleanIp, osFamily: null, ct)
                     .ExecuteAsync(ct);
             }
 
-            // Model → Hardware.SystemModel. Hardware vendor is intentionally not set: proj_hardware
-            // vendor is reserved for the agent/dmidecode path.
-            if (NullIfBlank(r.Model) is { } cleanModel)
-            {
-                await conn.UpsertDeviceHardwareAsync(deviceId, vendor: null, cleanModel, serial: null, ct)
-                    .ExecuteAsync(ct);
-            }
+            // Intrinsics through the ingest path (§10.4). hostname/friendly name are genuinely
+            // distinct: the mDNS hostname is the real hostname; the mDNS/UPnP friendly name (e.g.
+            // "Kitchen Audio") is display-only. Model → Hardware.SystemModel; DeviceType → Kind
+            // (e.g. "Nest-Audio", "OnHub Mesh Point"); OS the station-level hint (never the agent's).
+            await EmitPromotedIntrinsicsAsync(
+                deviceId,
+                source: "google-wifi",
+                hostname: r.Hostname,
+                friendlyName: r.FriendlyName,
+                model: r.Model,
+                kind: r.DeviceType,
+                serial: null,
+                os: r.Os,
+                ct
+            );
 
-            // DeviceType → Kind (e.g. "Nest-Audio", "OnHub Mesh Point") and Vendor → proj_devices
-            // vendor, matching the generic discovered-promote path. The row's vendor column is the
-            // station-level UPnP manufacturer or a kind-derived vendor (OnHub → Google via
-            // VendorOsFromDiscoveredTypeDerivation) — a device manufacturer, not an OUI guess.
-            string? cleanVendor = NullIfBlank(r.Vendor);
-            string? cleanKind = NullIfBlank(r.DeviceType);
-            if (cleanVendor != null || cleanKind != null)
+            // Vendor → proj_devices.vendor via the existing fill-only path (station-level UPnP
+            // manufacturer / kind-derived vendor — a device manufacturer, not an OUI guess). See
+            // EmitPromotedIntrinsics for why vendor isn't a routed fact yet (Phase 6).
+            if (NullIfBlank(r.Vendor) is { } cleanVendor)
             {
-                await conn.UpsertDeviceSummaryAsync(deviceId, cleanVendor, cleanKind, ct).ExecuteAsync(ct);
+                await conn.UpsertDeviceSummaryAsync(deviceId, cleanVendor, kind: null, ct).ExecuteAsync(ct);
             }
         }
         catch (ArgumentException)
@@ -767,6 +783,78 @@ public sealed class DiscoveryMaterializer
     }
 
     // ── Row helpers ───────────────────────────────────────────────────────────
+
+    // ── Promotion emission (§10.4) ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Emits a resolved device's promoted intrinsics as <c>Device[deviceId].*</c> facts through the
+    /// normal ingest path (facts_history + projection router), rather than writing the projection
+    /// columns directly (docs/plans/architecture-identity-facts.md §10.4). This gives the promoted
+    /// values a real, attributed home in the device's All Facts tab — resolving the "name not in its
+    /// facts" gap for discovered-only devices — with <paramref name="source" /> as the observing
+    /// collector's provenance. Emitting to canonical paths (the same columns the old direct upserts
+    /// populated) keeps display behavior unchanged; vendor is emitted to <see cref="FactPaths.HwSystemVendor" />
+    /// so it flows through the hydrated <c>DeviceVendorDerivation</c> (Phase 4.5) — the fan-in, not
+    /// last-write-wins, resolves precedence against an agent-reported vendor. Idempotent: unchanged
+    /// re-emits are absorbed by facts_history dedup-on-write and the router's EntityStateCache.
+    /// last_seen_ip is not a fact and stays on the direct <c>UpsertDeviceSystem</c> path.
+    /// Never emits <c>Discovered[].Link.*</c> sighting telemetry — those are properties of the
+    /// observation, not the device.
+    /// </summary>
+    private async Task EmitPromotedIntrinsicsAsync(
+        string deviceId,
+        string source,
+        string? hostname,
+        string? friendlyName,
+        string? model,
+        string? kind,
+        string? serial,
+        string? os,
+        CancellationToken ct
+    )
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        List<Fact> facts = [];
+
+        void Add(string template, string? value)
+        {
+            string? clean = NullIfBlank(value);
+            if (clean is null)
+            {
+                return;
+            }
+
+            string id = template.Replace("Device[]", $"Device[{deviceId}]", StringComparison.Ordinal);
+            facts.Add(
+                Fact.Create(id, clean, now) with
+                {
+                    Source = FactSource.NetworkDiscovery,
+                    SourceName = source,
+                }
+            );
+        }
+
+        Add(FactPaths.SystemHostname, hostname);
+        Add(FactPaths.SystemFriendlyName, friendlyName);
+        Add(FactPaths.HwSystemModel, model);
+        Add(FactPaths.DeviceKind, kind);
+        Add(FactPaths.HwSystemSerial, serial);
+        // OS family is a real observation (e.g. "linux" from a self-identifying discovered type),
+        // promoted to the same os_family column the direct upsert used.
+        Add(FactPaths.SystemOsFamily, os);
+        // Vendor is deliberately NOT emitted here: proj_devices.vendor is a DERIVED column
+        // (DeviceVendorCanonical), so promoting into it cleanly means feeding the fan-in a
+        // low-priority input — which is entangled with removing the *_guess chain (Phase 6). Until
+        // then, vendor stays on the existing fill-only UpsertDeviceSummary path at the call sites.
+
+        if (facts.Count == 0)
+        {
+            return;
+        }
+
+        await _facts.AppendAsync(facts, ct);
+        await _router.RouteAsync(facts, ct);
+    }
 
     private static bool HasAnyFingerprint(DiscoveredRow r) =>
         !string.IsNullOrEmpty(r.Mac)
