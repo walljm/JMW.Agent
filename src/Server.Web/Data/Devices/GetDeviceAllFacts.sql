@@ -20,7 +20,31 @@
 -- pre-cutover value that would otherwise sit alongside the live metrics_raw value with no
 -- deterministic tiebreak between the two.
 -- DISTINCT ON collapses the append log to the latest value per fact id.
-WITH identity AS (
+WITH idf AS (
+    -- Pivot of the identity-signal paths that moved off proj_discovered's wide columns onto
+    -- materialization_facts (docs/plans/architecture-identity-facts.md §5) — the "sighting"/
+    -- "sighting_metrics" CTEs below need these (alongside mac, which stays wide) to match a
+    -- discovered row's identity to this device's own fingerprints. snmp_serial/os/etc. aren't
+    -- part of this match today (pre-existing scope — this file only ever matched on
+    -- mac/ssdp_uuid/wsd_uuid/onvif_serial/roku_serial), so only those four are pivoted here.
+    SELECT
+        device
+      , entity_key
+      , MAX(value) FILTER (WHERE attribute_path = 'Device[].Discovered[].OnvifSerial') AS onvif_serial
+      , MAX(value) FILTER (WHERE attribute_path = 'Device[].Discovered[].RokuSerial')  AS roku_serial
+      , MAX(value) FILTER (WHERE attribute_path = 'Device[].Discovered[].SsdpUuid')    AS ssdp_uuid
+      , MAX(value) FILTER (WHERE attribute_path = 'Device[].Discovered[].WsdUuid')     AS wsd_uuid
+    FROM
+        materialization_facts
+    WHERE
+        attribute_path IN (
+            'Device[].Discovered[].OnvifSerial', 'Device[].Discovered[].RokuSerial',
+            'Device[].Discovered[].SsdpUuid', 'Device[].Discovered[].WsdUuid'
+        )
+    GROUP BY
+        device, entity_key
+)
+  , identity AS (
     SELECT
         'Identity.' || fp.fp_type AS attribute_path
       , NULL::jsonb                AS key_values
@@ -75,6 +99,7 @@ ON (h.id)
     , h.collected_at
 FROM
     proj_discovered d
+    LEFT JOIN idf ON idf.device = d.device AND idf.entity_key = d.discovered
     -- Match the observation to this device by ANY shared fingerprint value — a
     -- discovered device is often anchored by mDNS/SSDP UUID or a serial, not its
     -- MAC (and a Google-Wifi MAC only ever arrives obscured), so a mac-only join
@@ -86,7 +111,7 @@ FROM
     JOIN device_fingerprints f
 ON f.device_id = $1
     AND d.obscured_mac IS NULL
-    AND f.fp_value IN (d.mac, d.ssdp_uuid, d.wsd_uuid, d.onvif_serial, d.roku_serial)
+    AND f.fp_value IN (d.mac, idf.ssdp_uuid, idf.wsd_uuid, idf.onvif_serial, idf.roku_serial)
     JOIN facts_history h
     ON h.key_values ->> 'Device' = d.device
     AND h.key_values ->> 'Discovered' = d.discovered
@@ -135,10 +160,11 @@ ON (m.id)
     , m.collected_at
 FROM
     proj_discovered d
+    LEFT JOIN idf ON idf.device = d.device AND idf.entity_key = d.discovered
     JOIN device_fingerprints f
 ON f.device_id = $1
     AND d.obscured_mac IS NULL
-    AND f.fp_value IN (d.mac, d.ssdp_uuid, d.wsd_uuid, d.onvif_serial, d.roku_serial)
+    AND f.fp_value IN (d.mac, idf.ssdp_uuid, idf.wsd_uuid, idf.onvif_serial, idf.roku_serial)
     JOIN metrics_raw m
     ON m.key_values ->> 'Device' = d.device
     AND m.key_values ->> 'Discovered' = d.discovered

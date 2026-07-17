@@ -27,6 +27,7 @@ public sealed class DeviceQueriesTests : IAsyncLifetime
             "facts_history",
             "metrics_raw",
             "proj_discovered",
+            "materialization_facts",
             "proj_systems",
             "device_fingerprints",
             "devices"
@@ -241,6 +242,39 @@ public sealed class DeviceQueriesTests : IAsyncLifetime
 
         Assert.Single(sightings);
         Assert.Equal("some-observer", sightings[0].ObserverId);
+    }
+
+    [Fact]
+    public async Task GetDeviceAllFactsAsync_MatchesSightingBySsdpUuid_NotJustMac()
+    {
+        // The "sighting"/"sighting_metrics" CTEs match a discovered row to this device by ANY
+        // shared fingerprint value — mac stays on proj_discovered, but ssdp_uuid/wsd_uuid/
+        // onvif_serial/roku_serial moved to materialization_facts (docs/plans/
+        // architecture-identity-facts.md §5). A device identified purely by SSDP UUID (no MAC —
+        // e.g. behind a firewall) must still see its observer's Discovered[] facts here.
+        Guid id = await _fixture.InsertDeviceAsync(managementStatus: "discovered");
+        await _fixture.InsertFingerprintAsync(id, "uuid", "4e2b3a10-9999-4a2b-8c3d-000000000099");
+        await ExecuteAsync(
+            "INSERT INTO proj_discovered (device, discovered, sources, updated_at) "
+          + "VALUES ('observer-1', '10.0.0.90', 'SsdpBroadcastScanner', now())"
+        );
+        await ExecuteAsync(
+            "INSERT INTO materialization_facts (device, entity_key, attribute_path, value) "
+          + "VALUES ('observer-1', '10.0.0.90', 'Device[].Discovered[].SsdpUuid', "
+          + "'4e2b3a10-9999-4a2b-8c3d-000000000099')"
+        );
+        await ExecuteAsync(
+            "INSERT INTO facts_history (id, attribute_path, key_values, kind, value_str, collected_at) "
+          + "VALUES ('Device[observer-1].Discovered[10.0.0.90].SsdpServer', "
+          + "'Device[].Discovered[].SsdpServer', "
+          + "'{\"Device\": \"observer-1\", \"Discovered\": \"10.0.0.90\"}'::jsonb, "
+          + "1, 'Some/1.0 UPnP/1.0', now())"
+        );
+
+        List<(string? AttributePath, string? KeyValues, string? Value, string? Origin, string? SourceName,
+            DateTimeOffset? CollectedAt)> facts = await GetAllFactsAsync(id);
+
+        Assert.Contains(facts, f => f.AttributePath == "Device[].Discovered[].SsdpServer");
     }
 
     private async Task ExecuteAsync(string sql)
