@@ -431,11 +431,31 @@ without the last-write-wins inversion §10.7 feared — for the *derived* paths.
 - `last_seen_ip` is not a fact — kept on a slimmed `UpsertDeviceSystem` (IP only).
 - `Link.*` is never emitted (AC9) — only intrinsics are passed in.
 - Covered by `DiscoveryMaterializerTests.MaterializeAsync_DiscoveredMac_PromotedIntrinsicsLandInFactsHistoryWithProvenance`.
-- **Vendor deferred to Phase 6.** `proj_devices.vendor` is a *derived* column
-  (`DeviceVendorCanonical`), so promoting into it cleanly means feeding the fan-in a low-priority
-  input — entangled with removing the `*_guess` chain. Until Phase 6, vendor stays on the existing
-  fill-only `UpsertDeviceHardware`/`UpsertDeviceSummary` upserts, exactly as before (no behavior
-  change). This is the one intrinsic not yet a routed fact.
+- **Vendor deferred past Phase 6 too — tried and reverted 2026-07-17.** The original expectation
+  here was that Phase 6's fan-in would make emitting vendor as a routed fact safe. It doesn't, for
+  two independent reasons, both confirmed by running the existing test suite (broke
+  `MaterializeAsync_PromotionGap_NeverOverwritesExistingValue` and
+  `_ObscuredMacRow_NeverPromotesVendor`):
+  1. The hydrated fan-in (§11) only protects the *derived* output (`DeviceVendorCanonical`) from
+     being computed wrong from an incomplete batch. It does nothing for the *raw* column a routed
+     `HwSystemVendor` fact would also populate (`proj_hardware.system_vendor`) — that projection is
+     still plain last-write-wins, with no fan-in in front of it. A promotion pass re-evaluating a
+     device that's still gapped on some *other* field (very common — the gap query is OR'd across
+     all fields, not per-field) can resurface a fresher, lower-confidence vendor from a different
+     `proj_discovered` row and clobber an already-correct value — exactly the inversion this
+     section originally worried about, just one layer down from where hydration protects.
+  2. `DiscoveryMaterializer` never runs `AnalysisEngine.Analyze` — it calls
+     `FactRepository.AppendAsync`/`ProjectionRouter.RouteAsync` directly. So even setting concern 1
+     aside, nothing would re-derive `DeviceVendorCanonical` from a routed `HwSystemVendor` fact for
+     a promoted-only device anyway; the old direct upserts populate both `proj_hardware.system_vendor`
+     *and* `proj_devices.vendor` by hand specifically because no derivation pass ever runs here.
+
+  Vendor stays on the existing fill-only `UpsertDeviceHardware`/`UpsertDeviceSummary` upserts,
+  exactly as before (no behavior change) — the one intrinsic still not a routed fact. Actually
+  fixing this needs a precedence-aware write for vendor specifically — §10.7's original option
+  (b) (per-column source rank in the projection) or (c) (a fill-only projection mode for a
+  promotion source) — not a repoint into the existing fan-in. Not attempted again without that
+  design; see the reverted-attempt comment on `DiscoveryMaterializer.EmitPromotedIntrinsicsAsync`.
 
 ### 10.7 Open question — promoted-fact precedence vs the last-write-wins projection (UNSETTLED)
 
