@@ -1442,9 +1442,14 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
         cmd.Parameters.AddWithValue("dtype", (object?)deviceType ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync();
 
-        // GetCastIdIpCounts now reads materialization_facts (docs/plans/architecture-identity-facts.md
-        // §5 Phase 2a) — these direct-SQL seeds bypass the router's dual write, so mirror it here.
+        // GetCastIdIpCounts (Phase 2a) and GetObscuredMacRows (Phase 2e) now read
+        // materialization_facts (docs/plans/architecture-identity-facts.md §5) — these
+        // direct-SQL seeds bypass the router's dual write, so mirror it here.
         await InsertMaterializationFactAsync(observer, ip, "Device[].Discovered[].CastId", castId);
+        if (deviceType is not null)
+        {
+            await InsertMaterializationFactAsync(observer, ip, "Device[].Discovered[].DeviceType", deviceType);
+        }
     }
 
     private async Task InsertCastDiscoveredRowAsync(
@@ -1475,6 +1480,10 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
 
         // See InsertCastDiscoveredNoObscuredRowAsync — mirrors the router's dual write.
         await InsertMaterializationFactAsync(observer, ip, "Device[].Discovered[].CastId", castId);
+        if (deviceType is not null)
+        {
+            await InsertMaterializationFactAsync(observer, ip, "Device[].Discovered[].DeviceType", deviceType);
+        }
     }
 
     private async Task InsertMaterializationFactAsync(string device, string entityKey, string attributePath, string value)

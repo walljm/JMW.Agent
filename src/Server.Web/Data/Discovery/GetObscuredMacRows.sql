@@ -4,19 +4,39 @@
 -- intrinsic attributes onto the resolved Device[] — decoupled from the
 -- reconstruction instant so late-arriving enrichment (device_type, model) still
 -- promotes on a later cycle.
+-- device_type/cast_id/os read from materialization_facts (docs/plans/
+-- architecture-identity-facts.md §5 Phase 2e); mac/obscured_mac/hostname/model/friendly_name/
+-- vendor stay on proj_discovered (§2).
 SELECT
-    device
-  , discovered AS ip
-  , obscured_mac
-  , mac
-  , hostname
-  , model
-  , friendly_name
-  , device_type
-  , cast_id
-  , vendor
-  , os
+    d.device
+  , d.discovered AS ip
+  , d.obscured_mac
+  , d.mac
+  , d.hostname
+  , d.model
+  , d.friendly_name
+  , idf.device_type
+  , idf.cast_id
+  , d.vendor
+  , idf.os
 FROM
-    proj_discovered
+    proj_discovered d
+    LEFT JOIN (
+        SELECT
+            device
+          , entity_key
+          , MAX(value) FILTER (WHERE attribute_path = 'Device[].Discovered[].CastId')     AS cast_id
+          , MAX(value) FILTER (WHERE attribute_path = 'Device[].Discovered[].DeviceType') AS device_type
+          , MAX(value) FILTER (WHERE attribute_path = 'Device[].Discovered[].Os')         AS os
+        FROM
+            materialization_facts
+        WHERE
+            attribute_path IN (
+                'Device[].Discovered[].CastId', 'Device[].Discovered[].DeviceType',
+                'Device[].Discovered[].Os'
+            )
+        GROUP BY
+            device, entity_key
+    ) idf ON idf.device = d.device AND idf.entity_key = d.discovered
 WHERE
-    obscured_mac IS NOT NULL
+    d.obscured_mac IS NOT NULL
