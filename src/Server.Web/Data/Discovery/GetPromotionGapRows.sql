@@ -68,18 +68,25 @@ FROM gapped_devices gd
         -- hostname is the genuine mDNS/DHCP-observed hostname only — friendly_name (mDNS fn=/
         -- UPnP friendlyName) is kept separate and promoted to proj_systems.friendly_name, never
         -- folded into the real hostname.
+        -- os reads materialization_facts (docs/plans/architecture-identity-facts.md §5 Phase 2f)
+        -- — LEFT JOINed per matched proj_discovered row, ordered by the narrow row's OWN
+        -- updated_at rather than the wide row's shared one, which is strictly more precise (the
+        -- wide row's updated_at is GREATEST()'d across every column touched that batch, not just os).
         SELECT
             (array_agg(d.vendor ORDER BY d.updated_at DESC)
                 FILTER (WHERE d.vendor IS NOT NULL))[1] AS vendor
           , (array_agg(d.model ORDER BY d.updated_at DESC)
                 FILTER (WHERE d.model IS NOT NULL))[1] AS model
-          , (array_agg(d.os ORDER BY d.updated_at DESC)
-                FILTER (WHERE d.os IS NOT NULL))[1] AS os
+          , (array_agg(idf.value ORDER BY idf.updated_at DESC)
+                FILTER (WHERE idf.value IS NOT NULL))[1] AS os
           , (array_agg(d.hostname ORDER BY d.updated_at DESC)
                 FILTER (WHERE d.hostname IS NOT NULL))[1] AS hostname
           , (array_agg(COALESCE(d.friendly_name, d.hostname) ORDER BY d.updated_at DESC)
                 FILTER (WHERE COALESCE(d.friendly_name, d.hostname) IS NOT NULL))[1] AS friendly_name
         FROM proj_discovered d
+        LEFT JOIN materialization_facts idf
+            ON idf.device = d.device AND idf.entity_key = d.discovered
+               AND idf.attribute_path = 'Device[].Discovered[].Os'
         WHERE d.obscured_mac IS NULL
           AND (d.mac = gd.mac OR d.onvif_serial = gd.serial OR d.roku_serial = gd.serial
                OR d.snmp_serial = gd.serial OR d.ssdp_uuid = gd.uuid OR d.wsd_uuid = gd.uuid)

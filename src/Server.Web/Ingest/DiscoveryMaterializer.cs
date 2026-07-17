@@ -93,7 +93,7 @@ public sealed class DiscoveryMaterializer
         new("proj_discovered", "friendly_name", IdentityInputKind.Value), // GetObscuredMacRows, GetPromotionGapRows
         new("proj_discovered", "vendor", IdentityInputKind.Value), // discovered promote, GetPromotionGapRows, GetObscuredMacRows
         new("proj_discovered", "model", IdentityInputKind.Value), // discovered promote, GetPromotionGapRows
-        new("proj_discovered", "os", IdentityInputKind.Value), // discovered promote, GetPromotionGapRows (GetNewDiscoveredSerials/GetNewDiscoveredMacs/GetObscuredMacRows moved to materialization_facts, Phase 2c/2d/2e)
+        new("proj_discovered", "os", IdentityInputKind.Value), // discovered promote (GetNewDiscoveredSerials/GetNewDiscoveredMacs/GetObscuredMacRows/GetPromotionGapRows os-arm moved to materialization_facts, Phase 2c/2d/2e/2f)
         new("proj_discovered", "device_type", IdentityInputKind.Value), // GetObscuredMacRows moved to materialization_facts, Phase 2e
         new("proj_hardware", "system_vendor", IdentityInputKind.Value), // GetPromotionGapRows gap detection
         new("proj_hardware", "system_model", IdentityInputKind.Value), // GetPromotionGapRows gap detection
