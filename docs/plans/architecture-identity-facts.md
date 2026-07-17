@@ -609,7 +609,7 @@ Phase 5 needs. Implementation notes vs the sketch above:
   cardinality risk than interfaces, but deferred with the Device-scope first cut; revisit if their
   clobbering shows up in practice.
 
-## 12. Phase 6 — retire the `*_guess` namespace (decided: repoint to fan-in; not yet built)
+## 12. Phase 6 — retire the `*_guess` namespace (decided: repoint to fan-in; BUILT 2026-07-17)
 
 > **Directive (Boss, 2026-07-16):** "remove all the old _guess infra." **Shape chosen:** repoint,
 > not delete — the inference derivations keep working, they just feed the canonical fan-in as
@@ -657,3 +657,27 @@ fan-in, the inference belongs *in* the fan-in at low priority instead.
 
 Substantial standalone change (derivation graph + 6 reader files + result-shape consumers + 2
 migrations + fitness amendment). Sequenced after Phase 5; not a prerequisite for anything shipped.
+
+**Status: BUILT (2026-07-17).** Shipped as two commits, matching the 6a/6b split above:
+- **6a** — `DeviceVendorDerivation.Inputs` gained `Derived.DeviceVendorGuess` as its last entry;
+  `proj_devices.vendor_guess` dropped (migration `0087`); `HardwareApi.cs`, `GetCompositionByVendor.sql`,
+  `ListDevices.sql`, `GetDeviceSummary.sql` de-coalesced; `GetDeviceSummary.sql`'s result-shape
+  ripple followed through `DeviceQueries.cs` → `DevicesApi.cs`/`DeviceDetail.cshtml.cs` (the
+  `VendorIsGuess`/"(inferred)" badge on the Device Detail page is gone — the distinction between
+  self-reported and inferred vendor is no longer surfaced once both feed the same column).
+- **6b** — new `SystemOsDistroDerivation` fans `[SystemOsDistro, Derived.DeviceOsGuess]` →
+  `Derived.SystemOsDistroCanonical`; `proj_systems.os_distro` repointed to that output;
+  `proj_systems.os_distro_guess` dropped (migration `0088`); same de-coalesce/result-shape/UI
+  treatment as vendor (`OsDistroIsGuess`/"(inferred)" badge also gone).
+- **Fitness amendment** landed with 6a (needed immediately once the first `*_guess` column dropped):
+  `AnalysisEngine.AllDerivationInputPaths` (unfiltered union of every derivation's `Inputs`) gives
+  `FactPathRoutingFitnessTests` its fourth routing home — a path consumed as any derivation's input
+  is legitimately routed even with no projection column of its own.
+- Verified: 1267 unit + 404 integration tests green after each sub-phase (Debug config for
+  integration — the `[DatabaseCommand]` schema validators are `#if DEBUG`-gated).
+- **Residual, accepted:** the Device Detail page previously distinguished a self-reported value
+  from an inferred one ("(inferred)" / "(via <source>)" badges). Collapsing both into one canonical
+  column removes that distinction from the UI — there is no provenance tag on the fan-in output
+  telling the caller *which* input won. Preserving it would mean provenance-aware writes, which §11.2
+  explicitly rejected as a design direction. Not raised as an open question — it's the direct,
+  foreseeable consequence of the repoint Boss already directed.
