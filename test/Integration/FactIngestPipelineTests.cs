@@ -42,9 +42,35 @@ public sealed class FactIngestPipelineTests : IAsyncLifetime
             "proj_interfaces",
             "proj_systems",
             "proj_hardware",
+            "proj_devices",
             "proj_discovered",
             "facts_history"
         );
+    }
+
+    // ── Derivation input hydration (§11) ────────────────────────────────────────
+
+    [Fact]
+    public async Task Ingest_LowPriorityVendorAlone_DoesNotClobberStoredHighPriority()
+    {
+        // End-to-end proof of the hydration fix (docs/plans/architecture-identity-facts.md §11):
+        // DeviceVendorDerivation is a priority fan-in (DeviceVendor > HwSystemVendor > …) feeding
+        // proj_devices.vendor. Cycle 1 stores the high-priority DeviceVendor. Cycle 2 delivers ONLY
+        // the lower-priority HwSystemVendor (as delta-tracking would when DeviceVendor is unchanged
+        // and omitted). Without hydration the derivation would see only HwSystemVendor and clobber
+        // the canonical; with it, the unchanged DeviceVendor is hydrated from facts_history and the
+        // canonical holds.
+        string deviceId = DeviceId;
+
+        await _pipeline.IngestAsync([Fact.Create($"Device[{deviceId}].Vendor", "Ubiquiti")]);
+        string? afterFirst = await ReadScalarAsync($"SELECT vendor FROM proj_devices WHERE device = '{deviceId}'");
+        Assert.False(string.IsNullOrEmpty(afterFirst));
+
+        await _pipeline.IngestAsync([Fact.Create($"Device[{deviceId}].Hardware.SystemVendor", "GenericBoardCorp")]);
+        string? afterSecond = await ReadScalarAsync($"SELECT vendor FROM proj_devices WHERE device = '{deviceId}'");
+
+        // The high-priority vendor from cycle 1 survives cycle 2's lower-priority-only batch.
+        Assert.Equal(afterFirst, afterSecond);
     }
 
     // ── proj_systems ──────────────────────────────────────────────────────────

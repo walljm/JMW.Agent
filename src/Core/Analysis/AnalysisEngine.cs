@@ -30,6 +30,30 @@ public sealed class AnalysisEngine
         }
 
         _derivations = TopologicalSort(derivations.ToList());
+        HydratableInputPaths = ComputeHydratableInputPaths(_derivations);
+    }
+
+    /// <summary>
+    /// The derivation input paths worth hydrating from current state before deriving
+    /// (docs/plans/architecture-identity-facts.md §11): a raw input (not itself any derivation's
+    /// output — derived values are always recomputed, never frozen) that is <b>Device-scoped</b>
+    /// (DimKey == "Device"). Restricting to Device-scoped is the deliberate first cut: it covers
+    /// the priority fan-ins that suffer batch-locality clobbering (vendor/os/model/hostname) while
+    /// excluding high-cardinality per-child paths (per-interface/-filesystem metrics) whose
+    /// hydration would be costly at the 80K-device design target. The pipeline reads the current
+    /// value of these paths for the devices in a batch and passes them to
+    /// <see cref="Analyze(IReadOnlyList{Fact}, IReadOnlyList{Fact})" /> so a partial batch is
+    /// derived against full current state, not just the delta.
+    /// </summary>
+    public IReadOnlySet<string> HydratableInputPaths { get; }
+
+    private static HashSet<string> ComputeHydratableInputPaths(IReadOnlyList<IDerivation> derivations)
+    {
+        HashSet<string> outputs = derivations.SelectMany(d => d.Outputs).ToHashSet(StringComparer.Ordinal);
+        return derivations
+            .SelectMany(d => d.Inputs)
+            .Where(p => !outputs.Contains(p) && Fact.DeriveDimKey(p) == "Device")
+            .ToHashSet(StringComparer.Ordinal);
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
@@ -38,6 +62,50 @@ public sealed class AnalysisEngine
     {
         List<Fact> normalized = Normalize(rawFacts);
         return Derive(normalized);
+    }
+
+    /// <summary>
+    /// Same as <see cref="Analyze(IReadOnlyList{Fact})" /> but derives against full current state:
+    /// <paramref name="hydratedInputs" /> are current values (already normalized, read from storage)
+    /// of <see cref="HydratableInputPaths" /> for the devices in the batch, injected only where the
+    /// batch doesn't already carry that fact id, so a priority fan-in / combinational derivation sees
+    /// every input that is currently true — not just the ones that changed this cycle
+    /// (docs/plans/architecture-identity-facts.md §11). The injected hydration facts are subtracted
+    /// from the result: they are not newly observed, so they must not be re-appended to history or
+    /// re-routed. Derived outputs and the batch's own facts are returned unchanged. The engine stays
+    /// stateless — prior state is passed in as data.
+    /// </summary>
+    public IReadOnlyList<Fact> Analyze(IReadOnlyList<Fact> rawFacts, IReadOnlyList<Fact> hydratedInputs)
+    {
+        List<Fact> normalized = Normalize(rawFacts);
+
+        if (hydratedInputs.Count == 0)
+        {
+            return Derive(normalized);
+        }
+
+        // Inject hydrated inputs the batch doesn't already carry (batch value always wins).
+        HashSet<string> presentIds = normalized.Select(f => f.Id).ToHashSet(StringComparer.Ordinal);
+        HashSet<string> injectedIds = new(StringComparer.Ordinal);
+        List<Fact> forDerive = [.. normalized];
+        foreach (Fact h in hydratedInputs)
+        {
+            if (presentIds.Contains(h.Id) || !injectedIds.Add(h.Id))
+            {
+                continue;
+            }
+
+            forDerive.Add(h);
+        }
+
+        // Derive() appends derived facts to forDerive and returns it. A hydratable path is never a
+        // derivation output (ComputeHydratableInputPaths excludes outputs), so no derived fact can
+        // share an id with an injected input — subtracting injectedIds removes exactly the injected
+        // hydration facts, leaving the batch facts and every derived output.
+        List<Fact> derived = Derive(forDerive);
+        return injectedIds.Count == 0
+            ? derived
+            : derived.Where(f => !injectedIds.Contains(f.Id)).ToList();
     }
 
     // ── Normalization ─────────────────────────────────────────────────────────

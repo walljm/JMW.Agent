@@ -561,7 +561,28 @@ mistaken for a newly observed one.
    hydrated derivation itself becomes the precedence layer §10.7 is missing, without touching
    `RoutedFact` or projection SQL at all. Revisit §10.7's DEFERRED status once this ships.
 
-**Status:** decided, not yet built. Sequenced as its own follow-on effort after this document's
-Phases 1-5 (own architecture pass, own migration if `DerivationInputState` needs persistence
-beyond the in-memory warm-started cache) — not folded into the identity-facts phases above, since
-it is a distinct fix to `AnalysisEngine`/`FactIngestPipeline`, not to the projection layer.
+**Status:** BUILT (2026-07-16), as Phase 4.5 — sequenced before Phase 5 so promotion can emit its
+values as low-confidence derivation inputs and the hydrated derivation becomes the precedence layer
+Phase 5 needs. Implementation notes vs the sketch above:
+- **No warm cache; per-batch read instead.** `FactRepository.HydrateInputsAsync(devices, paths)`
+  reads the current value of the hydratable paths for the batch's devices straight from
+  `facts_history` (the existing `(id, collected_at DESC)` covering index — one indexed read per
+  batch). At this fleet's scale the read is negligible, and it sidesteps the warm-start/coherency
+  concerns a mutable in-memory cache carries. The warm cache remains a possible future optimization
+  if profiling ever shows the read matters (it won't at current scale).
+- **Engine stays pure.** `AnalysisEngine.Analyze(rawFacts, hydratedInputs)` injects hydrated inputs
+  the batch doesn't already carry (batch value always wins), derives over the union, then subtracts
+  the injected facts from the output so they are neither re-appended nor re-routed. Prior state is
+  passed in as data; the engine holds none.
+- **Scope = `AnalysisEngine.HydratableInputPaths`** = `(∪ Inputs − ∪ Outputs)` filtered to
+  DimKey == "Device". Derived values are never hydrated (always recomputed); high-cardinality
+  per-child paths (interface/filesystem/battery metrics) are excluded by the Device-scope filter —
+  the §11.3 tradeoff-2 first cut. `FactIngestPipeline.IngestAsync` hydrates before `Analyze`.
+- Covered by `AnalysisEngineTests` (priority fan-in keeps high-priority when only low-priority is in
+  the batch; batch value beats stale hydrated; HydratableInputPaths content) and
+  `FactIngestPipelineTests.Ingest_LowPriorityVendorAlone_DoesNotClobberStoredHighPriority`
+  (end-to-end through the real pipeline).
+- **Discovered-scoped fan-ins not yet hydrated** (`VendorFromDiscoveredModelDerivation`,
+  `VendorOsFromDiscoveredTypeDerivation` — DimKey "Device|Discovered"): still batch-local. Lower
+  cardinality risk than interfaces, but deferred with the Device-scope first cut; revisit if their
+  clobbering shows up in practice.

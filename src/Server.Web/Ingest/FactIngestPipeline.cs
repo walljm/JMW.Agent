@@ -85,12 +85,19 @@ public sealed class FactIngestPipeline
             keyed.Add(KeyNormalization.Normalize(fact));
         }
 
+        // Hydrate derivation inputs from current state so a partial batch is derived against
+        // everything currently true, not just what changed this cycle (docs/plans/
+        // architecture-identity-facts.md §11). Without this, a batch carrying only a low-priority
+        // vendor source (because that's the one that changed; delta-tracking omits the unchanged
+        // high-priority source) makes a priority fan-in derivation see the high-priority source as
+        // absent and clobber the correct stored value. Scoped to Device-level raw inputs only.
+        IReadOnlyList<Fact> hydrated = await HydrateInputsAsync(keyed, ct);
+
         // Normalize + derive on the server, before anything is stored — agents now emit raw facts
         // (they no longer run the AnalysisEngine). This is the authoritative normalization point for
         // EVERY ingest source, not just agent-emitted facts. Runs per batch, matching the grouping the
-        // agent used to analyze. (Moving derivations to an agent-wide post-submission pass is a later
-        // step — see D34 in scratch/consolidation-todos.md.)
-        IReadOnlyList<Fact> analyzed = _analysis.Analyze(keyed);
+        // agent used to analyze.
+        IReadOnlyList<Fact> analyzed = _analysis.Analyze(keyed, hydrated);
         if (analyzed.Count == 0)
         {
             return EmptyTableNames;
@@ -101,5 +108,42 @@ public sealed class FactIngestPipeline
         Task incidentTask = _incidents.EvaluateAsync(analyzed, ct);
         await Task.WhenAll(appendTask, routeTask, incidentTask);
         return await routeTask;
+    }
+
+    /// <summary>
+    /// Reads the current value of the engine's Device-scoped hydratable input paths
+    /// (<see cref="AnalysisEngine.HydratableInputPaths" />) for every device present in the batch,
+    /// so <see cref="AnalysisEngine.Analyze(IReadOnlyList{Fact}, IReadOnlyList{Fact})" /> can derive
+    /// against full current state. Returns empty when the engine has no hydratable paths or the batch
+    /// touches no device (e.g. a service-only batch).
+    /// </summary>
+    private async Task<IReadOnlyList<Fact>> HydrateInputsAsync(IReadOnlyList<Fact> keyed, CancellationToken ct)
+    {
+        IReadOnlySet<string> paths = _analysis.HydratableInputPaths;
+        if (paths.Count == 0)
+        {
+            return [];
+        }
+
+        HashSet<string> devices = new(StringComparer.Ordinal);
+        foreach (Fact fact in keyed)
+        {
+            // Only facts carrying a Device dimension can hydrate a Device-scoped input.
+            if (!fact.DimKey.StartsWith("Device", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            foreach (FactSegment seg in fact.ParseId())
+            {
+                if (seg is { IsList: true, Name: "Device", Key: { Length: > 0 } key })
+                {
+                    devices.Add(key);
+                    break;
+                }
+            }
+        }
+
+        return devices.Count == 0 ? [] : await _repo.HydrateInputsAsync(devices, paths, ct);
     }
 }

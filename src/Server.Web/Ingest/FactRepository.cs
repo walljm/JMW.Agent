@@ -38,6 +38,65 @@ public sealed class FactRepository
         _chunkSize = chunkSize;
     }
 
+    /// <summary>
+    /// Reads the current value of each (device, path) pair from facts_history — the latest row per
+    /// fact id — for hydrating derivation inputs before analysis (docs/plans/
+    /// architecture-identity-facts.md §11). Only Device-scoped paths are passed (the id is
+    /// <c>Device[{device}].{attr}</c>, so id uniquely identifies (device, path)); the returned facts
+    /// carry the stored value and its <c>collected_at</c>, reconstructed by kind. Bounded by the
+    /// batch's device set × the small fixed hydratable-path set, served by the existing
+    /// <c>(id, collected_at DESC)</c> covering index — one indexed read per batch, no warm cache.
+    /// </summary>
+    public async Task<IReadOnlyList<Fact>> HydrateInputsAsync(
+        IReadOnlyCollection<string> devices,
+        IReadOnlyCollection<string> paths,
+        CancellationToken ct = default
+    )
+    {
+        if (devices.Count == 0 || paths.Count == 0)
+        {
+            return [];
+        }
+
+        await using NpgsqlConnection conn = await _db.OpenConnectionAsync(ct);
+        await using NpgsqlCommand cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT DISTINCT ON (id) id, kind, value_str, value_long, value_double, collected_at
+            FROM   facts_history
+            WHERE  key_values ->> 'Device' = ANY($1) AND attribute_path = ANY($2)
+            ORDER  BY id, collected_at DESC
+            """;
+        cmd.Parameters.Add(Param.TextArray(devices.ToArray()));
+        cmd.Parameters.Add(Param.TextArray(paths.ToArray()));
+
+        List<Fact> result = [];
+        await using NpgsqlDataReader reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            string id = reader.GetString(0);
+            FactValueKind kind = (FactValueKind)reader.GetInt16(1);
+            string? str = reader.IsDBNull(2) ? null : reader.GetString(2);
+            long? lng = reader.IsDBNull(3) ? null : reader.GetInt64(3);
+            double? dbl = reader.IsDBNull(4) ? null : reader.GetDouble(4);
+            DateTimeOffset collectedAt = reader.GetFieldValue<DateTimeOffset>(5);
+
+            FactValue? value = kind switch
+            {
+                FactValueKind.String when str is not null => FactValue.FromString(str),
+                FactValueKind.Long when lng is not null => FactValue.FromLong(lng.Value),
+                FactValueKind.Double when dbl is not null => FactValue.FromDouble(dbl.Value),
+                FactValueKind.Bool when lng is not null => FactValue.FromBool(lng.Value != 0),
+                _ => null, // other kinds aren't among the Device-scoped hydratable paths; skip defensively
+            };
+            if (value is { } v)
+            {
+                result.Add(Fact.Create(id, v, collectedAt));
+            }
+        }
+
+        return result;
+    }
+
     public Task AppendAsync(IEnumerable<Fact> facts, CancellationToken ct = default)
     {
         IReadOnlyList<Fact> factList = facts is IReadOnlyList<Fact> list ? list : facts.ToList();

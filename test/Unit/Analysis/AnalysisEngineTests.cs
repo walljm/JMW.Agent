@@ -42,6 +42,100 @@ public sealed class AnalysisEngineTests
         Assert.Equal("router-1", results.Single().Value.AsString());
     }
 
+    // ── Hydration (derivation over full current state, §11) ─────────────────────
+
+    // A priority fan-in: return the first present input in priority order. This is the shape
+    // (DeviceVendorDerivation and siblings) that batch-locality clobbers.
+    private sealed class PriorityFanInDerivation : IDerivation
+    {
+        public IReadOnlyList<string> Inputs { get; } = ["Device[].HiVendor", "Device[].LoVendor"];
+        public IReadOnlyList<string> Outputs { get; } = ["Device[].VendorCanonical"];
+        public IReadOnlyList<string> Scope => ["Device"];
+
+        public IReadOnlyList<Fact> Derive(IReadOnlyList<Fact> scopedFacts)
+        {
+            foreach (string path in Inputs)
+            {
+                Fact? match = scopedFacts.FirstOrDefault(f => f.AttributePath == path);
+                if (match is { } fact && fact.Value.AsString() is { Length: > 0 } v)
+                {
+                    return [Fact.Create(AnalysisEngine.BuildId("Device[].VendorCanonical", fact), v, fact.CollectedAt)];
+                }
+            }
+
+            return [];
+        }
+    }
+
+    [Fact]
+    public void Analyze_BatchOnly_LowPriorityAlone_ProducesLowPriority_TheBugWithoutHydration()
+    {
+        // Baseline documenting the batch-locality failure: with only the low-priority source in the
+        // batch (delta-tracking omitted the unchanged high-priority one), the fan-in falls through
+        // to the low-priority value — which last-write-wins would then clobber the stored canonical.
+        AnalysisEngine engine = new([], [new PriorityFanInDerivation()]);
+
+        IReadOnlyList<Fact> result = engine.Analyze([F("Device[r1].LoVendor", "LowGuess")]);
+
+        Assert.Equal("LowGuess", result.Single(f => f.AttributePath == "Device[].VendorCanonical").Value.AsString());
+    }
+
+    [Fact]
+    public void Analyze_WithHydratedHigherPriorityInput_KeepsHighPriority_NoClobber()
+    {
+        // The fix: the unchanged high-priority source, hydrated from current state, is visible to the
+        // derivation even though only the low-priority source changed this cycle — so the canonical
+        // stays the authoritative value instead of being clobbered.
+        AnalysisEngine engine = new([], [new PriorityFanInDerivation()]);
+
+        Fact loInBatch = F("Device[r1].LoVendor", "LowGuess");
+        Fact hiHydrated = F("Device[r1].HiVendor", "AuthoritativeVendor");
+
+        IReadOnlyList<Fact> result = engine.Analyze([loInBatch], [hiHydrated]);
+
+        Assert.Equal(
+            "AuthoritativeVendor",
+            result.Single(f => f.AttributePath == "Device[].VendorCanonical").Value.AsString()
+        );
+        // The hydrated input is not itself re-emitted (not newly observed) — only the batch fact
+        // and the derived output flow onward.
+        Assert.DoesNotContain(result, f => f.AttributePath == "Device[].HiVendor");
+        Assert.Contains(result, f => f.AttributePath == "Device[].LoVendor");
+    }
+
+    [Fact]
+    public void Analyze_BatchInputWinsOverHydratedSameId()
+    {
+        // When the batch carries a fresh value for a hydratable path, the batch value is used, not
+        // the stale hydrated one (hydration fills gaps, never overrides the current batch).
+        AnalysisEngine engine = new([], [new PriorityFanInDerivation()]);
+
+        Fact hiInBatch = F("Device[r1].HiVendor", "FreshVendor");
+        Fact hiHydrated = F("Device[r1].HiVendor", "StaleVendor");
+
+        IReadOnlyList<Fact> result = engine.Analyze([hiInBatch], [hiHydrated]);
+
+        Assert.Equal(
+            "FreshVendor",
+            result.Single(f => f.AttributePath == "Device[].VendorCanonical").Value.AsString()
+        );
+    }
+
+    [Fact]
+    public void HydratableInputPaths_AreDeviceScopedRawInputsOnly()
+    {
+        AnalysisEngine engine = AnalysisLibrary.CreateEngine();
+
+        // Priority fan-in raw inputs are hydratable...
+        Assert.Contains(FactPaths.HwSystemVendor, engine.HydratableInputPaths);
+        Assert.Contains(FactPaths.DeviceVendor, engine.HydratableInputPaths);
+        // ...derived outputs never are (they're always recomputed, never frozen)...
+        Assert.DoesNotContain(FactPaths.Derived.DeviceVendorCanonical, engine.HydratableInputPaths);
+        Assert.DoesNotContain(FactPaths.Derived.DeviceVendorGuess, engine.HydratableInputPaths);
+        // ...and every hydratable path is Device-scoped (no per-child cardinality blowup).
+        Assert.All(engine.HydratableInputPaths, p => Assert.Equal("Device", Fact.DeriveDimKey(p)));
+    }
+
     // ── Vendor context ────────────────────────────────────────────────────────
 
     [Theory]
