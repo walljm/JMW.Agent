@@ -68,28 +68,51 @@ FROM gapped_devices gd
         -- hostname is the genuine mDNS/DHCP-observed hostname only — friendly_name (mDNS fn=/
         -- UPnP friendlyName) is kept separate and promoted to proj_systems.friendly_name, never
         -- folded into the real hostname.
-        -- os reads materialization_facts (docs/plans/architecture-identity-facts.md §5 Phase 2f)
-        -- — LEFT JOINed per matched proj_discovered row, ordered by the narrow row's OWN
-        -- updated_at rather than the wide row's shared one, which is strictly more precise (the
-        -- wide row's updated_at is GREATEST()'d across every column touched that batch, not just os).
+        --
+        -- Serial/UUID matching AND os read from materialization_facts (docs/plans/
+        -- architecture-identity-facts.md §5 Phase 2f): the match predicate can no longer read
+        -- proj_discovered's onvif_serial/roku_serial/snmp_serial/ssdp_uuid/wsd_uuid directly
+        -- (those columns are retired in Phase 3), so idf pivots them alongside os. os is ordered
+        -- by its own updated_at (carried through the pivot as os_updated_at) rather than the wide
+        -- row's shared one — strictly more precise, since the wide row's updated_at is
+        -- GREATEST()'d across every column touched that batch, not just os.
         SELECT
             (array_agg(d.vendor ORDER BY d.updated_at DESC)
                 FILTER (WHERE d.vendor IS NOT NULL))[1] AS vendor
           , (array_agg(d.model ORDER BY d.updated_at DESC)
                 FILTER (WHERE d.model IS NOT NULL))[1] AS model
-          , (array_agg(idf.value ORDER BY idf.updated_at DESC)
-                FILTER (WHERE idf.value IS NOT NULL))[1] AS os
+          , (array_agg(idf.os ORDER BY idf.os_updated_at DESC)
+                FILTER (WHERE idf.os IS NOT NULL))[1] AS os
           , (array_agg(d.hostname ORDER BY d.updated_at DESC)
                 FILTER (WHERE d.hostname IS NOT NULL))[1] AS hostname
           , (array_agg(COALESCE(d.friendly_name, d.hostname) ORDER BY d.updated_at DESC)
                 FILTER (WHERE COALESCE(d.friendly_name, d.hostname) IS NOT NULL))[1] AS friendly_name
         FROM proj_discovered d
-        LEFT JOIN materialization_facts idf
-            ON idf.device = d.device AND idf.entity_key = d.discovered
-               AND idf.attribute_path = 'Device[].Discovered[].Os'
+        LEFT JOIN (
+            SELECT
+                device
+              , entity_key
+              , MAX(value) FILTER (WHERE attribute_path = 'Device[].Discovered[].OnvifSerial') AS onvif_serial
+              , MAX(value) FILTER (WHERE attribute_path = 'Device[].Discovered[].RokuSerial')  AS roku_serial
+              , MAX(value) FILTER (WHERE attribute_path = 'Device[].Discovered[].SnmpSerial')  AS snmp_serial
+              , MAX(value) FILTER (WHERE attribute_path = 'Device[].Discovered[].SsdpUuid')    AS ssdp_uuid
+              , MAX(value) FILTER (WHERE attribute_path = 'Device[].Discovered[].WsdUuid')     AS wsd_uuid
+              , MAX(value) FILTER (WHERE attribute_path = 'Device[].Discovered[].Os')          AS os
+              , MAX(updated_at) FILTER (WHERE attribute_path = 'Device[].Discovered[].Os')     AS os_updated_at
+            FROM
+                materialization_facts
+            WHERE
+                attribute_path IN (
+                    'Device[].Discovered[].OnvifSerial', 'Device[].Discovered[].RokuSerial',
+                    'Device[].Discovered[].SnmpSerial', 'Device[].Discovered[].SsdpUuid',
+                    'Device[].Discovered[].WsdUuid', 'Device[].Discovered[].Os'
+                )
+            GROUP BY
+                device, entity_key
+        ) idf ON idf.device = d.device AND idf.entity_key = d.discovered
         WHERE d.obscured_mac IS NULL
-          AND (d.mac = gd.mac OR d.onvif_serial = gd.serial OR d.roku_serial = gd.serial
-               OR d.snmp_serial = gd.serial OR d.ssdp_uuid = gd.uuid OR d.wsd_uuid = gd.uuid)
+          AND (d.mac = gd.mac OR idf.onvif_serial = gd.serial OR idf.roku_serial = gd.serial
+               OR idf.snmp_serial = gd.serial OR idf.ssdp_uuid = gd.uuid OR idf.wsd_uuid = gd.uuid)
     ) sightings ON TRUE
     LEFT JOIN LATERAL (
         -- DHCP leases only ever carry mac + hostname (no vendor/model/os) — a further
