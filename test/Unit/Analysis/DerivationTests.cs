@@ -992,22 +992,6 @@ public sealed class DerivationTests
         Assert.Equal(expectedKind, results[0].Value.AsString());
     }
 
-    [Fact]
-    public void DeviceKind_NetworkDeviceFallsBackToVendorGuess_WhenNoCanonicalVendor()
-    {
-        DeviceKindDerivation d = new();
-        Fact[] facts =
-        [
-            Fact.Create($"Device[{Dev}].Kind", "network-device", T),
-            Fact.Create($"Device[{Dev}].VendorGuess", "Synology", T),
-        ];
-
-        IReadOnlyList<Fact> results = d.Derive(facts);
-
-        Assert.Single(results);
-        Assert.Equal("nas", results[0].Value.AsString());
-    }
-
     [Theory]
     [InlineData("HP LaserJet Pro M404", null, "printer")]
     [InlineData(null, "HP OfficeJet 9015e", "printer")]
@@ -1087,7 +1071,7 @@ public sealed class DerivationTests
         [
             Fact.Create($"Device[{Dev}].Kind", "network-device", T),
             Fact.Create($"Device[{Dev}].VendorCanonical", vendor, T),
-            Fact.Create($"Device[{Dev}].OsGuess", os, T),
+            Fact.Create($"Device[{Dev}].OS.DistroCanonical", os, T),
         ];
 
         IReadOnlyList<Fact> results = d.Derive(facts);
@@ -1112,7 +1096,7 @@ public sealed class DerivationTests
         [
             Fact.Create($"Device[{Dev}].Kind", "network-device", T),
             Fact.Create($"Device[{Dev}].VendorCanonical", vendor, T),
-            Fact.Create($"Device[{Dev}].OsGuess", os, T),
+            Fact.Create($"Device[{Dev}].OS.DistroCanonical", os, T),
             Fact.Create($"Device[{Dev}].ModelCanonical", model, T),
         ];
 
@@ -1216,7 +1200,7 @@ public sealed class DerivationTests
         [
             Fact.Create($"Device[{Dev}].Hardware.SystemModel", rawModel, T),
             Fact.Create($"Device[{Dev}].VendorCanonical", vendor, T),
-            Fact.Create($"Device[{Dev}].OsGuess", os, T),
+            Fact.Create($"Device[{Dev}].OS.DistroCanonical", os, T),
         ];
 
         IReadOnlyList<Fact> results = d.Derive(facts);
@@ -1235,7 +1219,7 @@ public sealed class DerivationTests
         [
             Fact.Create($"Device[{Dev}].Hardware.SystemModel", "something-random-9999", T),
             Fact.Create($"Device[{Dev}].VendorCanonical", "Juniper", T),
-            Fact.Create($"Device[{Dev}].OsGuess", "JunOS", T),
+            Fact.Create($"Device[{Dev}].OS.DistroCanonical", "JunOS", T),
         ];
 
         IReadOnlyList<Fact> results = d.Derive(facts);
@@ -1275,30 +1259,13 @@ public sealed class DerivationTests
             Fact.Create($"Device[{Dev}].Hardware.SystemModel", "WS-C9300-48P", T),
             Fact.Create($"Device[{Dev}].Discovered[192.168.1.1].Model", "some other model", T),
             Fact.Create($"Device[{Dev}].VendorCanonical", "Cisco", T),
-            Fact.Create($"Device[{Dev}].OsGuess", "Cisco IOS-XE", T),
+            Fact.Create($"Device[{Dev}].OS.DistroCanonical", "Cisco IOS-XE", T),
         ];
 
         IReadOnlyList<Fact> results = d.Derive(facts);
 
         Assert.Single(results);
         Assert.Equal("Catalyst 9300", results[0].Value.AsString());
-    }
-
-    [Fact]
-    public void DeviceModel_FallsBackToVendorGuess_WhenNoCanonicalVendor()
-    {
-        DeviceModelDerivation d = new();
-        Fact[] facts =
-        [
-            Fact.Create($"Device[{Dev}].Hardware.SystemModel", "PA-220", T),
-            Fact.Create($"Device[{Dev}].VendorGuess", "Palo Alto Networks", T),
-            Fact.Create($"Device[{Dev}].OsGuess", "PAN-OS", T),
-        ];
-
-        IReadOnlyList<Fact> results = d.Derive(facts);
-
-        Assert.Single(results);
-        Assert.Equal("PA 200", results[0].Value.AsString());
     }
 
     [Fact]

@@ -9,18 +9,23 @@ namespace JMW.Discovery.Core.Analysis.Derivations;
 /// catalog (home/SMB network + IoT) rather than the enterprise carrier-grade hardware catalog
 /// that pattern was built against.
 /// Writes directly to <see cref="FactPaths.DeviceKind" /> — the same path collectors write to —
-/// rather than a separate "guess" field like <see cref="FactPaths.Derived.DeviceVendorGuess" />/
-/// <see cref="FactPaths.Derived.DeviceOsGuess" />. This is a deliberate, discussed departure from
-/// that convention: unlike vendor/OS guesses (inferred from a proxy signal with no ground truth
-/// to fall back to), Kind already has a collector-authoritative coarse value every cycle, and this
-/// derivation only ever narrows it, never invents a value from nothing. The tradeoff accepted:
-/// because Derive() only fires when its input facts (vendor/model/chassis/sysDescr) are present in
-/// the SAME batch as the coarse Kind fact, a cycle that re-reports the coarse bucket without also
-/// re-reporting those signals will not re-refine it that cycle — for collectors that report vendor/
-/// model/sysDescr together with Kind on every poll (SnmpCollector, BacnetCollector, ModbusCollector)
-/// this isn't a risk in practice, but it is a real gap if a future collector ever decouples them.
+/// rather than a separate canonical output like <see cref="FactPaths.Derived.DeviceVendorCanonical" />/
+/// <see cref="FactPaths.Derived.SystemOsDistroCanonical" />. This is a deliberate, discussed departure
+/// from that convention: unlike vendor/OS (inferred from a proxy signal with no ground truth to fall
+/// back to when a protocol doesn't self-report), Kind already has a collector-authoritative coarse
+/// value every cycle, and this derivation only ever narrows it, never invents a value from nothing.
+/// The tradeoff accepted: because Derive() only fires when its input facts (vendor/model/chassis/
+/// sysDescr) are present in the SAME batch as the coarse Kind fact, a cycle that re-reports the
+/// coarse bucket without also re-reporting those signals will not re-refine it that cycle — for
+/// collectors that report vendor/model/sysDescr together with Kind on every poll (SnmpCollector,
+/// BacnetCollector, ModbusCollector) this isn't a risk in practice, but it is a real gap if a future
+/// collector ever decouples them.
 /// Only ever narrows: if no refinement rule matches, or the refined value equals the current
 /// value, no fact is emitted — the collector's own value stands unmodified.
+/// Reads <see cref="FactPaths.Derived.DeviceVendorCanonical" />/<see cref="FactPaths.Derived.SystemOsDistroCanonical" />
+/// rather than the underlying protocol-self-report and inferred-guess paths directly — those two
+/// fan-ins (architecture-identity-facts.md §12) already resolve to the best available vendor/OS, so
+/// reading the canonical output covers a self-reported value too, not just an inferred one.
 /// </summary>
 public sealed class DeviceKindDerivation : IDerivation
 {
@@ -28,8 +33,7 @@ public sealed class DeviceKindDerivation : IDerivation
     [
         FactPaths.DeviceKind,
         FactPaths.Derived.DeviceVendorCanonical,
-        FactPaths.Derived.DeviceVendorGuess,
-        FactPaths.Derived.DeviceOsGuess,
+        FactPaths.Derived.SystemOsDistroCanonical,
         FactPaths.Derived.DeviceModelCanonical,
         FactPaths.HwChassisType,
         FactPaths.HwSystemModel,
@@ -45,7 +49,6 @@ public sealed class DeviceKindDerivation : IDerivation
     {
         Fact? kindFact = null;
         string? vendorCanonical = null;
-        string? vendorGuess = null;
         string? os = null;
         string? modelCanonical = null;
         string? chassisType = null;
@@ -68,10 +71,7 @@ public sealed class DeviceKindDerivation : IDerivation
                 case FactPaths.Derived.DeviceVendorCanonical:
                     vendorCanonical = s;
                     break;
-                case FactPaths.Derived.DeviceVendorGuess:
-                    vendorGuess = s;
-                    break;
-                case FactPaths.Derived.DeviceOsGuess:
+                case FactPaths.Derived.SystemOsDistroCanonical:
                     os = s;
                     break;
                 case FactPaths.Derived.DeviceModelCanonical:
@@ -96,7 +96,7 @@ public sealed class DeviceKindDerivation : IDerivation
         }
 
         string kind = anchor.Value.AsString() ?? "";
-        string vendor = vendorCanonical ?? vendorGuess ?? "";
+        string vendor = vendorCanonical ?? "";
         // Prefer the cleaned product-family name (DeviceModelDerivation) over the raw SKU text —
         // more reliable to dispatch on, e.g. "Catalyst 9300" rather than "WS-C9300-48P".
         string model = modelCanonical ?? rawModel ?? "";

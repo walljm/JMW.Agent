@@ -11,52 +11,14 @@ namespace JMW.Discovery.Core.Analysis.Derivations;
 /// <see cref="FactPaths.Derived.DeviceOsGuess" /> from its own "guess" projection column the same
 /// way; the hydrated fan-in (§11) is what makes folding it in here safe — an inference can never
 /// clobber a real value stored from a prior batch.
-/// Scope is forced to [Device] rather than inferred: both inputs are Device[]-scoped with no
-/// further list dimension, so inference would already yield [Device] — declared explicitly since
-/// this is a fan-in (only one input is ever present per device) rather than the usual
-/// "all inputs must be present" derivation shape.
 /// </summary>
-public sealed class SystemOsDistroDerivation : IDerivation
+public sealed class SystemOsDistroDerivation : PriorityFanInDerivation
 {
-    public IReadOnlyList<string> Inputs { get; } =
+    public override IReadOnlyList<string> Inputs { get; } =
     [
         FactPaths.SystemOsDistro,
         FactPaths.Derived.DeviceOsGuess,
     ];
 
-    public IReadOnlyList<string> Outputs { get; } = [FactPaths.Derived.SystemOsDistroCanonical];
-
-    public IReadOnlyList<string> Scope => ["Device"];
-
-    public IReadOnlyList<Fact> Derive(IReadOnlyList<Fact> scopedFacts)
-    {
-        foreach (string path in Inputs)
-        {
-            Fact? match = null;
-            foreach (Fact candidate in scopedFacts)
-            {
-                if (candidate.AttributePath == path)
-                {
-                    match = candidate;
-                    break;
-                }
-            }
-
-            if (match is not { } fact)
-            {
-                continue;
-            }
-
-            string? distro = fact.Value.AsString();
-            if (string.IsNullOrWhiteSpace(distro))
-            {
-                continue;
-            }
-
-            string id = AnalysisEngine.BuildId(Outputs[0], fact);
-            return [Fact.Create(id, distro, fact.CollectedAt)];
-        }
-
-        return [];
-    }
+    protected override string Output => FactPaths.Derived.SystemOsDistroCanonical;
 }

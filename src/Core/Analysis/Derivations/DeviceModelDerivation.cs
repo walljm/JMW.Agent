@@ -39,8 +39,7 @@ public sealed class DeviceModelDerivation : IDerivation
         FactPaths.DiscoveredModel,
         FactPaths.BacnetModelName,
         FactPaths.Derived.DeviceVendorCanonical,
-        FactPaths.Derived.DeviceVendorGuess,
-        FactPaths.Derived.DeviceOsGuess,
+        FactPaths.Derived.SystemOsDistroCanonical,
     ];
 
     public IReadOnlyList<string> Outputs { get; } = [FactPaths.Derived.DeviceModelCanonical];
@@ -73,7 +72,6 @@ public sealed class DeviceModelDerivation : IDerivation
         }
 
         string? vendorCanonical = null;
-        string? vendorGuess = null;
         string? os = null;
         foreach (Fact f in scopedFacts)
         {
@@ -88,16 +86,13 @@ public sealed class DeviceModelDerivation : IDerivation
                 case FactPaths.Derived.DeviceVendorCanonical:
                     vendorCanonical = s;
                     break;
-                case FactPaths.Derived.DeviceVendorGuess:
-                    vendorGuess = s;
-                    break;
-                case FactPaths.Derived.DeviceOsGuess:
+                case FactPaths.Derived.SystemOsDistroCanonical:
                     os = s;
                     break;
             }
         }
 
-        string vendor = vendorCanonical ?? vendorGuess ?? "";
+        string vendor = vendorCanonical ?? "";
         string model = anchor.Value.AsString() ?? "";
         string? canonical = Canonicalize(vendor, os ?? "", model);
         if (canonical is null)
