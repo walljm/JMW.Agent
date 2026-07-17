@@ -175,7 +175,9 @@ public sealed class DiscoveryMaterializer
             );
 
             // Vendor stays on the existing fill-only upserts (proj_hardware.system_vendor +
-            // proj_devices.vendor), unchanged — Phase 6 folds vendor into the hydrated fan-in.
+            // proj_devices.vendor). See EmitPromotedIntrinsicsAsync for why vendor can't move to
+            // the routed-fact path: that column has no fan-in protecting it from a later,
+            // lower-confidence promotion re-evaluation clobbering an already-correct value.
             if (vendor is not null)
             {
                 await conn.UpsertDeviceHardwareAsync(device, vendor, model: null, serial: null, ct).ExecuteAsync(ct);
@@ -401,8 +403,7 @@ public sealed class DiscoveryMaterializer
             );
 
             // Vendor stays on the existing fill-only upserts (proj_hardware.system_vendor +
-            // proj_devices.vendor), unchanged from before — see EmitPromotedIntrinsics for why
-            // vendor isn't a routed fact yet (Phase 6 folds it into the hydrated fan-in).
+            // proj_devices.vendor) — see EmitPromotedIntrinsicsAsync for why.
             if (src.PromoteHardware && NullIfBlank(row.Vendor) is { } vendor)
             {
                 await conn.UpsertDeviceHardwareAsync(deviceId, vendor, model: null, serial: null, ct).ExecuteAsync(ct);
@@ -657,7 +658,7 @@ public sealed class DiscoveryMaterializer
 
             // Vendor → proj_devices.vendor via the existing fill-only path (station-level UPnP
             // manufacturer / kind-derived vendor — a device manufacturer, not an OUI guess). See
-            // EmitPromotedIntrinsics for why vendor isn't a routed fact yet (Phase 6).
+            // EmitPromotedIntrinsicsAsync for why vendor isn't a routed fact.
             if (NullIfBlank(r.Vendor) is { } cleanVendor)
             {
                 await conn.UpsertDeviceSummaryAsync(deviceId, cleanVendor, kind: null, ct).ExecuteAsync(ct);
@@ -793,13 +794,28 @@ public sealed class DiscoveryMaterializer
     /// values a real, attributed home in the device's All Facts tab — resolving the "name not in its
     /// facts" gap for discovered-only devices — with <paramref name="source" /> as the observing
     /// collector's provenance. Emitting to canonical paths (the same columns the old direct upserts
-    /// populated) keeps display behavior unchanged; vendor is emitted to <see cref="FactPaths.HwSystemVendor" />
-    /// so it flows through the hydrated <c>DeviceVendorDerivation</c> (Phase 4.5) — the fan-in, not
-    /// last-write-wins, resolves precedence against an agent-reported vendor. Idempotent: unchanged
-    /// re-emits are absorbed by facts_history dedup-on-write and the router's EntityStateCache.
-    /// last_seen_ip is not a fact and stays on the direct <c>UpsertDeviceSystem</c> path.
-    /// Never emits <c>Discovered[].Link.*</c> sighting telemetry — those are properties of the
-    /// observation, not the device.
+    /// populated) keeps display behavior unchanged. Idempotent: unchanged re-emits are absorbed by
+    /// facts_history dedup-on-write and the router's EntityStateCache. last_seen_ip is not a fact
+    /// and stays on the direct <c>UpsertDeviceSystem</c> path. Never emits <c>Discovered[].Link.*</c>
+    /// sighting telemetry — those are properties of the observation, not the device.
+    /// Vendor is NOT emitted here, unlike model/hostname/serial/os/kind above — see the "vendor
+    /// stays on the fill-only upserts" comments at each call site for why: <c>proj_devices.vendor</c>
+    /// is DERIVED (<c>DeviceVendorCanonical</c>), and <see cref="FactPaths.HwSystemVendor" /> — the
+    /// raw path a routed vendor fact would use — has no fan-in in front of its OWN projection column
+    /// (<c>proj_hardware.system_vendor</c>); that column is plain last-write-wins, so a promotion
+    /// pass re-evaluating a device that is still gapped on some OTHER field (e.g. still-null
+    /// friendly_name) can resurface a fresher, lower-confidence vendor from a different/conflicting
+    /// proj_discovered row and clobber an already-correct one
+    /// (see <c>MaterializeAsync_PromotionGap_NeverOverwritesExistingValue</c>,
+    /// <c>MaterializeAsync_PromotionGap_ObscuredMacRow_NeverPromotesVendor</c>). The Phase 4.5/6a
+    /// hydrated fan-in only protects the DERIVED output from a bad computation — it does nothing for
+    /// the raw column two different sources both happen to write. It also doesn't help that
+    /// <see cref="DiscoveryMaterializer" /> never runs <c>AnalysisEngine.Analyze</c> at all: it calls
+    /// <see cref="FactRepository.AppendAsync" />/<see cref="Projections.ProjectionRouter.RouteAsync" />
+    /// directly, so nothing would re-derive <c>DeviceVendorCanonical</c> from a routed
+    /// <c>HwSystemVendor</c> fact for a promoted-only device anyway. Fixing this for real needs a
+    /// precedence-aware write for vendor specifically (§10.7 options (b)/(c)), not just "route it
+    /// like the others" — tried and reverted this session; not attempted again without that design.
     /// </summary>
     private async Task EmitPromotedIntrinsicsAsync(
         string deviceId,
@@ -842,10 +858,6 @@ public sealed class DiscoveryMaterializer
         // OS family is a real observation (e.g. "linux" from a self-identifying discovered type),
         // promoted to the same os_family column the direct upsert used.
         Add(FactPaths.SystemOsFamily, os);
-        // Vendor is deliberately NOT emitted here: proj_devices.vendor is a DERIVED column
-        // (DeviceVendorCanonical), so promoting into it cleanly means feeding the fan-in a
-        // low-priority input — which is entangled with removing the *_guess chain (Phase 6). Until
-        // then, vendor stays on the existing fill-only UpsertDeviceSummary path at the call sites.
 
         if (facts.Count == 0)
         {
