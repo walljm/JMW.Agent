@@ -608,3 +608,52 @@ Phase 5 needs. Implementation notes vs the sketch above:
   `VendorOsFromDiscoveredTypeDerivation` — DimKey "Device|Discovered"): still batch-local. Lower
   cardinality risk than interfaces, but deferred with the Device-scope first cut; revisit if their
   clobbering shows up in practice.
+
+## 12. Phase 6 — retire the `*_guess` namespace (decided: repoint to fan-in; not yet built)
+
+> **Directive (Boss, 2026-07-16):** "remove all the old _guess infra." **Shape chosen:** repoint,
+> not delete — the inference derivations keep working, they just feed the canonical fan-in as
+> low-priority inputs (which hydration, Phase 4.5, now makes the real precedence layer). Deleting
+> outright would lose vendor/os inference from proxy signals (model/hostname/banner/discovered type).
+
+The `*_guess` mechanism was a pre-hydration stopgap: infer a value from a proxy, park it in a
+separate namespace (`Derived.DeviceVendorGuess` → `proj_devices.vendor_guess`; `Derived.DeviceOsGuess`
+→ `proj_systems.os_distro_guess`), and have reporting `COALESCE(canonical, guess)`. With the hydrated
+fan-in, the inference belongs *in* the fan-in at low priority instead.
+
+**Vendor (6a):**
+- `DeviceVendorDerivation.Inputs` gains `Derived.DeviceVendorGuess` as the **last** (lowest-priority)
+  entry, after `DeviceVendor`/`HwSystemVendor`/`BacnetVendorName`/`ModbusVendorName`. The four
+  guess-producing derivations (`VendorFromOsDistro`, `VendorFromModel`, `VendorFromHostnamePrefix`,
+  `VendorOsFromDeviceBanner`) are unchanged — they still output `DeviceVendorGuess`, now consumed by
+  the fan-in. Hydration protects the authoritative sources across batches (already verified for the
+  fan-in), so an inferred vendor never clobbers a real one.
+- `DeviceVendorGuess` becomes a pure **intermediate** (no display column). Drop
+  `proj_devices.vendor_guess` (migration + `ProjectionLibrary` def). It stays a valid fact path
+  because it's still consumed as a derivation input (also by `DeviceKindDerivation`) — see the
+  fitness amendment below.
+
+**OS (6b):**
+- No OS fan-in exists today (`proj_systems.os_distro` is raw `SystemOsDistro`; the guess is a
+  separate column). Add an `OsDistroCanonical` resolver derivation fanning
+  `[SystemOsDistro (authoritative), DeviceOsGuess (inference)]` → the column `proj_systems.os_distro`
+  now maps to the canonical (mirrors how `proj_devices.vendor` = `DeviceVendorCanonical`). Drop
+  `proj_systems.os_distro_guess`. `DeviceOsGuess` producers (`VendorOsFromDeviceBanner`, and its
+  consumers `DeviceModelDerivation`/`DeviceKindDerivation`) unchanged.
+
+**Cross-cutting:**
+- **Routing-fitness amendment (`FactPathRoutingFitnessTests`):** a fourth valid routing home — a
+  path that is consumed as *any* derivation's input (an intermediate whose value flows into a
+  derivation output that itself routes). This is what lets `DeviceVendorGuess`/`DeviceOsGuess` lose
+  their columns yet stay legal.
+- **Reporting de-coalesce (4 readers):** `GetCompositionByVendor.sql`, `ListDevices.sql`,
+  `HardwareApi.cs` drop `vendor_guess` from their COALESCE (fan-in result already includes the
+  inference); `ListDevices.sql`/`GetDeviceSummary.sql` drop `os_distro_guess`.
+- **Query result-shape ripple:** `GetDeviceSummary.sql` currently SELECTs `vendor_guess`/
+  `os_distro_guess` as output columns → the typed result record + its API/page consumers change.
+  This is the widest part of the blast radius — not just internal rewiring.
+- **Migrations:** two `ALTER TABLE … DROP COLUMN` (vendor_guess, os_distro_guess), mirrored by
+  removing the `ProjectionLibrary` defs so the schema-drift fitness test stays green.
+
+Substantial standalone change (derivation graph + 6 reader files + result-shape consumers + 2
+migrations + fitness amendment). Sequenced after Phase 5; not a prerequisite for anything shipped.
