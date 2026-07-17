@@ -73,15 +73,6 @@ public static partial class DashboardQueries
             CancellationToken cancellationToken
         );
 
-    /// <summary>Fact-change counts per day over the last <paramref name="days" /> days, for the trend sparkline.</summary>
-    [DatabaseCommand]
-    public static partial
-        IAsyncEnumerable<(DateTimeOffset? Day, long? Count)> GetChangeTrendAsync(
-            this NpgsqlConnection connection,
-            int days,
-            CancellationToken cancellationToken
-        );
-
     // ── Fleet health zone: agents + collection pipeline ─────────────────────────
 
     /// <summary>
@@ -113,8 +104,9 @@ public static partial class DashboardQueries
         );
 
     /// <summary>
-    /// Single-row collection rollup over the latest cycle per agent: total facts sent,
-    /// agents with errors, average cycle duration (ms), and agents that have reported a cycle.
+    /// Single-row collection rollup over the latest REAL cycle per agent (heartbeat-only ticks
+    /// excluded — see GetCollectionSummary.sql): total facts sent, agents with errors, average
+    /// cycle duration (ms), and agents that have a real cycle on record.
     /// </summary>
     [DatabaseCommand]
     public static partial
@@ -129,6 +121,32 @@ public static partial class DashboardQueries
     public static partial
         IAsyncEnumerable<(DateTimeOffset? Bucket, long? Errors)> GetCollectionErrorSeriesAsync(
             this NpgsqlConnection connection,
+            CancellationToken cancellationToken
+        );
+
+    /// <summary>
+    /// Facts sent per day, summed fleet-wide, over the last <paramref name="days" /> days — raw
+    /// collection volume. Paired with <see cref="GetCollectionDailyChangesAsync" />, which counts
+    /// only the confirmed subset that actually changed a value.
+    /// </summary>
+    [DatabaseCommand]
+    public static partial
+        IAsyncEnumerable<(DateTimeOffset? Day, long? FactsSent)> GetCollectionDailyFactsSentAsync(
+            this NpgsqlConnection connection,
+            int days,
+            CancellationToken cancellationToken
+        );
+
+    /// <summary>
+    /// Confirmed fact changes per day, summed fleet-wide, over the last <paramref name="days" />
+    /// days. Paired with <see cref="GetCollectionDailyFactsSentAsync" />; a gap between the two
+    /// series indicates resend noise (e.g. an agent's delta cache reset) rather than genuine drift.
+    /// </summary>
+    [DatabaseCommand]
+    public static partial
+        IAsyncEnumerable<(DateTimeOffset? Day, long? Count)> GetCollectionDailyChangesAsync(
+            this NpgsqlConnection connection,
+            int days,
             CancellationToken cancellationToken
         );
 

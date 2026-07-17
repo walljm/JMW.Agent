@@ -53,7 +53,7 @@ The following topics were evaluated and explicitly excluded from this iteration:
 - **OAuth2 / OIDC / SSO integration**: Local authentication only.
 - **SLA / uptime guarantees**: No formal SLA. The system is a monitoring tool, not itself an HA production service.
 - **Data export / import**: No bulk export or import of monitoring data.
-- **Trend analysis / charting over time**: The change feed provides historical data; charts and trend graphs are deferred.
+- **Heavy charting / BI-style analytics**: No charting library, drill-down time ranges, or export-ready reports. Lightweight inline-SVG sparklines for genuinely trend-shaped dashboard data (e.g. collection volume/changes per day, error rate per cycle) are in scope and already shipped — see `design-conventions.md`'s `.spark` primitive.
 - **Scheduled report generation**: No automated report emails or exports.
 - **Agent protocol collection discovery (SNMP MIBs, etc.)**: Collection protocols are configured manually via target entries.
 - **Scalability beyond ~500 devices**: Requirements are scoped to small-to-medium deployments. Large enterprise scalability is a future concern.

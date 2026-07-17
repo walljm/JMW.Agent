@@ -221,7 +221,8 @@ Panels are ordered top→bottom by *actionability*:
 4. **Network** (bottom) — **four headline tiles** (Total devices = Managed+Discovered · Services by
    type · Reporting-24h = reporting+quiet · Zones) each with a subtle part-to-whole bar (neutral splits
    in the indigo family, the reporting health-ratio in `--ok`/`--warn`; colour as reinforcement only) ·
-   composition bars · change-trend sparkline.
+   composition bars. (The change-trend sparkline that originally lived here was retired and its data
+   moved into Fleet Health's Collection panel — see "As-built deltas" below.)
 
 **Why attention-first over totals-first:** SCR-003 is the highest-frequency screen (every login,
 per FLOW-001) and the operator's job there is *triage*, not admiring inventory. Placing the scariest,
@@ -238,7 +239,7 @@ Each panel is an independent htmx fragment (`hx-get="/dashboard?fragment=<panel>
 so a slow or failing panel never blocks the others, and volatile panels poll faster than slow-moving
 ones. Cadence by data volatility: **Recent activity 30s**, **Needs attention 60s**, **Fleet health 60s**,
 **Network 5m**. The fragment boundary is the *failure-isolation* unit: each `.dash-panel` is its own
-fragment (`fragment=attention|agents|collection|not-seen|new-devices|changes|totals|composition|trend`),
+fragment (`fragment=attention|agents|collection|not-seen|new-devices|changes|totals|composition`),
 so a slow or failing panel never blocks a sibling. Per-panel failure renders `_SectionError` (a `.empty`
 "Failed to load this section") inside the affected panel only (REQ-028).
 
@@ -312,6 +313,18 @@ does not implement them:
   follow-up (see E2 below).
 - New indexes (`0039_dashboard_indexes.sql`): `devices(created_at DESC)`, `device_fingerprints(last_seen DESC)`.
 - Verified by 6 behavioral integration tests + automatic per-query schema validation (122 tests green).
+- **Change-trend panel retired; its data moved into Collection Health (post-launch revision).** The
+  standalone Network-section "Change trend" sparkline (aggregate #7 above) duplicated a job Recent
+  Activity already did with real narration (curated incidents/change events, not a bare diff count) —
+  as presented it didn't tell the operator much about *what* changed. Its query
+  (`facts_history` bucketed by day, renamed `GetCollectionDailyChanges.sql`) moved to the Collection
+  panel as the second of two series: facts-sent volume (`GetCollectionDailyFactsSent.sql`, new) plotted
+  against confirmed changes, both fleet-wide daily sums with an N-day average, sharing one y-scale so
+  the gap between them is meaningful (resend noise vs. genuine drift). Also fixed in the same pass:
+  `GetCollectionSummary.sql`'s "latest cycle per agent" picked the literal newest `agent_cycles` row,
+  which is very often a heartbeat-only tick (no collector/scanner/service ran) with `facts_sent = 0` —
+  the same bug already diagnosed and fixed for the per-agent Overview tile in
+  `GetAgentCollectionSummary.sql`, now applied fleet-wide too.
 
 **Required non-aggregate changes (flagged for the implementer):**
 

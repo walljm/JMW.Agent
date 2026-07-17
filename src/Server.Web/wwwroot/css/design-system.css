@@ -2326,6 +2326,13 @@ table.data th[aria-sort="descending"]::after {
     fill: color-mix(in srgb, var(--warn) 14%, transparent);
 }
 
+/* Second series overlaid on a .spark chart (e.g. confirmed changes vs. raw facts-sent volume) —
+   dashed and a distinct hue so the two lines stay legible without a legend/axis. */
+.spark polyline.line-confirmed {
+    stroke: var(--info);
+    stroke-dasharray: 3 2;
+}
+
 /* ── Collection / trend summary stat pair ───────────────────────────── */
 .coll-stats {
     display: grid;

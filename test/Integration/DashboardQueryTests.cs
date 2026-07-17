@@ -186,26 +186,35 @@ public sealed class DashboardQueryTests
     // ── Collection ──────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task CollectionSummary_aggregates_latest_cycle_per_agent()
+    public async Task CollectionSummary_aggregates_latest_real_cycle_per_agent()
     {
         await ResetAsync();
         DateTimeOffset now = DateTimeOffset.UtcNow;
         Guid a1 = await AgentAsync("approved", now, 30);
         Guid a2 = await AgentAsync("approved", now, 30);
 
-        // a1: older cycle then newer (newer wins); a2: single clean cycle.
+        // a1: older real cycle then newer real cycle (newer wins); a2: single clean real cycle.
         await ExecAsync(
-            "INSERT INTO agent_cycles (agent_id, cycle_at, duration_ms, facts_sent, error_count) VALUES (@a,@t,100,50,5)",
+            """
+            INSERT INTO agent_cycles (agent_id, cycle_at, duration_ms, facts_sent, error_count, collectors)
+            VALUES (@a,@t,100,50,5,'["ArpCollector"]'::jsonb)
+            """,
             ("a", a1),
             ("t", now.AddMinutes(-10))
         );
         await ExecAsync(
-            "INSERT INTO agent_cycles (agent_id, cycle_at, duration_ms, facts_sent, error_count) VALUES (@a,@t,200,80,3)",
+            """
+            INSERT INTO agent_cycles (agent_id, cycle_at, duration_ms, facts_sent, error_count, collectors)
+            VALUES (@a,@t,200,80,3,'["ArpCollector"]'::jsonb)
+            """,
             ("a", a1),
             ("t", now.AddMinutes(-1))
         );
         await ExecAsync(
-            "INSERT INTO agent_cycles (agent_id, cycle_at, duration_ms, facts_sent, error_count) VALUES (@a,@t,300,20,0)",
+            """
+            INSERT INTO agent_cycles (agent_id, cycle_at, duration_ms, facts_sent, error_count, collectors)
+            VALUES (@a,@t,300,20,0,'["ArpCollector"]'::jsonb)
+            """,
             ("a", a2),
             ("t", now.AddMinutes(-2))
         );
@@ -218,6 +227,84 @@ public sealed class DashboardQueryTests
         Assert.Equal(1, s.WithErrors); // only a1 latest has error_count>0
         Assert.Equal(250, s.AvgMs); // (200 + 300) / 2
         Assert.Equal(2, s.Reporting);
+    }
+
+    [Fact]
+    public async Task CollectionSummary_skips_heartbeat_only_cycles_fleet_wide()
+    {
+        await ResetAsync();
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        Guid agent = await AgentAsync("approved", now, 30);
+
+        // A real discovery cycle 10 minutes ago carried hundreds of facts...
+        await ExecAsync(
+            """
+            INSERT INTO agent_cycles (agent_id, cycle_at, duration_ms, facts_sent, error_count, collectors)
+            VALUES (@a,@t,83052,164,0,'["ArpCollector"]'::jsonb)
+            """,
+            ("a", agent),
+            ("t", now.AddMinutes(-10))
+        );
+        // ...then the agent's most recent tick is heartbeat-only (empty collectors/scanners/
+        // device_scanners/services). Picking the literal last row by cycle_at would report 0
+        // facts sent fleet-wide even though a real cycle with facts ran minutes earlier.
+        await ExecAsync(
+            "INSERT INTO agent_cycles (agent_id, cycle_at, duration_ms, facts_sent, error_count) VALUES (@a,@t,10,0,0)",
+            ("a", agent),
+            ("t", now.AddMinutes(-1))
+        );
+
+        await using NpgsqlConnection conn = await _fx.DataSource.OpenConnectionAsync();
+        (long? Facts, long? WithErrors, long? AvgMs, long? Reporting) s =
+            await conn.GetCollectionSummaryAsync(CancellationToken.None).FirstOrDefaultAsync(CancellationToken.None);
+
+        Assert.Equal(164, s.Facts);
+        Assert.Equal(0, s.WithErrors);
+        Assert.Equal(83052, s.AvgMs);
+        Assert.Equal(1, s.Reporting);
+    }
+
+    [Fact]
+    public async Task CollectionDailyFactsSent_sums_across_agents_by_day()
+    {
+        await ResetAsync();
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        Guid a1 = await AgentAsync("approved", now, 30);
+        Guid a2 = await AgentAsync("approved", now, 30);
+
+        // Today: two agents both contribute.
+        await ExecAsync(
+            "INSERT INTO agent_cycles (agent_id, cycle_at, duration_ms, facts_sent, error_count) VALUES (@a,@t,100,30,0)",
+            ("a", a1),
+            ("t", now)
+        );
+        await ExecAsync(
+            "INSERT INTO agent_cycles (agent_id, cycle_at, duration_ms, facts_sent, error_count) VALUES (@a,@t,100,15,0)",
+            ("a", a2),
+            ("t", now)
+        );
+        // Yesterday: only a1, plus a heartbeat-only tick contributing 0.
+        await ExecAsync(
+            "INSERT INTO agent_cycles (agent_id, cycle_at, duration_ms, facts_sent, error_count) VALUES (@a,@t,100,40,0)",
+            ("a", a1),
+            ("t", now.AddDays(-1))
+        );
+        await ExecAsync(
+            "INSERT INTO agent_cycles (agent_id, cycle_at, duration_ms, facts_sent, error_count) VALUES (@a,@t,10,0,0)",
+            ("a", a2),
+            ("t", now.AddDays(-1))
+        );
+
+        await using NpgsqlConnection conn = await _fx.DataSource.OpenConnectionAsync();
+        Dictionary<DateTime, long> byDay = [];
+        await foreach ((DateTimeOffset? Day, long? FactsSent) r in
+            conn.GetCollectionDailyFactsSentAsync(2, CancellationToken.None))
+        {
+            byDay[r.Day!.Value.UtcDateTime.Date] = r.FactsSent ?? 0;
+        }
+
+        Assert.Equal(45, byDay[now.UtcDateTime.Date]); // 30 + 15
+        Assert.Equal(40, byDay[now.AddDays(-1).UtcDateTime.Date]); // 40 + 0
     }
 
     [Fact]

@@ -62,7 +62,11 @@ public sealed record AgentRow(
     string Liveness
 );
 
-/// <summary>Collection pipeline rollup + hourly error sparkline geometry.</summary>
+/// <summary>
+/// Collection pipeline rollup + hourly error sparkline geometry, plus the fleet-wide daily
+/// facts-sent/confirmed-changes trend (two series, see GetCollectionDailyFactsSent.sql /
+/// GetCollectionDailyChanges.sql).
+/// </summary>
 public sealed record CollectionVm(
     long FactsSent,
     long AgentsWithErrors,
@@ -70,7 +74,12 @@ public sealed record CollectionVm(
     long AgentsReporting,
     string SparkPoints,
     long ErrorPeak,
-    bool HasErrors
+    bool HasErrors,
+    string DailySentPoints,
+    string DailySentAreaPath,
+    string DailyChangesPoints,
+    long DailySentAvg,
+    long DailyChangesAvg
 );
 
 /// <summary>One open-incident-type row for the Needs Attention panel.</summary>
@@ -94,15 +103,6 @@ public sealed record CompositionVm(
     IReadOnlyList<LabelCount> ByVendor,
     IReadOnlyList<LabelCount> ByOsFamily,
     IReadOnlyList<LabelCount> ByKind
-);
-
-/// <summary>Change-trend sparkline geometry + summary stats.</summary>
-public sealed record TrendVm(
-    string SparkPoints,
-    string AreaPath,
-    long Today,
-    long Average,
-    long Peak
 );
 
 /// <summary>Small pure helpers for dashboard rendering (top-N rollup, inline-SVG sparklines).</summary>
@@ -141,14 +141,21 @@ public static class DashboardViz
     /// Builds an SVG polyline points string for a sparkline over a 0..width × 0..height box
     /// (y inverted so larger values sit higher). Returns an empty string for &lt; 2 points.
     /// </summary>
-    public static string SparkPoints(IReadOnlyList<long> values, double width = 100, double height = 36)
+    public static string SparkPoints(IReadOnlyList<long> values, double width = 100, double height = 36) =>
+        SparkPoints(values, values.Count == 0 ? 0 : values.Max(), width, height);
+
+    /// <summary>
+    /// Same as <see cref="SparkPoints(IReadOnlyList{long}, double, double)" /> but scaled against
+    /// an explicit <paramref name="max" /> rather than this series' own max — use this to plot two
+    /// series on one shared y-scale so their relative magnitude stays comparable.
+    /// </summary>
+    public static string SparkPoints(IReadOnlyList<long> values, long max, double width = 100, double height = 36)
     {
         if (values.Count < 2)
         {
             return string.Empty;
         }
 
-        long max = values.Max();
         double range = max <= 0 ? 1 : max;
         double stepX = width / (values.Count - 1);
 
@@ -165,9 +172,13 @@ public static class DashboardViz
     }
 
     /// <summary>Closed area path under the sparkline polyline, for a subtle fill.</summary>
-    public static string AreaPath(IReadOnlyList<long> values, double width = 100, double height = 36)
+    public static string AreaPath(IReadOnlyList<long> values, double width = 100, double height = 36) =>
+        AreaPath(values, values.Count == 0 ? 0 : values.Max(), width, height);
+
+    /// <summary>Same as <see cref="AreaPath(IReadOnlyList{long}, double, double)" /> but scaled against an explicit <paramref name="max" />.</summary>
+    public static string AreaPath(IReadOnlyList<long> values, long max, double width = 100, double height = 36)
     {
-        string points = SparkPoints(values, width, height);
+        string points = SparkPoints(values, max, width, height);
         if (points.Length == 0)
         {
             return string.Empty;

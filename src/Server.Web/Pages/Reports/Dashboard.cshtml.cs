@@ -23,7 +23,7 @@ public sealed class DashboardModel : PageModel
     // Recency / trend windows and list caps (kept here so partials and loaders agree).
     public const int NewDeviceDays = 7;
     public const int NotSeenDays = 7;
-    public const int ChangeTrendDays = 14;
+    public const int CollectionTrendDays = 14;
     private const int NewDeviceCap = 5;
     private const int NotSeenCap = 5;
     private const int ChangesCap = 8;
@@ -55,7 +55,6 @@ public sealed class DashboardModel : PageModel
     public IReadOnlyList<ActivityRow> Changes { get; private set; } = [];
     public TotalsVm? Totals { get; private set; }
     public CompositionVm? Composition { get; private set; }
-    public TrendVm? Trend { get; private set; }
 
     /// <summary>Per-panel load errors, keyed by fragment name; rendered as an isolated section error.</summary>
     public Dictionary<string, string> PanelErrors { get; } = new(StringComparer.Ordinal);
@@ -97,9 +96,6 @@ public sealed class DashboardModel : PageModel
             case "composition":
                 await LoadComposition(conn, ct);
                 return Partial("_CompositionPanel", this);
-            case "trend":
-                await LoadTrend(conn, ct);
-                return Partial("_TrendPanel", this);
             default:
                 // Full page: load every panel (independently, so one failure is contained).
                 await LoadPosture(conn, ct);
@@ -111,7 +107,6 @@ public sealed class DashboardModel : PageModel
                 await LoadChanges(conn, ct);
                 await LoadTotals(conn, ct);
                 await LoadComposition(conn, ct);
-                await LoadTrend(conn, ct);
                 return Page();
         }
     }
@@ -211,6 +206,28 @@ public sealed class DashboardModel : PageModel
 
             List<long> series = FillHourly(byHour, 24);
             long peak = series.Count > 0 ? series.Max() : 0;
+
+            Dictionary<DateTime, long> sentByDay = [];
+            await foreach ((DateTimeOffset? Day, long? FactsSent) r in
+                conn.GetCollectionDailyFactsSentAsync(CollectionTrendDays, ct))
+            {
+                if (r.Day.HasValue) { sentByDay[r.Day.Value.UtcDateTime.Date] = r.FactsSent ?? 0; }
+            }
+
+            Dictionary<DateTime, long> changesByDay = [];
+            await foreach ((DateTimeOffset? Day, long? Count) r in
+                conn.GetCollectionDailyChangesAsync(CollectionTrendDays, ct))
+            {
+                if (r.Day.HasValue) { changesByDay[r.Day.Value.UtcDateTime.Date] = r.Count ?? 0; }
+            }
+
+            List<long> dailySent = FillDaily(sentByDay, CollectionTrendDays);
+            List<long> dailyChanges = FillDaily(changesByDay, CollectionTrendDays);
+            long dailyMax = Math.Max(
+                dailySent.Count > 0 ? dailySent.Max() : 0,
+                dailyChanges.Count > 0 ? dailyChanges.Max() : 0
+            );
+
             CollectionVm vm = new(
                 s.FactsSentTotal ?? 0,
                 s.AgentsWithErrors ?? 0,
@@ -218,7 +235,12 @@ public sealed class DashboardModel : PageModel
                 s.AgentsReporting ?? 0,
                 DashboardViz.SparkPoints(series),
                 peak,
-                peak > 0
+                peak > 0,
+                DashboardViz.SparkPoints(dailySent, dailyMax),
+                DashboardViz.AreaPath(dailySent, dailyMax),
+                DashboardViz.SparkPoints(dailyChanges, dailyMax),
+                dailySent.Count > 0 ? (long)Math.Round(dailySent.Average()) : 0,
+                dailyChanges.Count > 0 ? (long)Math.Round(dailyChanges.Average()) : 0
             );
             Cache("dash_collection", vm, MedTtl);
             Collection = vm;
@@ -387,34 +409,6 @@ public sealed class DashboardModel : PageModel
             Composition = vm;
         }
         catch (NpgsqlException ex) { Fail("composition", ex); }
-    }
-
-    private async Task LoadTrend(NpgsqlConnection conn, CancellationToken ct)
-    {
-        if (TryCache("dash_trend", out TrendVm? cached))
-        {
-            Trend = cached;
-            return;
-        }
-
-        try
-        {
-            Dictionary<DateTime, long> byDay = [];
-            await foreach ((DateTimeOffset? Day, long? Count) r in
-                conn.GetChangeTrendAsync(ChangeTrendDays, ct))
-            {
-                if (r.Day.HasValue) { byDay[r.Day.Value.UtcDateTime.Date] = r.Count ?? 0; }
-            }
-
-            List<long> series = FillDaily(byDay, ChangeTrendDays);
-            long today = series.Count > 0 ? series[^1] : 0;
-            long avg = series.Count > 0 ? (long)Math.Round(series.Average()) : 0;
-            long peak = series.Count > 0 ? series.Max() : 0;
-            TrendVm vm = new(DashboardViz.SparkPoints(series), DashboardViz.AreaPath(series), today, avg, peak);
-            Cache("dash_trend", vm, SlowTtl);
-            Trend = vm;
-        }
-        catch (NpgsqlException ex) { Fail("trend", ex); }
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────

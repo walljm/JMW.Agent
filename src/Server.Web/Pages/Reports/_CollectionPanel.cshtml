@@ -3,6 +3,7 @@
 @{
     string? err = Model.PanelError("collection");
     CollectionVm? c = Model.Collection;
+    int days = DashboardModel.CollectionTrendDays;
 }
 <dash-panel panel-name="collection" title="Collection" refresh-seconds="60" meta-text="last cycle per agent">
     @if (err is not null)
@@ -29,7 +30,20 @@
                 <div class="value">@c.AvgDurationMs ms</div>
             </div>
         </div>
-        <p class="dash-eyebrow" style="margin-bottom:var(--space-2)">Collection errors — last 24h</p>
+
+        <p class="dash-eyebrow" style="margin-bottom:var(--space-2)">Facts per day, fleet-wide — last @days days</p>
+        <svg class="spark" viewBox="0 0 100 36" preserveAspectRatio="none" role="img"
+             aria-label="Facts sent per day versus confirmed changes per day across the whole fleet, last @days days; sent averages @c.DailySentAvg.ToString("N0") per day, confirmed changes average @c.DailyChangesAvg.ToString("N0") per day.">
+            <path class="area" d="@c.DailySentAreaPath"/>
+            <polyline class="line-sent" points="@c.DailySentPoints"/>
+            <polyline class="line-confirmed" points="@c.DailyChangesPoints"/>
+        </svg>
+        <p class="meta" style="margin-top:var(--space-2)">
+            Solid = facts sent (@c.DailySentAvg.ToString("N0")/day avg) · dashed = confirmed changes
+            (@c.DailyChangesAvg.ToString("N0")/day avg). A wide gap between them is resend noise, not real drift.
+        </p>
+
+        <p class="dash-eyebrow" style="margin-bottom:var(--space-2);margin-top:var(--space-4)">Collection errors — last 24h</p>
         @if (c.HasErrors)
         {
             <svg class="spark warn" viewBox="0 0 100 36" preserveAspectRatio="none" role="img"
