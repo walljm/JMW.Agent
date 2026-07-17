@@ -34,7 +34,7 @@ public static partial class DeviceQueries
     public static partial IAsyncEnumerable<(Guid DeviceId, string ManagementStatus, string? Hostname, string?
         FriendlyName,
         string? OsFamily,
-        string? OsDistro, string? OsDistroGuess, DateTimeOffset? LastSeen, string?
+        string? OsDistro, DateTimeOffset? LastSeen, string?
         Vendor, string? VendorSourceName, string? Kind, string? CpuModel, long? CpuCores, long?
         TotalMemBytes, string?
         SystemVendor, string? SystemModel, string? SystemSerial, string? LastSeenIp)> GetDeviceSummaryAsync(

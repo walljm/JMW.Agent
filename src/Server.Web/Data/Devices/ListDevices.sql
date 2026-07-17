@@ -2,9 +2,9 @@ SELECT
     d.device_id
   , s.hostname
   , s.os_family
-    -- Falls back to the inferred guess (VendorOsFromDeviceBannerDerivation) when no collector
-    -- self-reports a distro. See docs/plans/vendor-derivation-updates.md §5.
-  , COALESCE(s.os_distro, s.os_distro_guess) AS os_distro
+    -- Already includes the inferred guess (VendorOsFromDeviceBannerDerivation) as
+    -- SystemOsDistroDerivation's lowest-priority fan-in input.
+  , s.os_distro AS os_distro
   , d.management_status
   , CASE
         WHEN s.device IS NULL

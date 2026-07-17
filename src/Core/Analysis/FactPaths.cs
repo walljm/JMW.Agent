@@ -736,13 +736,21 @@ public static class FactPaths
         public const string DeviceVendorGuess = "Device[].VendorGuess";
 
         // Inferred OS-distro guess from a curated, OS-exclusive signature (SNMP sysDescr today —
-        // see docs/plans/vendor-derivation-updates.md §5). Kept separate from the raw
-        // Device[].OS.Distro fact path rather than appended as another writer of it: that path is
-        // projected via the plain last-write-wins GenericProjection route, so a guess re-derived
-        // every collection cycle (fresh collected_at each time) could silently outrace and clobber
-        // an older, more authoritative device-reported value. Reporting should only consult this
-        // when Device[].OS.Distro is empty.
+        // see docs/plans/vendor-derivation-updates.md §5). A pure intermediate as of Phase 6
+        // (architecture-identity-facts.md §12): it has no projection column of its own — it feeds
+        // SystemOsDistroDerivation as the lowest-priority input, alongside the raw
+        // Device[].OS.Distro fact, and the hydrated fan-in (§11) is what makes that safe. Still a
+        // valid routed fact path because it's consumed as a derivation input (also by
+        // DeviceKindDerivation/DeviceModelDerivation) — see FactPathRoutingFitnessTests' fourth
+        // routing home.
         public const string DeviceOsGuess = "Device[].OsGuess";
+
+        // Fanned in from the device-reported OS distro (authoritative) or, failing that, the
+        // inferred OsGuess (SystemOsDistroDerivation) — the one place a cross-device report should
+        // read "OS distro". Mirrors DeviceVendorCanonical's shape one level down: SystemOsDistro is
+        // itself the previously-raw, last-write-wins path; this canonical output is what
+        // proj_systems.os_distro now maps to (architecture-identity-facts.md §12, Phase 6b).
+        public const string SystemOsDistroCanonical = "Device[].OS.DistroCanonical";
     }
 
     // ── Metric classification ──────────────────────────────────────────────────

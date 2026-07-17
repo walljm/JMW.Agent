@@ -61,10 +61,6 @@
                 <dt>OS</dt>
                 <dd>
                     @(Model.OsDistro ?? Model.OsFamily ?? "—")
-                    @if (Model.OsDistroIsGuess)
-                    {
-                        <span class="text-dim"> (inferred)</span>
-                    }
                     @if (Model.SystemFacts.Error is null && Model.SystemFacts.Data is { } sf)
                     {
                         <span class="text-dim" title="@ViewFormat.IsoUtc(sf.UpdatedAt)"> · updated @ViewFormat.RelativeTime(sf.UpdatedAt)</span>

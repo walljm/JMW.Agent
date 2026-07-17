@@ -67,7 +67,6 @@ public sealed class DeviceDetailModel : PageModel
     public string? LastSeenIp { get; private set; }
     public string? OsFamily { get; private set; }
     public string? OsDistro { get; private set; }
-    public bool OsDistroIsGuess { get; private set; }
     public DateTime? LastSeen { get; private set; }
 
     public Section<IReadOnlyList<DeviceFingerprint>> Sources { get; } = new([]);
@@ -135,7 +134,7 @@ public sealed class DeviceDetailModel : PageModel
 
         (Guid DeviceId, string ManagementStatus, string? Hostname, string? FriendlyName, string? OsFamily, string?
             OsDistro,
-            string? OsDistroGuess, DateTimeOffset? LastSeen, string? Vendor, string?
+            DateTimeOffset? LastSeen, string? Vendor, string?
             VendorSourceName,
             string? Kind, string? CpuModel, long? CpuCores, long? TotalMemBytes, string? SystemVendor, string?
             SystemModel, string? SystemSerial, string? LastSeenIp)
@@ -159,8 +158,7 @@ public sealed class DeviceDetailModel : PageModel
         Kind = summary.Kind;
         LastSeenIp = summary.LastSeenIp;
         OsFamily = summary.OsFamily;
-        OsDistro = summary.OsDistro ?? summary.OsDistroGuess;
-        OsDistroIsGuess = summary.OsDistro is null && summary.OsDistroGuess is not null;
+        OsDistro = summary.OsDistro;
         LastSeen = summary.LastSeen?.UtcDateTime;
 
         await Task.WhenAll(

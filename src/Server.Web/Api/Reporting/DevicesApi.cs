@@ -127,7 +127,7 @@ public static class DevicesApi
 
         (Guid DeviceId, string ManagementStatus, string? Hostname, string? FriendlyName, string? OsFamily, string?
             OsDistro,
-            string? OsDistroGuess, DateTimeOffset? LastSeen, string? Vendor, string?
+            DateTimeOffset? LastSeen, string? Vendor, string?
             VendorSourceName,
             string? Kind, string? CpuModel, long? CpuCores, long? TotalMemBytes, string? SystemVendor, string?
             SystemModel, string? SystemSerial, string? LastSeenIp)
@@ -148,7 +148,7 @@ public static class DevicesApi
             Hostname: summary.Hostname,
             FriendlyName: summary.FriendlyName,
             OsFamily: summary.OsFamily,
-            OsDistro: summary.OsDistro ?? summary.OsDistroGuess,
+            OsDistro: summary.OsDistro,
             LastSeen: summary.LastSeen?.UtcDateTime,
             Vendor: summary.Vendor,
             Kind: summary.Kind,

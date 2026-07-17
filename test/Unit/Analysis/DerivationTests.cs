@@ -856,6 +856,71 @@ public sealed class DerivationTests
         Assert.Empty(d.Derive(facts));
     }
 
+    // ── SystemOsDistroDerivation ────────────────────────────────────────────────
+
+    [Fact]
+    public void SystemOsDistro_RealValueOnly_FansInToCanonical()
+    {
+        SystemOsDistroDerivation d = new();
+        Fact[] facts = [Fact.Create($"Device[{Dev}].OS.Distro", "Ubuntu", T)];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+        Assert.Single(results);
+        Assert.Equal("Ubuntu", results[0].Value.AsString());
+        Assert.Equal(FactPaths.Derived.SystemOsDistroCanonical, results[0].AttributePath);
+    }
+
+    [Fact]
+    public void SystemOsDistro_GuessOnly_FansInToCanonical()
+    {
+        // Phase 6b (architecture-identity-facts.md §12): the inferred guess is the lowest-priority
+        // fan-in input, not a separate "guess" column — it fires only when no device-reported
+        // distro is present.
+        SystemOsDistroDerivation d = new();
+        Fact[] facts = [Fact.Create($"Device[{Dev}].OsGuess", "Cisco IOS-XE", T)];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+        Assert.Single(results);
+        Assert.Equal("Cisco IOS-XE", results[0].Value.AsString());
+    }
+
+    [Fact]
+    public void SystemOsDistro_RealValueAndGuessPresent_RealValueWins()
+    {
+        SystemOsDistroDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].OsGuess", "Cisco IOS-XE", T),
+            Fact.Create($"Device[{Dev}].OS.Distro", "Ubuntu", T),
+        ];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+        Assert.Single(results);
+        Assert.Equal("Ubuntu", results[0].Value.AsString());
+    }
+
+    [Fact]
+    public void SystemOsDistro_NoSourcesPresent_ReturnsEmpty()
+    {
+        SystemOsDistroDerivation d = new();
+        Assert.Empty(d.Derive([]));
+    }
+
+    [Fact]
+    public void SystemOsDistro_WhitespaceOnlyValue_SkipsToNextSource()
+    {
+        SystemOsDistroDerivation d = new();
+        Fact[] facts =
+        [
+            Fact.Create($"Device[{Dev}].OS.Distro", "   ", T),
+            Fact.Create($"Device[{Dev}].OsGuess", "Cisco IOS-XE", T),
+        ];
+
+        IReadOnlyList<Fact> results = d.Derive(facts);
+        Assert.Single(results);
+        Assert.Equal("Cisco IOS-XE", results[0].Value.AsString());
+    }
+
     // ── DeviceKindDerivation ───────────────────────────────────────────────────
 
     [Theory]

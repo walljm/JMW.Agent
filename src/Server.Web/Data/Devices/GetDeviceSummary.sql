@@ -29,10 +29,6 @@ SELECT
     ) AS friendly_name
   , s.os_family
   , s.os_distro
-    -- Inferred OS-distro guess (VendorOsFromDeviceBannerDerivation) — surfaced separately so
-    -- the caller can label it "inferred" rather than self-reported; only meaningful when
-    -- os_distro is NULL. See docs/plans/vendor-derivation-updates.md §5.
-  , s.os_distro_guess
   , CASE
         WHEN s.device IS NULL
             THEN NULL

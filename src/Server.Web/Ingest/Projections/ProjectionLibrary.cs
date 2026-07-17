@@ -42,10 +42,12 @@ public static class ProjectionLibrary
                 new(FactPaths.SystemHostname, "hostname", NpgsqlDbType.Text),
                 new(FactPaths.SystemFriendlyName, "friendly_name", NpgsqlDbType.Text),
                 new(FactPaths.SystemOsFamily, "os_family", NpgsqlDbType.Text),
-                new(FactPaths.SystemOsDistro, "os_distro", NpgsqlDbType.Text),
-                // Inferred guess (VendorOsFromDeviceBannerDerivation) — reporting should only
-                // consult this when `os_distro` is NULL. See vendor-derivation-updates.md §5.
-                new(FactPaths.Derived.DeviceOsGuess, "os_distro_guess", NpgsqlDbType.Text),
+                // Fed by SystemOsDistroDerivation, not FactPaths.SystemOsDistro directly — that raw,
+                // device-reported fact is fanned in alongside the inferred DeviceOsGuess (lowest
+                // priority) into this canonical output (see SystemOsDistroDerivation.cs). The former
+                // separate `os_distro_guess` column is retired (architecture-identity-facts.md §12,
+                // Phase 6b); the fan-in already includes the inference.
+                new(FactPaths.Derived.SystemOsDistroCanonical, "os_distro", NpgsqlDbType.Text),
                 // os_version/os_build/kernel/kernel_arch/timezone/boot_time/uptime_seconds and
                 // the live cpu/mem/load metrics moved to the "OS Details" / "Resource Usage"
                 // fact views (FactViewLibrary.cs) — single-device display only, no cross-device

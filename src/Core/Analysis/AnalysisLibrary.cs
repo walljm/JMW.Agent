@@ -111,6 +111,7 @@ public static class AnalysisLibrary
             new VendorFromModelDerivation(),
             new VendorFromDiscoveredModelDerivation(),
             new VendorFromHostnamePrefixDerivation(),
+            new SystemOsDistroDerivation(),
             new DeviceModelDerivation(),
             new DeviceKindDerivation(),
             new FirmwareOsDerivation(),
