@@ -69,6 +69,11 @@ public sealed class FactPathRoutingFitnessTests
                 continue; // surfaced by a device-detail or service fact view
             }
 
+            if (IdentitySignalPaths.All.Contains(path))
+            {
+                continue; // routed to materialization_facts (fact-shaped, not a GenericProjection column)
+            }
+
             unrouted.Add($"{name} = \"{path}\"  (DimKey='{Fact.DeriveDimKey(path)}', Attribute='{attr}')");
         }
 

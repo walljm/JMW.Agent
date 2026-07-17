@@ -15,6 +15,13 @@ namespace JMW.Discovery.UnitTests.Server;
 /// </summary>
 public sealed class DiscoveryMaterializerRelevantTablesTests
 {
+    // Tables written outside ProjectionLibrary (not a GenericProjection) that RelevantTables is
+    // still allowed to name. materialization_facts is fact-shaped, written by
+    // IdentityFactProjection (docs/plans/architecture-identity-facts.md) — same reasoning as
+    // MergeRepointCoverageTests.ExplicitlyRepointedExtras.
+    private static readonly HashSet<string> NonProjectionLibraryExtras =
+        new(StringComparer.Ordinal) { "materialization_facts" };
+
     [Fact]
     public void EveryRelevantTable_MatchesARegisteredProjection()
     {
@@ -26,6 +33,11 @@ public sealed class DiscoveryMaterializerRelevantTablesTests
 
         foreach (string table in DiscoveryMaterializer.RelevantTables)
         {
+            if (NonProjectionLibraryExtras.Contains(table))
+            {
+                continue;
+            }
+
             Assert.Contains(table, registeredTables);
         }
     }

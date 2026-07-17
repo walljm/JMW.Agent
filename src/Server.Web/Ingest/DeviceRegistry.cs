@@ -568,6 +568,13 @@ public sealed class DeviceRegistry
         CancellationToken ct
     )
     {
+        // materialization_facts (docs/plans/architecture-identity-facts.md) is not a ProjectionDef —
+        // it's a fact-shaped table written by IdentityFactProjection, not GenericProjection — so
+        // AllDefs below can't discover it. Repointed explicitly here, same as every device-scoped
+        // projection, so the merge-repoint fitness test (RepointCoverageFitnessTests) can assert
+        // every device-columned table is covered by one path or the other.
+        await RepointIdentityFactsAsync(conn, tx, survivor, losers, ct);
+
         foreach (ProjectionDef def in ProjectionLibrary.AllDefs)
         {
             if (def.DimensionNames.Count > 0 && def.DimensionNames[0] == "Device")
@@ -692,6 +699,75 @@ public sealed class DeviceRegistry
             {
                 deleteCmd.Transaction = tx;
                 deleteCmd.CommandText = $"DELETE FROM {table} WHERE {deviceCol} = $1";
+                deleteCmd.Parameters.Add(Param.Text(loser));
+                await deleteCmd.ExecuteNonQueryAsync(ct);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Repoints materialization_facts rows (keyed device, entity_key, attribute_path) onto the
+    /// survivor. Simpler than <see cref="RepointDeviceDimensionedProjectionAsync"/>: each row
+    /// carries exactly one value, so a collision on (survivor, entity_key, attribute_path) is
+    /// resolved by keeping whichever side is fresher outright — no per-column NULL-fill needed.
+    /// One loser at a time, matching the other repoint methods, so a second loser's collision is
+    /// judged against the first loser's already-settled rows.
+    /// </summary>
+    private static async Task RepointIdentityFactsAsync(
+        NpgsqlConnection conn,
+        NpgsqlTransaction tx,
+        string survivor,
+        string[] losers,
+        CancellationToken ct
+    )
+    {
+        const string table = "materialization_facts";
+
+        foreach (string loser in losers)
+        {
+            // Non-colliding rows move over outright.
+            await using (NpgsqlCommand moveCmd = conn.CreateCommand())
+            {
+                moveCmd.Transaction = tx;
+                moveCmd.CommandText = $"""
+                    UPDATE {table}
+                    SET device = $2
+                    WHERE device = $1
+                      AND NOT EXISTS (
+                          SELECT 1 FROM {table} s
+                          WHERE s.device = $2
+                            AND s.entity_key = {table}.entity_key
+                            AND s.attribute_path = {table}.attribute_path
+                      )
+                    """;
+                moveCmd.Parameters.Add(Param.Text(loser));
+                moveCmd.Parameters.Add(Param.Text(survivor));
+                await moveCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            // Colliding rows: the fresher side (by updated_at) wins outright.
+            await using (NpgsqlCommand overwriteCmd = conn.CreateCommand())
+            {
+                overwriteCmd.Transaction = tx;
+                overwriteCmd.CommandText = $"""
+                    UPDATE {table} AS tgt
+                    SET value = src.value, updated_at = src.updated_at
+                    FROM {table} AS src
+                    WHERE tgt.device = $2
+                      AND src.device = $1
+                      AND tgt.entity_key = src.entity_key
+                      AND tgt.attribute_path = src.attribute_path
+                      AND src.updated_at > tgt.updated_at
+                    """;
+                overwriteCmd.Parameters.Add(Param.Text(loser));
+                overwriteCmd.Parameters.Add(Param.Text(survivor));
+                await overwriteCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            await using (NpgsqlCommand deleteCmd = conn.CreateCommand())
+            {
+                deleteCmd.Transaction = tx;
+                deleteCmd.CommandText = $"DELETE FROM {table} WHERE device = $1";
                 deleteCmd.Parameters.Add(Param.Text(loser));
                 await deleteCmd.ExecuteNonQueryAsync(ct);
             }
@@ -961,6 +1037,16 @@ public sealed class DeviceRegistry
         CancellationToken ct
     )
     {
+        // materialization_facts isn't a ProjectionDef (see RepointProjectionsAsync) — deleted
+        // explicitly here for the same reason it's repointed explicitly on merge.
+        await using (NpgsqlCommand identityCmd = conn.CreateCommand())
+        {
+            identityCmd.Transaction = tx;
+            identityCmd.CommandText = "DELETE FROM materialization_facts WHERE device = $1";
+            identityCmd.Parameters.Add(Param.Text(deviceId));
+            await identityCmd.ExecuteNonQueryAsync(ct);
+        }
+
         foreach (ProjectionDef def in ProjectionLibrary.AllDefs)
         {
             if (def.DimensionNames.Count > 0 && def.DimensionNames[0] == "Device")

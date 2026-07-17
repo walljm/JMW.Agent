@@ -37,6 +37,7 @@ public sealed class DiscoveryMaterializer
         "proj_dhcp_leases", // MaterializeDiscoveredSourceAsync(DhcpMacs); GetPromotionGapRows hostname fallback
         "proj_dhcp_local_leases", // MaterializeDiscoveredSourceAsync(DhcpLocalMacs); GetPromotionGapRows fallback
         "proj_discovered", // ScannerMacs/ScannerSerials/obscured-MAC/SSH-host-key/scanner-id sources
+        "materialization_facts", // dual-written identity signals (docs/plans/architecture-identity-facts.md)
         "proj_interfaces", // MaterializeInterfaceMacsAsync (Google Wifi AP obscured interface MACs)
         "proj_hardware", // MaterializePromotionGapsAsync gap detection + promotion target
         "proj_systems", // MaterializePromotionGapsAsync gap detection + promotion target

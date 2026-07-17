@@ -1,4 +1,4 @@
-# Architecture: narrow identity-fact projection (`proj_identity_facts`)
+# Architecture: narrow identity-fact projection (`materialization_facts`)
 
 > **Status:** PROPOSED — design pass only, no code moves until Boss approves.
 > **Directive (Boss, 2026-07-16):** "for things that are only used for materialization, we
@@ -77,7 +77,7 @@ row. Identity-signal ≠ materializer-only; the split is by **consumer**, not by
 -- One row = the CURRENT value of one identity-signal fact. Fact-shaped (path, not column),
 -- so new signals never need DDL. Text-only by design: every identity signal is a string
 -- identifier; a non-string signal has no business being a fingerprint.
-CREATE TABLE proj_identity_facts (
+CREATE TABLE materialization_facts (
     device         TEXT        NOT NULL,  -- device GUID (first dimension key)
     entity_key     TEXT        NOT NULL DEFAULT '',  -- non-device dimension keys, path order,
                                                      -- '\0'-joined; '' for device-scoped paths.
@@ -89,9 +89,9 @@ CREATE TABLE proj_identity_facts (
 );
 
 -- Fingerprint lookups ("which rows carry ssdp_uuid = X") and the new-since-pass anti-joins.
-CREATE INDEX proj_identity_facts_path_value_idx ON proj_identity_facts (attribute_path, value);
+CREATE INDEX materialization_facts_path_value_idx ON materialization_facts (attribute_path, value);
 -- Retention sweep (same updated_at-staleness model as proj_discovered).
-CREATE INDEX proj_identity_facts_updated_idx ON proj_identity_facts (updated_at);
+CREATE INDEX materialization_facts_updated_idx ON materialization_facts (updated_at);
 ```
 
 - **Text-only values** is a hard rule, enforced at routing time (drop + warn on non-string).
@@ -107,7 +107,7 @@ New `IdentityFactProjection : IProjection`, registered with the existing `Projec
 for each path in a new declarative set:
 
 ```csharp
-/// <summary>The identity-signal paths projected into proj_identity_facts. Adding a new
+/// <summary>The identity-signal paths projected into materialization_facts. Adding a new
 /// scanner fingerprint = add its FactPaths const here. No migration.</summary>
 public static class IdentitySignalPaths
 {
@@ -129,7 +129,7 @@ public static class IdentitySignalPaths
   (`proj_discovered`) and `IdentityFactProjection`.
 - Upsert semantics mirror `GenericProjection` (`GenericProjection.cs:131-200`): batched
   array-parameter upsert, `ON CONFLICT (device, entity_key, attribute_path) DO UPDATE SET
-  value = EXCLUDED.value, updated_at = EXCLUDED.updated_at WHERE proj_identity_facts.value
+  value = EXCLUDED.value, updated_at = EXCLUDED.updated_at WHERE materialization_facts.value
   IS DISTINCT FROM EXCLUDED.value OR ...updated_at < EXCLUDED.updated_at`, fronted by the
   same entity-state cache pattern (key = (device, entity_key, path)) so unchanged
   re-observations never touch Postgres.
@@ -137,7 +137,7 @@ public static class IdentitySignalPaths
   preserves a column when a later batch omits it ("EXCLUDED IS NOT NULL" guard). The narrow
   table has per-fact rows, so an omitted signal is simply not touched — identical outcome,
   no per-column guard needed.
-- `DiscoveryMaterializer.RelevantTables` gains `"proj_identity_facts"` so the touched-table
+- `DiscoveryMaterializer.RelevantTables` gains `"materialization_facts"` so the touched-table
   gate keeps triggering the right passes.
 
 ## 5. Read path — pivot pattern and worked rewrites
@@ -152,7 +152,7 @@ SELECT
   , MAX(value) FILTER (WHERE attribute_path = 'Device[].Discovered[].OnvifSerial') AS onvif_serial
   , MAX(value) FILTER (WHERE attribute_path = 'Device[].Discovered[].SsdpUuid')    AS ssdp_uuid
   -- … one line per signal the pass needs …
-FROM proj_identity_facts
+FROM materialization_facts
 WHERE attribute_path = ANY($paths)
 GROUP BY device, entity_key
 ```
@@ -161,7 +161,7 @@ GROUP BY device, entity_key
 
 ```sql
 SELECT value AS cast_id, count(DISTINCT entity_key) AS ip_count
-FROM proj_identity_facts
+FROM materialization_facts
 WHERE attribute_path = 'Device[].Discovered[].CastId'
 GROUP BY value
 ```
@@ -180,7 +180,7 @@ LEFT JOIN (
            MAX(value) FILTER (WHERE attribute_path = 'Device[].Discovered[].CastId')     AS cast_id,
            MAX(value) FILTER (WHERE attribute_path = 'Device[].Discovered[].DeviceType') AS device_type,
            MAX(value) FILTER (WHERE attribute_path = 'Device[].Discovered[].Os')         AS os
-    FROM proj_identity_facts
+    FROM materialization_facts
     WHERE attribute_path IN (…the three paths…)
     GROUP BY device, entity_key
 ) idf ON idf.device = d.device AND idf.entity_key = d.discovered
@@ -192,7 +192,7 @@ column, presence-only):
 
 ```sql
 -- was: OR d.ssh_host_key IS NOT NULL
-OR EXISTS (SELECT 1 FROM proj_identity_facts f
+OR EXISTS (SELECT 1 FROM materialization_facts f
            WHERE f.device = d.device AND f.entity_key = d.discovered
              AND f.attribute_path = 'Device[].Discovered[].SshHostKey')
 ```
@@ -234,7 +234,7 @@ These are where a drive-by would cause real damage; each gets an explicit artifa
 3. **Operator-facts write gate.** `IdentitySignalPaths ⊆ IdentityBearingFactPaths` must hold
    (enforced by the restructured fitness test) so operators still cannot author identity
    signals. No behavior change intended.
-4. **Retention parity.** `retention_policies` row for `proj_identity_facts`
+4. **Retention parity.** `retention_policies` row for `materialization_facts`
    (7 days, same rationale as `proj_discovered`). Without it, signals for departed neighbors
    would keep resolving devices forever.
 5. **Fact views / device detail.** Unaffected — fact views read `facts_history` directly,
@@ -247,7 +247,7 @@ Each phase is independently deployable with green tests; the wide columns are th
 until the last step.
 
 **Phase 1 — table + dual write + equality net.**
-- Migration `00XX`: create `proj_identity_facts` + indexes + `retention_policies` row, and
+- Migration `00XX`: create `materialization_facts` + indexes + `retention_policies` row, and
   **backfill** from the eleven `proj_discovered` columns
   (`INSERT … SELECT device, discovered, '<path>', <col>, updated_at … WHERE <col> IS NOT NULL`,
   one arm per column).
@@ -313,7 +313,7 @@ get rid of projection tables that are no longer being used").**
    `ProjectionLibrary`/`IdentityInputColumns`/`OperatorFactCatalog` edits, and the NFR-8 +
    routing fitness tests pass without modification.
 2. All existing unit + integration suites green after every phase.
-3. Device merge repoints `proj_identity_facts` (covered by the new repoint fitness test).
+3. Device merge repoints `materialization_facts` (covered by the new repoint fitness test).
 4. Retention prunes stale identity-fact rows on the same policy as `proj_discovered`.
 5. No behavior change observable in reports or the operator-facts write gate.
 6. After Phase 4, no `proj_*` table exists without at least one non-materializer reader,
@@ -353,7 +353,7 @@ attributes** from **the sighting/Link edge** (AGENTS.md, "Google Wifi collector"
 carry over the **intrinsic** set only:
 
 - **Promote:** `Hostname`, `FriendlyName`, `Model`, `DeviceType`, `Vendor`, `Os`, the advertised
-  `Service[]` names, and every identity signal this plan moves to `proj_identity_facts`
+  `Service[]` names, and every identity signal this plan moves to `materialization_facts`
   (`OnvifSerial`, `SnmpSerial`, `SsdpUuid`, `CastId`, … — §3's moving set).
 - **Never promote:** `Discovered[].Link.*` (SignalDbm, Tx/RxRate, Rx/TxBytes, Band, Medium,
   Guest, ConnectedSeconds). These are properties of *the observation*, not the device, and stay
@@ -361,7 +361,7 @@ carry over the **intrinsic** set only:
 
 ### 10.3 Why this belongs in this plan
 
-Once intrinsic identity signals are **fact-shaped** in `proj_identity_facts` (keyed
+Once intrinsic identity signals are **fact-shaped** in `materialization_facts` (keyed
 `(device, entity_key, attribute_path)`), "promote all facts" stops being a hand-maintained
 column list and becomes a **uniform re-emit**: for the promoted device, iterate the observer's
 `Discovered[ip]` intrinsic rows and re-emit each as a `Device[promotedDeviceId].<attr>` fact.
@@ -403,7 +403,7 @@ normal projection router) under the promoted device, rather than writing `proj_*
 ### 10.6 Sequencing
 
 Runs as **Phase 5**, after the intrinsic identity signals are fact-shaped (Phases 1–3) so the
-re-emit iterates `proj_identity_facts` + the surviving wide intrinsics uniformly. It is not a
+re-emit iterates `materialization_facts` + the surviving wide intrinsics uniformly. It is not a
 prerequisite for Phases 1–4 and does not change their acceptance criteria.
 
 ### 10.7 Open question — promoted-fact precedence vs the last-write-wins projection (UNSETTLED)

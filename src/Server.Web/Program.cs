@@ -81,7 +81,17 @@ builder.Services.AddSingleton<FactRepository>();
 builder.Services.AddSingleton(sp =>
     {
         NpgsqlDataSource ds = sp.GetRequiredService<NpgsqlDataSource>();
-        return new ProjectionRouter(ds, ProjectionLibrary.CreateAll(ds));
+        // IdentityFactProjection is registered alongside (not inside) ProjectionLibrary.AllDefs —
+        // it isn't a GenericProjection (fact-shaped table, not one column per signal). The router
+        // already supports multiple projections per (DimKey, Attribute), so this dual-writes the
+        // moving identity-signal paths into materialization_facts alongside proj_discovered's
+        // columns during the Phase 1-2 migration (docs/plans/architecture-identity-facts.md).
+        List<IProjection> projections =
+        [
+            .. ProjectionLibrary.CreateAll(ds),
+            new IdentityFactProjection(sp.GetRequiredService<ILogger<IdentityFactProjection>>()),
+        ];
+        return new ProjectionRouter(ds, projections);
     }
 );
 // Fact analysis (normalize + derive) — agents emit raw; the server normalizes at ingest.

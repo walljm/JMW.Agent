@@ -32,6 +32,7 @@ public sealed class DeviceRegistryTests : IAsyncLifetime
             "device_fingerprints",
             "devices",
             "proj_interfaces",
+            "materialization_facts",
             "change_events"
         );
     }
@@ -209,6 +210,100 @@ public sealed class DeviceRegistryTests : IAsyncLifetime
         cmd.Parameters.AddWithValue("d", device.ToString());
         cmd.Parameters.AddWithValue("i", interfaceKey);
         cmd.Parameters.AddWithValue("n", name);
+        cmd.Parameters.AddWithValue("u", updatedAt);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_TwoMatchingDevices_MergesMaterializationFacts_NonCollidingAndColliding()
+    {
+        // survivor already has SshHostKey (no OnvifSerial); loser has OnvifSerial (moves outright)
+        // and a colliding SshHostKey that is FRESHER than the survivor's — the fresher side must win.
+        Guid survivorId = await _fixture.InsertDeviceAsync("discovered", createdAt: DateTimeOffset.UtcNow.AddHours(-2));
+        Guid loserId = await _fixture.InsertDeviceAsync("discovered", createdAt: DateTimeOffset.UtcNow.AddHours(-1));
+
+        await _fixture.InsertFingerprintAsync(survivorId, FingerprintType.Mac, "00ccddeeff01");
+        await _fixture.InsertFingerprintAsync(loserId, FingerprintType.ChassisSerial, "bare:onvif-merge-1");
+
+        await InsertMaterializationFactAsync(
+            survivorId,
+            "10.0.0.1",
+            "Device[].Discovered[].SshHostKey",
+            "stale-key",
+            DateTimeOffset.UtcNow.AddHours(-2)
+        );
+        await InsertMaterializationFactAsync(
+            loserId,
+            "10.0.0.1",
+            "Device[].Discovered[].SshHostKey",
+            "fresh-key",
+            DateTimeOffset.UtcNow
+        );
+        await InsertMaterializationFactAsync(
+            loserId,
+            "10.0.0.2",
+            "Device[].Discovered[].OnvifSerial",
+            "onvif-serial-1",
+            DateTimeOffset.UtcNow
+        );
+
+        List<Fingerprint> fps =
+        [
+            new(FingerprintType.Mac, "00ccddeeff01"),
+            new(FingerprintType.ChassisSerial, "bare:onvif-merge-1"),
+        ];
+
+        (string resolvedSurvivor, bool _) = await _registry.ResolveAsync(fps, source: "identity-facts-merge-test");
+        Assert.Equal(survivorId.ToString(), resolvedSurvivor);
+
+        // Non-colliding row moved over outright.
+        long onvifCount = await _fixture.CountAsync(
+            "materialization_facts",
+            $"device = '{survivorId}' AND entity_key = '10.0.0.2' " +
+            "AND attribute_path = 'Device[].Discovered[].OnvifSerial' AND value = 'onvif-serial-1'"
+        );
+        Assert.Equal(1, onvifCount);
+
+        // Colliding row: fresher (loser's) value wins, and only one row remains.
+        long sshHostKeyCount = await _fixture.CountAsync(
+            "materialization_facts",
+            $"device = '{survivorId}' AND entity_key = '10.0.0.1' " +
+            "AND attribute_path = 'Device[].Discovered[].SshHostKey'"
+        );
+        Assert.Equal(1, sshHostKeyCount);
+
+        long freshWinsCount = await _fixture.CountAsync(
+            "materialization_facts",
+            $"device = '{survivorId}' AND entity_key = '10.0.0.1' " +
+            "AND attribute_path = 'Device[].Discovered[].SshHostKey' AND value = 'fresh-key'"
+        );
+        Assert.Equal(1, freshWinsCount);
+
+        // Nothing left behind under the loser id.
+        long loserRowCount = await _fixture.CountAsync("materialization_facts", $"device = '{loserId}'");
+        Assert.Equal(0, loserRowCount);
+    }
+
+    private async Task InsertMaterializationFactAsync(
+        Guid device,
+        string entityKey,
+        string attributePath,
+        string value,
+        DateTimeOffset updatedAt
+    )
+    {
+        await using Npgsql.NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        await using Npgsql.NpgsqlCommand cmd = new(
+            """
+            INSERT INTO materialization_facts (device, entity_key, attribute_path, value, updated_at)
+            VALUES (@d, @e, @p, @v, @u)
+            """,
+            conn
+        );
+        cmd.Parameters.AddWithValue("d", device.ToString());
+        cmd.Parameters.AddWithValue("e", entityKey);
+        cmd.Parameters.AddWithValue("p", attributePath);
+        cmd.Parameters.AddWithValue("v", value);
         cmd.Parameters.AddWithValue("u", updatedAt);
         await cmd.ExecuteNonQueryAsync();
     }
