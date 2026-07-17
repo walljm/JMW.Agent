@@ -768,6 +768,45 @@ public sealed class FullPipelineEndToEndTests : IAsyncLifetime
         cmd.Parameters.AddWithValue("vendor", (object?)vendor ?? DBNull.Value);
         cmd.Parameters.AddWithValue("model", (object?)model ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync();
+
+        // GetNewDiscoveredSerials/GetScannerIdRows/GetSshHostKeyRows now read
+        // materialization_facts (docs/plans/architecture-identity-facts.md §5 Phase 2b/2c) —
+        // this direct-SQL seed bypasses the router's dual write, so mirror it here.
+        if (onvifSerial is not null)
+        {
+            await InsertMaterializationFactAsync(device, ip, "Device[].Discovered[].OnvifSerial", onvifSerial);
+        }
+
+        if (rokuSerial is not null)
+        {
+            await InsertMaterializationFactAsync(device, ip, "Device[].Discovered[].RokuSerial", rokuSerial);
+        }
+
+        if (ssdpUuid is not null)
+        {
+            await InsertMaterializationFactAsync(device, ip, "Device[].Discovered[].SsdpUuid", ssdpUuid);
+        }
+
+        if (wsdUuid is not null)
+        {
+            await InsertMaterializationFactAsync(device, ip, "Device[].Discovered[].WsdUuid", wsdUuid);
+        }
+    }
+
+    private async Task InsertMaterializationFactAsync(string device, string entityKey, string attributePath, string value)
+    {
+        const string sql = """
+            INSERT INTO materialization_facts (device, entity_key, attribute_path, value)
+            VALUES (@device, @entityKey, @path, @value)
+            ON CONFLICT (device, entity_key, attribute_path) DO UPDATE SET value = EXCLUDED.value
+            """;
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        await using NpgsqlCommand cmd = new(sql, conn);
+        cmd.Parameters.AddWithValue("device", device);
+        cmd.Parameters.AddWithValue("entityKey", entityKey);
+        cmd.Parameters.AddWithValue("path", attributePath);
+        cmd.Parameters.AddWithValue("value", value);
+        await cmd.ExecuteNonQueryAsync();
     }
 
     private async Task<Guid> ReadDeviceIdByMacAsync(string mac)

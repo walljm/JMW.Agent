@@ -1549,6 +1549,10 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
         cmd.Parameters.AddWithValue("vendor", (object?)vendor ?? DBNull.Value);
         cmd.Parameters.AddWithValue("model", (object?)model ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync();
+
+        // GetNewDiscoveredSerials now reads materialization_facts (docs/plans/
+        // architecture-identity-facts.md §5 Phase 2c) — mirror the router's dual write.
+        await InsertMaterializationFactAsync(observer, ip, "Device[].Discovered[].SsdpUuid", ssdpUuid);
     }
 
     private async Task InsertDiscoveredSnmpSerialRowAsync(
@@ -1576,6 +1580,10 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
         cmd.Parameters.AddWithValue("vendor", (object?)vendor ?? DBNull.Value);
         cmd.Parameters.AddWithValue("model", (object?)model ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync();
+
+        // GetNewDiscoveredSerials now reads materialization_facts (docs/plans/
+        // architecture-identity-facts.md §5 Phase 2c) — mirror the router's dual write.
+        await InsertMaterializationFactAsync(observer, ip, "Device[].Discovered[].SnmpSerial", snmpSerial);
     }
 
     private async Task ExecuteAsync(string sql)
