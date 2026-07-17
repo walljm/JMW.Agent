@@ -284,6 +284,15 @@ get rid of projection tables that are no longer being used").**
   re-runs whenever a report retires so that any projection losing its last reader is dropped
   rather than lingering (the `proj_bacnet_device`/`proj_modbus_*` drops during the fact-view
   unification pass are the precedent).
+- **Audit result (2026-07-16, after Phases 1-3 landed):** ran as predicted — **no table dropped**.
+  Every `proj_*` table the materializer reads (`proj_discovered`, `proj_interfaces`,
+  `proj_hardware`, `proj_systems`, `proj_device_arp`, `proj_dhcp_leases`,
+  `proj_dhcp_local_leases`) still has non-materializer report readers, and the slimmed
+  `proj_discovered` keeps mac/obscured_mac/hostname/friendly_name/vendor/model/sources (read by
+  DeviceListApi, the device-detail queries, ListSubnetHostIps, ListTargetCandidates).
+  `materialization_facts`'s only non-materializer readers are the device-detail All-Facts sighting
+  match and the target-candidate ssh predicate — both intended. The policy is now documented in
+  AGENTS.md ("Materializer-only identity signals route to `materialization_facts`").
 
 ## 8. Trade-offs accepted (and rejected alternatives)
 
