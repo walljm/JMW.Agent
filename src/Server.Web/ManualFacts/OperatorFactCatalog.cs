@@ -65,12 +65,7 @@ public static class OperatorFactCatalog
     ///   DiscoveredModel           → proj_discovered.model
     ///   DiscoveredOs              → proj_discovered.os
     ///   DiscoveredDeviceType      → proj_discovered.device_type
-    ///   Derived.DeviceVendorCanonical → proj_hardware.system_vendor (also proj_devices.vendor;
-    ///                             DeviceVendorDerivation's OWN inputs — HwSystemVendor et al. —
-    ///                             are not separately listed here, consistent with how the other
-    ///                             three raw fan-in inputs (DeviceVendor, BacnetVendorName,
-    ///                             ModbusVendorName) were never listed either: this set tracks what
-    ///                             DiscoveryMaterializer reads directly, not everything upstream of it)
+    ///   HwSystemVendor            → proj_hardware.system_vendor
     ///   HwSystemModel             → proj_hardware.system_model
     ///   SystemHostname            → proj_systems.hostname
     ///   SystemOsFamily            → proj_systems.os_family
@@ -107,7 +102,7 @@ public static class OperatorFactCatalog
         FactPaths.DiscoveredModel,
         FactPaths.DiscoveredOs,
         FactPaths.DiscoveredDeviceType,
-        FactPaths.Derived.DeviceVendorCanonical,
+        FactPaths.HwSystemVendor,
         FactPaths.HwSystemModel,
         FactPaths.SystemHostname,
         FactPaths.SystemOsFamily,

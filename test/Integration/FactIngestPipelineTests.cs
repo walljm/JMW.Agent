@@ -74,23 +74,26 @@ public sealed class FactIngestPipelineTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Ingest_HwSystemVendor_PopulatesBothProjDevicesAndProjHardwareFromOneDerivation()
+    public async Task Ingest_BacnetVendorOnly_DoesNotCreateAProjHardwareRow()
     {
-        // DeviceVendorDerivation is the single decision-maker for "vendor" — proj_devices.vendor
-        // (DeviceVendorCanonical, the fan-in's output) and proj_hardware.system_vendor both read
-        // that SAME derived fact now, rather than proj_hardware reading the raw HwSystemVendor
-        // input independently. One raw report, one derivation, one decision, two projections.
+        // Regression guard (docs/plans/architecture-identity-facts.md §12 follow-up, tried and
+        // reverted 2026-07-17): proj_hardware.system_vendor must stay fed by the raw HwSystemVendor
+        // fact, not DeviceVendorDerivation's canonical output. proj_hardware's row EXISTENCE is used
+        // elsewhere as "this device has real hardware inventory data" (HardwareApi.cs's listing
+        // query is FROM proj_hardware; DeviceDetail.cshtml.cs's Hardware tab visibility is
+        // HardwareFacts.Data is not null). A BACnet controller has no hardware collector and must
+        // never acquire a proj_hardware row just because its vendor is known.
         string deviceId = DeviceId;
 
-        await _pipeline.IngestAsync([Fact.Create($"Device[{deviceId}].Hardware.SystemVendor", "Acme")]);
+        await _pipeline.IngestAsync([Fact.Create($"Device[{deviceId}].BACnet.VendorName", "Honeywell")]);
 
-        string? projDevicesVendor =
-            await ReadScalarAsync($"SELECT vendor FROM proj_devices WHERE device = '{deviceId}'");
-        string? projHardwareVendor =
-            await ReadScalarAsync($"SELECT system_vendor FROM proj_hardware WHERE device = '{deviceId}'");
+        string? vendor = await ReadScalarAsync($"SELECT vendor FROM proj_devices WHERE device = '{deviceId}'");
+        Assert.Equal("Honeywell", vendor);
 
-        Assert.Equal("Acme", projDevicesVendor);
-        Assert.Equal("Acme", projHardwareVendor);
+        string? hardwareRowCount = await ReadScalarAsync(
+            $"SELECT COUNT(*) FROM proj_hardware WHERE device = '{deviceId}'"
+        );
+        Assert.Equal("0", hardwareRowCount);
     }
 
     // ── proj_systems ──────────────────────────────────────────────────────────

@@ -73,13 +73,16 @@ public static class ProjectionLibrary
                 new(FactPaths.HwCpuLogicalCores, "cpu_logical_cores", NpgsqlDbType.Bigint),
                 new(FactPaths.HwCpuMhz, "cpu_mhz", NpgsqlDbType.Double),
                 new(FactPaths.HwTotalMemBytes, "total_mem_bytes", NpgsqlDbType.Bigint),
-                // Fed by DeviceVendorDerivation's output, not FactPaths.HwSystemVendor directly —
-                // that raw fact is one of several inputs fanned into the canonical output (same
-                // fan-in that feeds proj_devices.vendor, see ProjectionLibrary's "proj_devices" def
-                // above). One derivation decides the best vendor across every source; both
-                // projections read that single decision rather than each reading a different raw
-                // input independently.
-                new(FactPaths.Derived.DeviceVendorCanonical, "system_vendor", NpgsqlDbType.Text),
+                // Deliberately NOT DeviceVendorDerivation's canonical output (unlike
+                // proj_devices.vendor) — tried this 2026-07-17, reverted: proj_hardware's row
+                // EXISTENCE is used elsewhere as "this device has real hardware inventory data"
+                // (HardwareApi.cs's listing query is FROM proj_hardware; DeviceDetail.cshtml.cs's
+                // Hardware tab visibility is HardwareFacts.Data is not null). Routing the fan-in's
+                // output here made a BACnet/Modbus-only controller (vendor known, no hardware
+                // collector) spuriously acquire a proj_hardware row and show up in both. HwSystemVendor
+                // stays the direct source: its presence IS the "has hardware data" signal those
+                // consumers depend on. See docs/plans/architecture-identity-facts.md §12 follow-up.
+                new(FactPaths.HwSystemVendor, "system_vendor", NpgsqlDbType.Text),
                 new(FactPaths.HwSystemModel, "system_model", NpgsqlDbType.Text),
                 new(FactPaths.HwSystemSerial, "system_serial", NpgsqlDbType.Text),
                 new(FactPaths.HwBiosVersion, "bios_version", NpgsqlDbType.Text),

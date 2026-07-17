@@ -702,22 +702,39 @@ migrations + fitness amendment). Sequenced after Phase 5; not a prerequisite for
   explicitly rejected as a design direction. Not raised as an open question — it's the direct,
   foreseeable consequence of the repoint Boss already directed.
 
-**Follow-up (2026-07-17, same session): `proj_hardware.system_vendor` repointed to the fan-in too.**
+**Follow-up (2026-07-17, same session): `proj_hardware.system_vendor` — tried repointing to the
+fan-in, reverted, root cause understood and documented.**
 Boss's framing: "the whole point of the derivation is to take all the vendor facts and decide which
 one is best, so the system uses that" — `proj_hardware.system_vendor` was still reading the raw
 `FactPaths.HwSystemVendor` fact directly (a second, independent 1:1 projection of one of
 `DeviceVendorDerivation`'s five inputs) rather than the derivation's own decision. Repointed its
 `ProjectionLibrary` column def to `Derived.DeviceVendorCanonical` — the same output
-`proj_devices.vendor` reads — so one derivation decision now fans out to both projections
+`proj_devices.vendor` reads — so one derivation decision would fan out to both projections
 (`ProjectionRouter` already supports one fact routing to multiple projections; no new mechanism
-needed). `HwSystemVendor` remains one of the derivation's inputs, unchanged.
-- **NFR-8 ripple:** `OperatorFactCatalog.IdentityBearingFactPaths` mapped `HwSystemVendor` →
-  `proj_hardware.system_vendor` specifically because that was the direct materializer gap-detection
-  read; swapped to `Derived.DeviceVendorCanonical` to match. `HwSystemVendor` itself drops out of
-  the identity-bearing set — but this isn't a new gap: the other three raw fan-in inputs
-  (`DeviceVendor`, `BacnetVendorName`, `ModbusVendorName`) were *never* in that set either, because
-  the set has only ever tracked what `DiscoveryMaterializer` reads directly, not every upstream input
-  to a derivation that happens to feed something it reads. `HwSystemVendor` becoming
-  operator-writable now just matches its three siblings' pre-existing status, not a new exposure.
-- Covered by `FactIngestPipelineTests.Ingest_HwSystemVendor_PopulatesBothProjDevicesAndProjHardwareFromOneDerivation`.
-- Verified: 1265 unit + 405 integration tests green.
+needed). Also updated `OperatorFactCatalog.IdentityBearingFactPaths` to match (mapped
+`HwSystemVendor` → `Derived.DeviceVendorCanonical`).
+
+**Reverted after finding a real regression, caught by a written-and-run test, not just review:**
+`proj_hardware`'s row *existence* is used elsewhere as "this device has real hardware inventory
+data" — `HardwareApi.cs`'s Hardware Inventory listing query is `FROM proj_hardware h` (the anchor
+table, not a `LEFT JOIN` target), and `DeviceDetail.cshtml.cs:534` drives the Hardware tab's
+visibility off `HardwareFacts.Data is not null`. Once `system_vendor` read the fan-in, a BACnet or
+Modbus controller — vendor known via `BacnetVendorName`/`ModbusVendorName`, no hardware collector
+at all — started acquiring a `proj_hardware` row (via `GenericProjection`'s plain
+`INSERT ... ON CONFLICT DO UPDATE`, which creates a row on the first write to *any* tracked column)
+and would have shown up in the Hardware Inventory report and gained a Hardware tab with every field
+but vendor blank. Confirmed with
+`FactIngestPipelineTests.Ingest_BacnetVendorOnly_DoesNotCreateAProjHardwareRow` before reverting,
+which failed as predicted, then passed again after the revert — kept as a permanent regression
+guard.
+
+**Where this leaves things:** `proj_devices.vendor` reads `Derived.DeviceVendorCanonical` (the fix
+from earlier this session, unaffected by this revert — that's a `Device`-scoped display column with
+no row-existence-as-signal baggage). `proj_hardware.system_vendor` stays on raw `HwSystemVendor`
+deliberately — its presence is the very signal that row's existence means "has real hardware data,"
+so it can't be swapped for the fan-in's output without also solving the row-existence-as-signal
+problem (a bigger, separate change: either give `GenericProjection` a way to update-without-insert
+for specific columns, or change `HardwareApi.cs`/`DeviceDetail.cshtml.cs` to gate on an actual
+hardware-data predicate instead of row existence). Not attempted without that design.
+`OperatorFactCatalog` reverted to match — `HwSystemVendor` is identity-bearing again.
+- Verified: 1265 unit + 405 integration tests green (405 = 404 baseline + the new regression guard).
