@@ -38,12 +38,73 @@
         return KIND_STYLE[kind] || DEFAULT_STYLE;
     }
 
+    // Derive the drawing height from the space left below the container in the viewport,
+    // so the graph fills the window instead of a fixed band. Clamped to a sane minimum.
+    function measuredHeight(container) {
+        const top = container.getBoundingClientRect().top;
+        const avail = window.innerHeight - top - 24;
+        return Math.max(480, Math.floor(avail));
+    }
+
+    // One ResizeObserver + resize listener per container keeps the SVG sized to the visible
+    // container. Crucial for tabbed panels: a `hidden` panel has clientWidth 0, so its graph
+    // can't be measured until it becomes visible — the observer fires on that 0→real change
+    // and draws it correctly then, and again on any window resize. Redraw is gated on a WIDTH
+    // change so setting the SVG's height (which grows the container) can't feed back into a loop.
+    const observed = new WeakSet();
+
+    function setupAutoResize(container) {
+        if (observed.has(container)) {
+            return;
+        }
+        observed.add(container);
+
+        let timer = null;
+
+        function scheduleRedraw() {
+            const width = container.clientWidth;
+            if (width === 0 || width === container.__topoWidth) {
+                return; // hidden, or only the height changed (our own draw) — ignore
+            }
+            if (timer) {
+                clearTimeout(timer);
+            }
+            timer = setTimeout(() => drawIfVisible(container), 120);
+        }
+
+        if (typeof ResizeObserver !== 'undefined') {
+            new ResizeObserver(scheduleRedraw).observe(container);
+        }
+        // Pure-vertical viewport changes don't alter the container width, so the observer
+        // won't fire — a window resize listener covers that case (and re-measures height).
+        window.addEventListener('resize', () => {
+            if (timer) {
+                clearTimeout(timer);
+            }
+            timer = setTimeout(() => drawIfVisible(container), 120);
+        });
+    }
+
+    function drawIfVisible(container) {
+        if (container.clientWidth > 0 && container.__topoGraph) {
+            draw(container, container.__topoGraph);
+        }
+    }
+
     window.renderTopologyGraph = function (containerId, graph) {
         const container = document.getElementById(containerId);
         if (!container) {
             return;
         }
 
+        // Stash the data so the observer can redraw on resize / tab reveal without the page
+        // re-supplying it, then draw now if the panel is already visible.
+        container.__topoGraph = graph;
+        setupAutoResize(container);
+        drawIfVisible(container);
+    };
+
+    function draw(container, graph) {
         container.innerHTML = '';
 
         if (!graph || !graph.nodes || graph.nodes.length === 0) {
@@ -55,7 +116,8 @@
         }
 
         const width = container.clientWidth || 800;
-        const height = 520;
+        const height = measuredHeight(container);
+        container.__topoWidth = width; // so the resize observer ignores our own height change
 
         const nodes = graph.nodes.map((n) => Object.assign({}, n));
         const nodeById = new Map(nodes.map((n) => [n.id, n]));
@@ -256,7 +318,7 @@
             simulation.alphaTarget(0.3).restart();
             setTimeout(() => simulation.alphaTarget(0), 300);
         });
-    };
+    }
 
     function truncateLabel(label) {
         const s = String(label || '');

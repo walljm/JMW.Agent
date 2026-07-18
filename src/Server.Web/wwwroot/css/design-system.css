@@ -2360,7 +2360,9 @@ table.data th[aria-sort="descending"]::after {
 
 .tgraph-container {
     width: 100%;
-    min-height: 520px;
+    /* Matches the renderer's minimum drawing height (topology-graph.js measuredHeight);
+       the SVG is sized dynamically to fill the viewport below this point. */
+    min-height: 480px;
 }
 
 .topology-svg {
