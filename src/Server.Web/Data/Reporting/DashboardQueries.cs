@@ -188,4 +188,12 @@ public static partial class DashboardQueries
             this NpgsqlConnection connection,
             CancellationToken cancellationToken
         );
+
+    /// <summary>Live-device counts by management status (managed vs discovered), descending.</summary>
+    [DatabaseCommand]
+    public static partial
+        IAsyncEnumerable<(string? ManagementStatus, long? Count)> GetCompositionByManagementStatusAsync(
+            this NpgsqlConnection connection,
+            CancellationToken cancellationToken
+        );
 }

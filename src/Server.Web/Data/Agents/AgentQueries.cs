@@ -172,8 +172,11 @@ public static partial class AgentQueries
     /// opaque paging token (ring-buffer Seq or journald __CURSOR) relayed to the agent verbatim,
     /// or null for the newest page. Returns the agent_id, or no rows if the agent is not found.
     /// </summary>
+    // LogsRequestedAt is nullable to match the schema column (agents.logs_requested_at is NULL until
+    // logs are first requested). The UPDATE ... SET logs_requested_at = now() RETURNING makes it
+    // non-null at runtime, but the command validator infers nullability from the schema alone.
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<(Guid AgentId, DateTimeOffset LogsRequestedAt)> RequestLogsAsync(
+    public static partial IAsyncEnumerable<(Guid AgentId, DateTimeOffset? LogsRequestedAt)> RequestLogsAsync(
         this NpgsqlConnection connection,
         Guid agentId,
         int lines,

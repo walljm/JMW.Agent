@@ -557,6 +557,64 @@ public sealed class DeviceListApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Query_BestIp_FallsBackToDiscoveredConnectIp_WhenNoInterfaceOrArp()
+    {
+        // An ARP-/SSH-/HTTP-only host is minted from a MAC fingerprint with no proj_systems,
+        // proj_interfaces, or proj_device_arp row — its only IP is the connect-IP the network
+        // scanner recorded in proj_discovered. That must surface as the shown IP instead of "—".
+        // Regression guard for the dropped-connect-IP gap (ARP entries with no IP, etc.).
+        Guid id = await _fixture.InsertDeviceAsync(managementStatus: "discovered");
+        await _fixture.InsertFingerprintAsync(id, "mac", "aabbccddee01");
+        await ExecuteAsync(
+            "INSERT INTO proj_discovered (device, discovered, mac, sources, updated_at) "
+          + "VALUES ('observer-1', '192.168.1.42', 'aabbccddee01', 'SshBannerScanner', now())"
+        );
+
+        (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
+            _fixture.DataSource,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            10,
+            CancellationToken.None
+        );
+
+        Assert.Single(items);
+        Assert.Equal("192.168.1.42", items[0].Ip);
+    }
+
+    [Fact]
+    public async Task Query_LastSeen_FallsBackToFingerprint_WhenNoProjSystemsRow()
+    {
+        // A passively-discovered device (ARP-/scanner-only) has no proj_systems row, so its
+        // last_seen used to be NULL. The newest fingerprint's last_seen — stamped on every
+        // resolve — must fill in instead: if we have any data about a device, we saw it.
+        // Regression guard for the blank-last-seen gap.
+        Guid id = await _fixture.InsertDeviceAsync(managementStatus: "discovered");
+        await _fixture.InsertFingerprintAsync(id, "mac", "aabbccddee02");
+
+        (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
+            _fixture.DataSource,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            10,
+            CancellationToken.None
+        );
+
+        Assert.Single(items);
+        Assert.NotNull(items[0].LastSeen);
+    }
+
+    [Fact]
     public async Task Query_Sort_Descending_And_KeysetPagingAcrossSortColumn()
     {
         // Dynamic sort: order by hostname DESC, and page across that non-default sort so the
@@ -3214,10 +3272,11 @@ public sealed class AgentsApiTests : IAsyncLifetime
         Assert.Null(before.LogsRequestedLines);
         Assert.Null(before.LogsRequestedBefore);
 
-        (Guid AgentId, DateTimeOffset LogsRequestedAt) result =
+        (Guid AgentId, DateTimeOffset? LogsRequestedAt) result =
             await conn.RequestLogsAsync(agentId, 500, "cursor-token", CancellationToken.None)
                 .FirstOrDefaultAsync(CancellationToken.None);
         Assert.Equal(agentId, result.AgentId);
+        Assert.NotNull(result.LogsRequestedAt);
 
         (Guid AgentId, string Hostname, string Status, int HeartbeatIntervalSecs, int DiscoveryIntervalSecs, int
             InventoryIntervalSecs, JsonElement CollectorsConfig, DateTimeOffset? ClearTrackersRequestedAt,
@@ -3232,7 +3291,7 @@ public sealed class AgentsApiTests : IAsyncLifetime
     public async Task RequestLogsAsync_UnknownAgent_ReturnsNoRows()
     {
         await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
-        List<(Guid AgentId, DateTimeOffset LogsRequestedAt)> result =
+        List<(Guid AgentId, DateTimeOffset? LogsRequestedAt)> result =
             await conn.RequestLogsAsync(Guid.NewGuid(), 200, null, CancellationToken.None)
                 .ToListAsync(CancellationToken.None);
         Assert.Empty(result);

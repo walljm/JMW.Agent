@@ -347,7 +347,7 @@ public static class AgentsApi
 
         await using NpgsqlConnection conn = await db.OpenConnectionAsync(ct);
 
-        (Guid AgentId, DateTimeOffset LogsRequestedAt) result =
+        (Guid AgentId, DateTimeOffset? LogsRequestedAt) result =
             await conn.RequestLogsAsync(agentGuid, lines, before, ct).FirstOrDefaultAsync(ct);
 
         if (result == default)

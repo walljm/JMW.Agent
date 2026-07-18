@@ -2269,10 +2269,24 @@ table.data th[aria-sort="descending"]::after {
     color: var(--text-faint);
 }
 
-/* ── Composition bars: reuse .bar but let it grow full width in a row ── */
+/* ── Composition: breakdown cards reflow side-by-side on wide screens ──
+   Each breakdown (by vendor / OS / kind / …) is a card; the grid packs as
+   many columns as fit at a 300px min, so bars stay readable instead of
+   stretching the full viewport width, and wide screens are used, not wasted. */
+.compo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: var(--space-4) var(--space-6);
+}
+
+.compo-card .section-title {
+    margin-top: 0;
+}
+
+/* ── Composition bars: reuse .bar; the bar fills its card column ── */
 .compo {
     display: grid;
-    grid-template-columns: 9rem 1fr 3rem;
+    grid-template-columns: minmax(0, 8rem) 1fr 2.75rem;
     gap: var(--space-2) var(--space-3);
     align-items: center;
     font-size: var(--fs-sm);

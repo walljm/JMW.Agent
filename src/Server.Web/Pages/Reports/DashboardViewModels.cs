@@ -102,7 +102,8 @@ public sealed record PostureVm(IReadOnlyList<IncidentCountRow> IncidentCounts, l
 public sealed record CompositionVm(
     IReadOnlyList<LabelCount> ByVendor,
     IReadOnlyList<LabelCount> ByOsFamily,
-    IReadOnlyList<LabelCount> ByKind
+    IReadOnlyList<LabelCount> ByKind,
+    IReadOnlyList<LabelCount> ByManagementStatus
 );
 
 /// <summary>Small pure helpers for dashboard rendering (top-N rollup, inline-SVG sparklines).</summary>

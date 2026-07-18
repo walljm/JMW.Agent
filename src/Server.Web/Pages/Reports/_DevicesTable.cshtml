@@ -18,12 +18,14 @@
                     <th sort-key="hostname" sort-grid="Model.Grid" sort-target="#devices-table">Hostname</th>
                     <th sort-key="ip" sort-grid="Model.Grid" sort-target="#devices-table">IP Address</th>
                     <th sort-key="mac" sort-grid="Model.Grid" sort-target="#devices-table">MAC</th>
+                    <th style="cursor:default" title="MAC address scope from the first octet: universal (burned-in), locally administered (software-assigned — VMs, containers, MAC-privacy), or multicast">Scope</th>
                     <th style="cursor:default">OUI</th>
                     <th sort-key="vendor" sort-grid="Model.Grid" sort-target="#devices-table">Vendor</th>
                     <th sort-key="os" sort-grid="Model.Grid" sort-target="#devices-table">OS</th>
                     <th sort-key="status" sort-grid="Model.Grid" sort-target="#devices-table">Status</th>
                     <th style="cursor:default">Discovery Sources</th>
                     <th sort-key="last_seen" sort-grid="Model.Grid" sort-target="#devices-table">Last Seen</th>
+                    <th sort-key="last_seen" sort-grid="Model.Grid" sort-target="#devices-table" title="Time since last seen, relative to now">Age</th>
                     @foreach (OperatorFactColumns.Column col in Model.OperatorColumns)
                     {
                         <th style="cursor:default" title="Operator fact: @col.AttributePath">@col.Heading</th>
@@ -33,6 +35,8 @@
                 <tbody>
                 @foreach (DeviceReportItem device in Model.Devices)
                 {
+                    (string Label, string Title, string Css) macFlag =
+                        ViewFormat.MacFlag(!string.IsNullOrEmpty(device.Mac) ? device.Mac : device.ObscuredMac);
                     <tr data-href="/devices/@device.DeviceId?from=devices" style="cursor:pointer">
                         <td>@(string.IsNullOrEmpty(device.FriendlyName) ? "—" : device.FriendlyName)</td>
                         <td>@(string.IsNullOrEmpty(device.Hostname) ? "—" : device.Hostname)</td>
@@ -45,6 +49,16 @@
                             else if (!string.IsNullOrEmpty(device.ObscuredMac))
                             {
                                 <span class="text-dim" title="Obscured MAC (Google Wifi/OnHub) — firmware masks the device bytes; no unique ARP/DHCP match was found to reconstruct the full address, but the OUI prefix is still reliable">@device.ObscuredMac</span>
+                            }
+                            else
+                            {
+                                @:—
+                            }
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(macFlag.Label) && macFlag.Label != "—")
+                            {
+                                <span class="mac-flag @macFlag.Css" title="@macFlag.Title">@macFlag.Label</span>
                             }
                             else
                             {
@@ -76,6 +90,17 @@
                             @if (device.LastSeen.HasValue)
                             {
                                 <time data-utc="@ViewFormat.IsoUtc(device.LastSeen.Value)">@device.LastSeen.Value.ToString("yyyy-MM-dd HH:mm") UTC</time>
+                            }
+                            else
+                            {
+                                @:—
+                            }
+                        </td>
+                        <td style="white-space:nowrap">
+                            @if (device.LastSeen.HasValue)
+                            {
+                                <span data-utc-title="@ViewFormat.IsoUtc(device.LastSeen.Value)"
+                                      title="@device.LastSeen.Value.ToString("yyyy-MM-dd HH:mm:ss") UTC">@ViewFormat.RelativeTime(device.LastSeen.Value)</span>
                             }
                             else
                             {

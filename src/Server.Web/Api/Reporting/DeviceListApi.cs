@@ -301,7 +301,16 @@ public static class DeviceListApi
                 s.os_distro,
                 s.last_seen_ip,
                 d.management_status,
-                CASE WHEN s.device IS NULL THEN NULL ELSE s.updated_at END AS last_seen
+                -- Last seen: the projection's updated_at when the device has a proj_systems row,
+                -- else the newest fingerprint sighting. device_fingerprints.last_seen is stamped
+                -- every time a device is resolved (DeviceRegistry.UpsertFingerprintsAsync), so a
+                -- passively-discovered device (ARP-/SSH-/scanner-only, no proj_systems row) still
+                -- reports when it was last observed instead of a blank — if we have any data about
+                -- a device, we necessarily saw it.
+                COALESCE(
+                    CASE WHEN s.device IS NULL THEN NULL ELSE s.updated_at END,
+                    (SELECT max(df.last_seen) FROM device_fingerprints df WHERE df.device_id = d.device_id)
+                ) AS last_seen
             FROM live_devices d
                 LEFT JOIN proj_systems  s   ON s.device   = d.device_id::text
                 LEFT JOIN proj_hardware hw  ON hw.device  = d.device_id::text
@@ -374,6 +383,18 @@ public static class DeviceListApi
                         SELECT a.arp, a.updated_at
                         FROM proj_device_arp a
                         WHERE a.mac = f.mac AND a.arp IS NOT NULL
+                        UNION ALL
+                        -- The connect-IP every network scanner records for its sighting
+                        -- (ARP/SSH-banner/HTTP-banner/ping-sweep all land in proj_discovered), so
+                        -- an ARP-/SSH-/HTTP-only host that has no interface, last_seen_ip, or
+                        -- proj_device_arp row still shows the address we reached it at. Matched by
+                        -- MAC (proj_discovered.device is the OBSERVER, not this device) with the
+                        -- same obscured_mac IS NULL guard the friendly-name join uses, so a
+                        -- reconstructed-MAC sighting can't smear another identity's IP onto this
+                        -- row. ip_identity_rank below still filters out non-identity addresses.
+                        SELECT pdi.discovered, pdi.updated_at
+                        FROM proj_discovered pdi
+                        WHERE pdi.mac = f.mac AND pdi.obscured_mac IS NULL AND pdi.discovered IS NOT NULL
                     ) cand
                     WHERE cand.ip IS NOT NULL AND ip_identity_rank(cand.ip) < 99
                     ORDER BY (cand.ip LIKE '%:%'), ip_identity_rank(cand.ip), cand.seen DESC NULLS LAST

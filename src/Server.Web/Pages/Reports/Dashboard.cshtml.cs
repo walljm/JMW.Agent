@@ -391,6 +391,7 @@ public sealed class DashboardModel : PageModel
 
         try
         {
+            List<LabelCount> mgmt = await ReadLabelCounts(conn.GetCompositionByManagementStatusAsync(ct), ct);
             CompositionVm vm = new(
                 DashboardViz.TopNWithOther(
                     await ReadLabelCounts(conn.GetCompositionByVendorAsync(ct), ct),
@@ -403,7 +404,10 @@ public sealed class DashboardModel : PageModel
                 DashboardViz.TopNWithOther(
                     await ReadLabelCounts(conn.GetCompositionByKindAsync(ct), ct),
                     CompositionTop
-                )
+                ),
+                // Only two buckets (managed/discovered); no roll-up needed. Proper-case for display —
+                // the stored values are lowercase, but we don't show raw canonical tokens to users.
+                mgmt.Select(r => r with { Label = ProperCaseStatus(r.Label) }).ToList()
             );
             Cache("dash_composition", vm, SlowTtl);
             Composition = vm;
@@ -456,6 +460,10 @@ public sealed class DashboardModel : PageModel
 
     private static string Display(string? hostname) =>
         string.IsNullOrWhiteSpace(hostname) ? "—" : hostname;
+
+    /// <summary>Proper-cases a management-status token ("managed" → "Managed") for display.</summary>
+    private static string ProperCaseStatus(string status) =>
+        string.IsNullOrEmpty(status) ? status : char.ToUpperInvariant(status[0]) + status[1..];
 
     private bool TryCache<T>(string key, out T? value) where T : class =>
         _cache.TryGetValue(key, out value) && value is not null;
