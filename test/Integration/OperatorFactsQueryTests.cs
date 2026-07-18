@@ -58,11 +58,11 @@ public sealed class OperatorFactsQueryTests
             .ToListAsync();
 
         Assert.Equal(2, rows.Count);
-        var vendor = rows.Single(r => r.AttributePath == "Device[].Vendor");
+        (string AttributePath, string? KeyValues, string? Value, string? Label, string SourceName, DateTimeOffset CollectedAt) vendor = rows.Single(r => r.AttributePath == "Device[].Vendor");
         Assert.Equal("Cisco", vendor.Value); // the collector 'Netgear' row is excluded (source <> 2)
         Assert.Equal("Corrected vendor", vendor.Label);
 
-        var note = rows.Single(r => r.AttributePath == "Device[].Interface[].Note");
+        (string AttributePath, string? KeyValues, string? Value, string? Label, string SourceName, DateTimeOffset CollectedAt) note = rows.Single(r => r.AttributePath == "Device[].Interface[].Note");
         Assert.Equal("uplink", note.Value);
         Assert.Null(note.Label);
 
