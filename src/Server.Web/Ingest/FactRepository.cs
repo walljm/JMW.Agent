@@ -97,6 +97,71 @@ public sealed class FactRepository
         return result;
     }
 
+    /// <summary>
+    /// Reconstructs the current value of every fact (latest row per id) whose
+    /// <c>attribute_path</c> is in <paramref name="paths" />, across all devices/services — the
+    /// source set for the one-time projection backfill (<see cref="Projections.ProjectionSchemaService" />).
+    /// Unlike <see cref="HydrateInputsAsync" /> this is not device-scoped and takes structural paths
+    /// (e.g. <c>Device[].DockerNet[].Name</c>): it rebuilds the full current-state fact set so those
+    /// facts can be re-routed through the projection engine, healing a projection that was added
+    /// after its facts had already landed in history. Served by the <c>(id, collected_at DESC)</c>
+    /// covering index via <c>DISTINCT ON (id)</c>.
+    /// </summary>
+    public async Task<IReadOnlyList<Fact>> ReadCurrentFactsForPathsAsync(
+        IReadOnlyCollection<string> paths,
+        CancellationToken ct = default
+    )
+    {
+        if (paths.Count == 0)
+        {
+            return [];
+        }
+
+        await using NpgsqlConnection conn = await _db.OpenConnectionAsync(ct);
+        await using NpgsqlCommand cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT DISTINCT ON (id) id, kind, value_str, value_long, value_double, collected_at
+            FROM   facts_history
+            WHERE  attribute_path = ANY($1)
+            ORDER  BY id, collected_at DESC
+            """;
+        cmd.Parameters.Add(Param.TextArray(paths.ToArray()));
+
+        List<Fact> result = [];
+        await using NpgsqlDataReader reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            string id = reader.GetString(0);
+            FactValueKind kind = (FactValueKind)reader.GetInt16(1);
+            string? str = reader.IsDBNull(2) ? null : reader.GetString(2);
+            long? lng = reader.IsDBNull(3) ? null : reader.GetInt64(3);
+            double? dbl = reader.IsDBNull(4) ? null : reader.GetDouble(4);
+            DateTimeOffset collectedAt = reader.GetFieldValue<DateTimeOffset>(5);
+
+            // Mirror FactRepository.BuildArrays' kind→column mapping in reverse. DateTimeOffset and
+            // TimeSpan are stored as ticks in value_long; IP/MAC kinds fall through to their string
+            // form in value_str (BuildArrays' default branch), which is what a text column stores.
+            FactValue? value = kind switch
+            {
+                FactValueKind.String when str is not null => FactValue.FromString(str),
+                FactValueKind.Long when lng is not null => FactValue.FromLong(lng.Value),
+                FactValueKind.Double when dbl is not null => FactValue.FromDouble(dbl.Value),
+                FactValueKind.Bool when lng is not null => FactValue.FromBool(lng.Value != 0),
+                FactValueKind.DateTimeOffset when lng is not null
+                    => FactValue.FromDateTimeOffset(new DateTimeOffset(lng.Value, TimeSpan.Zero)),
+                FactValueKind.TimeSpan when lng is not null => FactValue.FromTimeSpan(new TimeSpan(lng.Value)),
+                _ when str is not null => FactValue.FromString(str),
+                _ => null,
+            };
+            if (value is { } v)
+            {
+                result.Add(Fact.Create(id, v, collectedAt));
+            }
+        }
+
+        return result;
+    }
+
     public Task AppendAsync(IEnumerable<Fact> facts, CancellationToken ct = default)
     {
         IReadOnlyList<Fact> factList = facts is IReadOnlyList<Fact> list ? list : facts.ToList();

@@ -1860,14 +1860,6 @@ table.data th[aria-sort="descending"]::after {
     background: var(--crit);
 }
 
-/* ===== Mode toggle (always-available) ===== */
-.mode-toggle {
-    position: fixed;
-    bottom: var(--space-5);
-    right: var(--space-5);
-    z-index: 50;
-}
-
 /* ===== Responsive ===== */
 @media (max-width: 960px) {
     .app {

@@ -803,6 +803,14 @@ public static class ServicePaths
     /// <summary>Stable DeviceId of the host currently running this service.</summary>
     public const string DeviceId = "Service[].DeviceId";
 
+    /// <summary>
+    /// The endpoint IP the agent connected to when polling this service — the collector resolves
+    /// it at connection time (a hostname endpoint is resolved via DNS just as the connection is),
+    /// so it's the authoritative address of the host. The server maps this IP to the host
+    /// DeviceId for remotely-polled services (loopback services link directly via DeviceId).
+    /// </summary>
+    public const string Address = "Service[].Address";
+
     /// <summary>Service type slug. e.g. "technitium-dns", "adguard-home", "pihole"</summary>
     public const string Type = "Service[].Type";
 

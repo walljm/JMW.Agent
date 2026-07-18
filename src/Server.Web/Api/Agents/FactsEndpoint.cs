@@ -30,6 +30,14 @@ public static class FactsEndpoint
     private const int MaxBodyBytes = MaxDecompressedBytes;
     private const int MaxFactStringValueLength = 4096;
 
+    // Attribute paths (Service dimension key stripped) used to inspect a rewritten service batch
+    // for an existing host link and the agent-reported endpoint address.
+    private static readonly string ServiceDeviceIdAttr =
+        ServicePaths.DeviceId.Replace("[]", "", StringComparison.Ordinal);
+
+    private static readonly string ServiceAddressAttr =
+        ServicePaths.Address.Replace("[]", "", StringComparison.Ordinal);
+
     public static void Map(IEndpointRouteBuilder app)
     {
         app.MapPost("/facts", HandleAsync).RequireRateLimiting("agent-facts");
@@ -176,6 +184,13 @@ public static class FactsEndpoint
                     serviceFacts.Add(
                         Fact.Create(ServicePaths.ServiceId, [serviceId], serviceId, request.CollectedAt)
                     );
+
+                    // Link the service to its host device. Loopback services already carry a
+                    // Service[].DeviceId fact; a remotely-polled service instead sent its endpoint
+                    // IP (Service[].Address) — resolve that to the hosting device here, since the
+                    // agent can't know server-assigned DeviceIds. Never overrides an existing link.
+                    await LinkServiceHostAsync(batchConn, serviceFacts, serviceId, request.CollectedAt, ct);
+
                     touchedTables.UnionWith(await pipeline.IngestAsync(serviceFacts, ct));
 
                     // HA's registry describes OTHER devices, fully reported by one collector in
@@ -340,6 +355,49 @@ public static class FactsEndpoint
     /// <summary>
     /// Rewrites the placeholder Service[...] root segment to Service[{serviceId}].
     /// </summary>
+    /// <summary>
+    /// Sets <c>Service[].DeviceId</c> from the agent-reported endpoint IP (<c>Service[].Address</c>)
+    /// when the batch doesn't already link the service to a host — loopback services link directly,
+    /// so this only fills remotely-polled ones. Resolves the IP to a live device and leaves the
+    /// service unlinked when it maps to no known device (never guesses). Appends the DeviceId fact
+    /// to <paramref name="serviceFacts" /> in place.
+    /// </summary>
+    private static async Task LinkServiceHostAsync(
+        NpgsqlConnection conn,
+        List<Fact> serviceFacts,
+        string serviceId,
+        DateTimeOffset collectedAt,
+        CancellationToken ct
+    )
+    {
+        if (serviceFacts.Any(f => f.AttributePath == ServiceDeviceIdAttr))
+        {
+            return; // already linked (loopback / agent-provided)
+        }
+
+        string? endpointIp = null;
+        foreach (Fact fact in serviceFacts)
+        {
+            if (fact.AttributePath == ServiceAddressAttr)
+            {
+                endpointIp = fact.Value.AsString();
+                break;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(endpointIp))
+        {
+            return;
+        }
+
+        ServiceHostDevice? host = await conn.ResolveServiceHostDeviceAsync(endpointIp, ct)
+            .FirstOrDefaultAsync(ct);
+        if (host?.DeviceId is { } deviceId)
+        {
+            serviceFacts.Add(Fact.Create(ServicePaths.DeviceId, [serviceId], deviceId, collectedAt));
+        }
+    }
+
     private static List<Fact> RewriteServiceFactIds(
         IReadOnlyList<Fact> facts,
         string serviceId,

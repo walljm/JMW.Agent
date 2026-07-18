@@ -4189,3 +4189,121 @@ public sealed class GetDeviceFactsBySourceTests : IAsyncLifetime
         await cmd.ExecuteNonQueryAsync();
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ServiceQueries.ResolveServiceHostDevice — endpoint-IP → host device linkage
+// ─────────────────────────────────────────────────────────────────────────────
+
+[Collection("Integration")]
+public sealed class ResolveServiceHostDeviceTests : IAsyncLifetime
+{
+    private readonly IntegrationFixture _fixture;
+
+    public ResolveServiceHostDeviceTests(IntegrationFixture fixture)
+    {
+        _fixture = fixture;
+    }
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync() =>
+        await _fixture.TruncateAsync(
+            "proj_interfaces",
+            "proj_systems",
+            "proj_device_arp",
+            "device_fingerprints",
+            "device_aliases",
+            "devices"
+        );
+
+    [Fact]
+    public async Task Resolves_ByOwnInterfaceIp()
+    {
+        Guid id = await _fixture.InsertDeviceAsync("managed");
+        await ExecuteAsync(
+            $"INSERT INTO proj_interfaces (device, interface, name, ipv4) VALUES ('{id}', 'eth0', 'eth0', '192.168.1.60/24')"
+        );
+
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        ServiceHostDevice? r = await conn.ResolveServiceHostDeviceAsync("192.168.1.60", CancellationToken.None)
+            .FirstOrDefaultAsync(CancellationToken.None);
+
+        Assert.Equal(id.ToString(), r?.DeviceId);
+    }
+
+    [Fact]
+    public async Task Resolves_ByArpNeighborMac()
+    {
+        // No interface row — the host is known only as an ARP neighbor: IP -> MAC -> device.
+        Guid id = await _fixture.InsertDeviceAsync("discovered");
+        await _fixture.InsertFingerprintAsync(id, "mac", "aabbccddeeff");
+        await ExecuteAsync(
+            "INSERT INTO proj_device_arp (device, arp, mac, iface, state, updated_at) "
+          + "VALUES ('observer-1', '192.168.1.61', 'aabbccddeeff', 'eth0', 'reachable', now())"
+        );
+
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        ServiceHostDevice? r = await conn.ResolveServiceHostDeviceAsync("192.168.1.61", CancellationToken.None)
+            .FirstOrDefaultAsync(CancellationToken.None);
+
+        Assert.Equal(id.ToString(), r?.DeviceId);
+    }
+
+    [Fact]
+    public async Task Resolves_PrefersOwnInterfaceOverArp()
+    {
+        // The same IP is both deviceA's own interface address and an ARP neighbor mapping to
+        // deviceB — the device whose interface IP it actually is must win (rank order).
+        Guid deviceA = await _fixture.InsertDeviceAsync("managed");
+        Guid deviceB = await _fixture.InsertDeviceAsync("discovered");
+        await ExecuteAsync(
+            $"INSERT INTO proj_interfaces (device, interface, name, ipv4) VALUES ('{deviceA}', 'eth0', 'eth0', '192.168.1.62/24')"
+        );
+        await _fixture.InsertFingerprintAsync(deviceB, "mac", "112233445566");
+        await ExecuteAsync(
+            "INSERT INTO proj_device_arp (device, arp, mac, iface, state, updated_at) "
+          + "VALUES ('observer-1', '192.168.1.62', '112233445566', 'eth0', 'reachable', now())"
+        );
+
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        ServiceHostDevice? r = await conn.ResolveServiceHostDeviceAsync("192.168.1.62", CancellationToken.None)
+            .FirstOrDefaultAsync(CancellationToken.None);
+
+        Assert.Equal(deviceA.ToString(), r?.DeviceId);
+    }
+
+    [Fact]
+    public async Task Excludes_MergedAliasDevice()
+    {
+        // A device merged away (alias) must never be linked — live_devices filters it out.
+        Guid loser = await _fixture.InsertDeviceAsync("discovered");
+        Guid survivor = await _fixture.InsertDeviceAsync("managed");
+        await ExecuteAsync(
+            $"INSERT INTO proj_interfaces (device, interface, name, ipv4) VALUES ('{loser}', 'eth0', 'eth0', '192.168.1.63/24')"
+        );
+        await _fixture.InsertAliasAsync(loser, survivor);
+
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        ServiceHostDevice? r = await conn.ResolveServiceHostDeviceAsync("192.168.1.63", CancellationToken.None)
+            .FirstOrDefaultAsync(CancellationToken.None);
+
+        Assert.Null(r);
+    }
+
+    [Fact]
+    public async Task NoMatch_ReturnsNoRows()
+    {
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        ServiceHostDevice? r = await conn.ResolveServiceHostDeviceAsync("10.99.99.99", CancellationToken.None)
+            .FirstOrDefaultAsync(CancellationToken.None);
+
+        Assert.Null(r);
+    }
+
+    private async Task ExecuteAsync(string sql)
+    {
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        await using NpgsqlCommand cmd = new(sql, conn);
+        await cmd.ExecuteNonQueryAsync();
+    }
+}

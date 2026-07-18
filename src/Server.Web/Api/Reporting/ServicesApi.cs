@@ -46,7 +46,8 @@ public static class ServicesApi
     {
         await using NpgsqlConnection conn = await db.OpenConnectionAsync(ct);
 
-        List<(string Service, string? Type, string? DeviceId, string? CaStatus, DateTimeOffset? RootNotAfter, long?
+        List<(string Service, string? Type, string? DeviceId, string? HostFriendlyName, string? HostHostname,
+            string? HostIp, string? CaStatus, DateTimeOffset? RootNotAfter, long?
             TotalQueries, double? BlockedPct)> rows =
             await conn.ListServicesAsync(type, q, afterService, limit + 1, ct).ToListAsync(ct);
 
@@ -56,6 +57,9 @@ public static class ServicesApi
                     Service: r.Service,
                     Type: r.Type,
                     DeviceId: r.DeviceId,
+                    HostFriendlyName: r.HostFriendlyName,
+                    HostHostname: r.HostHostname,
+                    HostIp: r.HostIp,
                     CaStatus: r.CaStatus,
                     RootNotAfter: r.RootNotAfter?.UtcDateTime,
                     TotalQueries: r.TotalQueries,
@@ -127,6 +131,9 @@ public sealed record ServiceListItem(
     string Service,
     string? Type,
     string? DeviceId,
+    string? HostFriendlyName,
+    string? HostHostname,
+    string? HostIp,
     string? CaStatus,
     DateTime? RootNotAfter,
     long? TotalQueries,

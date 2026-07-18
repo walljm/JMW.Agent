@@ -15,8 +15,8 @@ public static partial class ServiceQueries
     /// </summary>
     [DatabaseCommand]
     public static partial
-        IAsyncEnumerable<(string Service, string? Type, string? DeviceId, string? CaStatus, DateTimeOffset? RootNotAfter
-           ,
+        IAsyncEnumerable<(string Service, string? Type, string? DeviceId, string? HostFriendlyName, string? HostHostname,
+            string? HostIp, string? CaStatus, DateTimeOffset? RootNotAfter,
             long? TotalQueries, double? BlockedPct)> ListServicesAsync(
             this NpgsqlConnection connection,
             string? type,
@@ -92,4 +92,24 @@ public static partial class ServiceQueries
             string deviceId,
             CancellationToken cancellationToken
         );
+
+    /// <summary>
+    /// Resolves a service endpoint IP to the live device hosting it, preferring the device's own
+    /// interface IP, then its last-seen IP, then an ARP neighbor sighting. At most one row; a
+    /// non-match yields no rows so callers leave <c>proj_services.device_id</c> NULL rather than
+    /// guess. Feeds the endpoint-IP → host linkage for remotely-polled services.
+    /// </summary>
+    [DatabaseCommand]
+    public static partial IAsyncEnumerable<ServiceHostDevice> ResolveServiceHostDeviceAsync(
+        this NpgsqlConnection connection,
+        string ip,
+        CancellationToken cancellationToken
+    );
 }
+
+/// <summary>
+/// Single-column device-id result for <see cref="ServiceQueries.ResolveServiceHostDeviceAsync" />.
+/// A named shape (not a bare <c>string</c>) so the generator's schema validator can bind the
+/// <c>device_id</c> column.
+/// </summary>
+public sealed record ServiceHostDevice(string? DeviceId);

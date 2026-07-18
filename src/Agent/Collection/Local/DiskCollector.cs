@@ -79,6 +79,17 @@ public sealed class DiskCollector : OsDispatchLocalCollector
     )
     {
         string json = await CollectorHelper.RunAsync("smartctl", $"-j -a /dev/{devName}", ct, timeoutSeconds: 30);
+        ParseLinuxSmart(json, keys, facts);
+    }
+
+    /// <summary>
+    /// Parses <c>smartctl -j -a</c> JSON into SMART facts. NVMe endurance
+    /// (<c>percentage_used</c>) and SATA/SSD wear (ATA attributes 231/233) share the same
+    /// 0=new..100=spent scale, so both feed <see cref="FactPaths.DiskSmartWearPercent"/> —
+    /// NVMe additionally keeps its native <see cref="FactPaths.DiskSmartPercentageUsed"/>.
+    /// </summary>
+    internal static void ParseLinuxSmart(string json, string[] keys, List<Fact> facts)
+    {
         if (string.IsNullOrWhiteSpace(json))
         {
             return;
@@ -114,7 +125,16 @@ public sealed class DiskCollector : OsDispatchLocalCollector
             {
                 if (nvme.TryGetProperty("percentage_used", out JsonElement pu))
                 {
-                    facts.Add(Fact.Create(FactPaths.DiskSmartPercentageUsed, keys, pu.GetDouble()));
+                    double used = pu.GetDouble();
+                    facts.Add(Fact.Create(FactPaths.DiskSmartPercentageUsed, keys, used));
+
+                    // NVMe endurance is a direct 0=new..100=spent percentage. Surface it as
+                    // WearPercent too (the Disks report reads only smart_wear_pct). Unlike the
+                    // ATA branch below, 0 is a valid "new drive" reading and must be emitted.
+                    if (used is >= 0 and <= 100)
+                    {
+                        facts.Add(Fact.Create(FactPaths.DiskSmartWearPercent, keys, used));
+                    }
                 }
 
                 if (nvme.TryGetProperty("available_spare", out JsonElement sp2))

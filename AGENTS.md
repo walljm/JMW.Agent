@@ -310,6 +310,15 @@ router matches facts to `proj_*` tables on `(DimKey, Attribute)`:
   (`HoldingRegister` → `holdingregister`). A projection whose dims don't match its
   fact paths fails **silently** — facts land in `facts_history` but the `proj_*`
   table stays empty. `FactTests.Create_DerivesDimKeyAndAttribute` pins the grammar.
+- **A projection populates only from LIVE routing — a projection added *after* its facts
+  already landed in `facts_history` also starts empty** (agents delta-track, so static
+  facts are never re-sent; the router silently drops facts with no target). This is how
+  `proj_docker_networks` shipped empty in migration 0091. `ProjectionSchemaService` now runs
+  a one-time `facts_history → projection` backfill (`ProjectionBackfill.RunAsync`, watermarked
+  in `projection_backfills`) after the additive DDL, so a newly added projection self-populates
+  on the deploy that introduces it. A genuinely misrouted projection (wrong dims) still stays
+  empty — the backfill re-routes through the same index, so a fix to the routing is still
+  required. `ProjectionBackfillTests` covers the heal + idempotency.
 
 **Every fact gets a typed path with a curated home — there is no raw `Attr[]` sink.**
 If you parse a signal, you know what it is, so give it a real `FactPaths` constant and

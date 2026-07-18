@@ -6,6 +6,7 @@
 SELECT
     device
   , route AS destination
+  , iface
 FROM
     proj_device_routes
 WHERE

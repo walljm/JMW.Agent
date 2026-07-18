@@ -917,7 +917,24 @@ public sealed class Agent
                         // fingerprints — the server resolves a stable ServiceId from the
                         // probe's logical fingerprints and rewrites fact roots to
                         // Service[{serviceId}].
-                        FactBatchElement batchElement = new([], changed, context.Probe);
+                        List<Fact> outgoing = new(changed.Count + 1);
+                        outgoing.AddRange(changed);
+
+                        // Loopback services already link to this host (hostDeviceId →
+                        // Service[].DeviceId). For a remotely-polled service the agent can't know
+                        // the server's DeviceId, so emit the endpoint IP it connects to — resolved
+                        // the same way the connection resolves it — and let the server map that IP
+                        // to the host device. Placeholder root key is rewritten to the ServiceId.
+                        if (hostDeviceId is null)
+                        {
+                            string? endpointIp = await ResolveEndpointAddressAsync(target.Endpoint, ct);
+                            if (endpointIp is not null)
+                            {
+                                outgoing.Add(Fact.Create(ServicePaths.Address, ["service"], endpointIp));
+                            }
+                        }
+
+                        FactBatchElement batchElement = new([], outgoing, context.Probe);
                         AgentFactsRequest request = new(
                             AgentId: Guid.Parse(AgentId),
                             CollectedAt: DateTimeOffset.UtcNow,
@@ -956,6 +973,41 @@ public sealed class Agent
 
     private static bool IsLoopbackUrl(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) && uri.IsLoopback;
+
+    /// <summary>
+    /// Resolves a service endpoint URL's host to an IP the same way the connection would: an IP
+    /// literal is returned as-is; a hostname is resolved via DNS (preferring IPv4). Returns null
+    /// when the endpoint can't be parsed or resolved, so the server leaves the service unlinked
+    /// rather than guess. Cancellation propagates.
+    /// </summary>
+    private static async Task<string?> ResolveEndpointAddressAsync(string endpoint, CancellationToken ct)
+    {
+        if (!Uri.TryCreate(endpoint, UriKind.Absolute, out Uri? uri))
+        {
+            return null;
+        }
+
+        if (IPAddress.TryParse(uri.Host, out IPAddress? literal))
+        {
+            return literal.ToString();
+        }
+
+        try
+        {
+            IPAddress[] addresses = await Dns.GetHostAddressesAsync(uri.Host, ct);
+            IPAddress? preferred = Array.Find(addresses, a => a.AddressFamily == AddressFamily.InterNetwork)
+                ?? (addresses.Length > 0 ? addresses[0] : null);
+            return preferred?.ToString();
+        }
+        catch (SocketException)
+        {
+            return null;
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
 
     private CollectorDeltaTracker GetOrCreateTracker(string key)
     {

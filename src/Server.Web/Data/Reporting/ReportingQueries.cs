@@ -66,10 +66,12 @@ public static partial class ReportingQueries
 
     /// <summary>
     /// Connected/static IPv4 routes (excludes the default route) — fills subnet-membership gaps
-    /// that single-valued <c>proj_interfaces.ipv4</c> can miss. The "R" subnet signal.
+    /// that single-valued <c>proj_interfaces.ipv4</c> can miss. The "R" subnet signal. The
+    /// interface name (<c>iface</c>) lets <c>SubnetsApi</c> recognize a host-local Docker bridge
+    /// (docker0/br-&lt;hex&gt;) from the route table alone — no Docker API access required.
     /// </summary>
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<(string Device, string Destination)> ListSubnetRoutesAsync(
+    public static partial IAsyncEnumerable<(string Device, string Destination, string? Iface)> ListSubnetRoutesAsync(
         this NpgsqlConnection connection,
         CancellationToken cancellationToken
     );

@@ -25,6 +25,15 @@
     <script src="/js/grid-infinite-scroll.js" defer asp-append-version="true"></script>
 </head>
 <body class="dark-mode">
+<script>
+    // Apply the saved theme before first paint (server default is dark) so it never flashes
+    // or reverts to the default on navigation. Runs during parse, before .app renders.
+    (function () {
+        if (localStorage.getItem('theme') === 'light') {
+            document.body.classList.replace('dark-mode', 'light-mode');
+        }
+    })();
+</script>
 <div class="app">
     <button class="btn sidebar-toggle" id="sidebarToggle" aria-label="Collapse navigation" aria-expanded="true"
             onclick="toggleSidebar()">‹
@@ -35,7 +44,7 @@
         <a class="@NavClass("devices")" href="/devices" aria-current="@Current("devices")">Devices</a>
         <a class="@NavClass("services")" href="/services" aria-current="@Current("services")">Services</a>
 
-        <a class="@NavClass("inventory")" href="/ports" aria-current="@Current("inventory")">Inventory</a>
+        <a class="@NavClass("inventory")" href="/hardware" aria-current="@Current("inventory")">Inventory</a>
         <a class="@NavClass("network")" href="/subnets" aria-current="@Current("network")">Network</a>
         <a class="@NavClass("terrain")" href="/terrain" aria-current="@Current("terrain")">Terrain</a>
 
@@ -51,6 +60,9 @@
         <div class="nav-user">
             <span>@username</span>
             <span class="@roleBadge">@role</span>
+            <button class="btn btn-sm nav-user-btn" type="button" aria-label="Toggle light/dark mode"
+                    onclick="toggleTheme()">◐ Toggle theme
+            </button>
             <a class="btn btn-sm nav-user-btn" href="/account/password">
                 Change Password
             </a>
@@ -65,9 +77,6 @@
     </nav>
     @RenderBody()
 </div>
-<button class="btn mode-toggle" aria-label="Toggle light/dark mode"
-        onclick="document.body.classList.toggle('dark-mode');document.body.classList.toggle('light-mode')">◐ Mode
-</button>
 <script>
     // Restored immediately (not on DOMContentLoaded) so the sidebar doesn't flash open
     // before collapsing on pages loaded while it was left collapsed.
@@ -80,6 +89,12 @@
             btn.setAttribute('aria-expanded', 'false');
         }
     })();
+
+    function toggleTheme() {
+        const dark = document.body.classList.toggle('dark-mode');
+        document.body.classList.toggle('light-mode', !dark);
+        localStorage.setItem('theme', dark ? 'dark' : 'light');
+    }
 
     function toggleSidebar() {
         const app = document.querySelector('.app');

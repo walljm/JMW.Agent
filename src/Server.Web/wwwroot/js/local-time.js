@@ -40,6 +40,20 @@
         }
     }
 
-    document.querySelectorAll('time[data-utc]').forEach(localize);
-    document.querySelectorAll('[data-utc-title]').forEach(localizeTitle);
+    function localizeTree(root) {
+        root.querySelectorAll('time[data-utc]').forEach(localize);
+        root.querySelectorAll('[data-utc-title]').forEach(localizeTitle);
+    }
+
+    // Initial full-page render.
+    localizeTree(document);
+
+    // htmx swaps replace DOM subtrees with fresh server HTML (rendered in UTC) after this
+    // script's initial pass already ran — without re-localizing, every panel refresh (e.g.
+    // Recent Activity's 30s poll) reverts its timestamps to UTC. Re-localizing is idempotent:
+    // the data-utc/data-utc-title attributes are preserved, so re-running just recomputes the
+    // same local value. Listen on document so it fires regardless of swap target or style.
+    document.addEventListener('htmx:afterSwap', function () {
+        localizeTree(document);
+    });
 })();

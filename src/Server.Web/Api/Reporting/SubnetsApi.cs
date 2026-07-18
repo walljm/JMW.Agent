@@ -344,6 +344,47 @@ public static class SubnetsApi
     private static string SanitizeLabel(string label) =>
         label.Replace('\n', ' ').Replace('\r', ' ');
 
+    /// <summary>
+    /// True when a route's interface name is a Docker bridge — the default <c>docker0</c>, the swarm
+    /// <c>docker_gwbridge</c>, or a user-defined <c>br-&lt;hex&gt;</c> bridge (Docker names these
+    /// "br-" + the network id's hex prefix). Used as a Docker-API-free signal that a route's subnet
+    /// is host-local NAT. The all-hex check on the suffix deliberately excludes router bridges like
+    /// OpenWrt's <c>br-lan</c>/<c>br-wan</c>, which are routable L2 segments, not host-local NAT.
+    /// </summary>
+    private static bool IsDockerBridgeInterface(string? iface)
+    {
+        if (string.IsNullOrEmpty(iface))
+        {
+            return false;
+        }
+
+        if (iface is "docker0" or "docker_gwbridge")
+        {
+            return true;
+        }
+
+        if (!iface.StartsWith("br-", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        ReadOnlySpan<char> suffix = iface.AsSpan(3);
+        if (suffix.Length < 8)
+        {
+            return false; // Docker uses 12 hex chars; require enough to avoid matching short names.
+        }
+
+        foreach (char c in suffix)
+        {
+            if (!Uri.IsHexDigit(c))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static async Task<List<SubnetAggregate>> BuildAggregatesAsync(NpgsqlConnection conn, CancellationToken ct)
     {
         Dictionary<string, SubnetAggregate> subnets = new(StringComparer.Ordinal);
@@ -363,6 +404,24 @@ public static class SubnetsApi
             }
 
             hostLocalNets[(dnDevice, dnNet.ToString())] = dnName;
+        }
+
+        // Route-table fallback for host-local detection. A Docker bridge is reached through a
+        // docker0 / br-<hex> interface, which proj_device_routes records per (device, CIDR) — and
+        // RouteCollector needs no Docker socket, so this classifies bridges even on hosts where the
+        // authoritative proj_docker_networks projection is empty (the Docker API wasn't collectable,
+        // or the projection hadn't been backfilled yet). Routes are materialized once here because
+        // the pre-scan must fully populate hostLocalNets BEFORE the interface loop calls GetOrAdd —
+        // otherwise a docker0 interface IP would create a global-keyed node first. Authoritative
+        // Docker-API names win: TryAdd only fills (device, CIDR) pairs that path didn't cover.
+        List<(string Device, string Destination, string? Iface)> routes = [];
+        await foreach ((string device, string destination, string? iface) in conn.ListSubnetRoutesAsync(ct))
+        {
+            routes.Add((device, destination, iface));
+            if (IsDockerBridgeInterface(iface) && IPNetwork.TryParse(destination, out IPNetwork brNet))
+            {
+                hostLocalNets.TryAdd((device, brNet.ToString()), iface);
+            }
         }
 
         // Local: keys a host-local Docker-bridge subnet per (device, CIDR) so each host's copy
@@ -435,7 +494,7 @@ public static class SubnetsApi
             agg.DhcpEnd ??= endAddress;
         }
 
-        await foreach ((string device, string destination) in conn.ListSubnetRoutesAsync(ct))
+        foreach ((string device, string destination, string? _) in routes)
         {
             if (!IPNetwork.TryParse(destination, out IPNetwork network))
             {

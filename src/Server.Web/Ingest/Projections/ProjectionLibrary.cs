@@ -198,6 +198,7 @@ public static class ProjectionLibrary
                 new(ServicePaths.ServiceId, "service_id", NpgsqlDbType.Text),
                 new(ServicePaths.Type, "type", NpgsqlDbType.Text),
                 new(ServicePaths.DeviceId, "device_id", NpgsqlDbType.Text),
+                new(ServicePaths.Address, "address", NpgsqlDbType.Text),
             ]
         ),
 

@@ -2,6 +2,9 @@ SELECT
     ps.service
   , ps.type
   , ps.device_id
+  , host.friendly_name AS host_friendly_name
+  , host.hostname      AS host_hostname
+  , host.last_seen_ip  AS host_ip
   , ca.ca_status
   , ca.root_not_after
   , ds.total_queries

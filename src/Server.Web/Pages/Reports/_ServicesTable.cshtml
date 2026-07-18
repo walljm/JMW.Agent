@@ -35,28 +35,29 @@
             <table class="data" aria-label="Services">
                 <thead>
                 <tr>
-                    <th style="cursor:default">Service ID</th>
+                    <th style="cursor:default">Host</th>
+                    <th style="cursor:default">IP</th>
                     <th style="cursor:default">Type</th>
-                    <th style="cursor:default">Device</th>
                     <th style="cursor:default">Highlights</th>
                 </tr>
                 </thead>
                 <tbody>
                 @foreach (ServiceListItem s in Model.Services)
                 {
+                    string? hostName = !string.IsNullOrEmpty(s.HostFriendlyName) ? s.HostFriendlyName : s.HostHostname;
                     <tr data-href="/services/@Uri.EscapeDataString(s.Service)" style="cursor:pointer">
-                        <td class="mono" title="@s.Service">@ViewFormat.Truncate(s.Service, 24)</td>
-                        <td>@(s.Type ?? "—")</td>
-                        <td class="mono text-dim">
+                        <td>
                             @if (!string.IsNullOrEmpty(s.DeviceId))
                             {
-                                <a href="/devices/@s.DeviceId?from=services" onclick="event.stopPropagation()">@s.DeviceId</a>
+                                <a href="/devices/@s.DeviceId?from=services" onclick="event.stopPropagation()">@(string.IsNullOrEmpty(hostName) ? "unnamed host" : hostName)</a>
                             }
                             else
                             {
-                                <span>—</span>
+                                <span title="No host device is linked to this service — see below">—</span>
                             }
                         </td>
+                        <td class="mono">@(string.IsNullOrEmpty(s.HostIp) ? "—" : s.HostIp)</td>
+                        <td>@(s.Type ?? "—")</td>
                         <td>@Highlights(s)</td>
                     </tr>
                 }

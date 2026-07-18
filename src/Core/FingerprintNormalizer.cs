@@ -96,12 +96,15 @@ public static class FingerprintNormalizer
 
     // ── Google Wifi obscured MAC ───────────────────────────────────────────────
     //
-    // The firmware masks the final device byte, leaving 11 real hex nibbles + '*'
-    // (e.g. "703acb70d06*"). Strip separators, lowercase, and require exactly 11 hex
-    // digits followed by a single '*'. A fully-masked value ("************") has no
-    // hex nibbles and is rejected — it carries no identifying signal.
+    // The firmware preserves the real OUI (first 3 bytes / 6 hex nibbles) and obfuscates the
+    // device-specific bytes, then appends '*' (e.g. real "00e0bf400073" → reported "00e0bf1fc40*").
+    // Only the OUI is trustworthy — the trailing nibbles are NOT the real device bytes, so they are
+    // never used for matching (reconstruction keys off the OUI alone; see ObscuredMac.Pick). The full
+    // value is kept verbatim only as an opaque, stable key for the obscured sighting. Strip
+    // separators, lowercase, and require exactly 11 hex digits followed by a single '*'. A
+    // fully-masked value ("************") has no hex nibbles and is rejected — no identifying signal.
     //
-    // The obscured form preserves the real OUI (first 3 bytes), so the first octet is genuine.
+    // The preserved OUI means the first octet is genuine, so apply the same identity policy as
     // Apply the same identity policy as NormalizeMac: reject a first octet whose multicast (0x01)
     // or locally-administered (0x02) bit is set. A locally-administered value here is a randomized
     // MAC (e.g. an Apple "Private Wi-Fi Address"), which is NOT a stable device identity — without
