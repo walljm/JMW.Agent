@@ -61,12 +61,16 @@ public static class SubnetsApi
             items.Add(
                 new SubnetListItem(
                     agg.Network.ToString(),
-                    agg.Name,
+                    // For a host-local Docker bridge the DHCP-scope Name is always absent; surface
+                    // the Docker network name ("bridge"/"mynet") there instead so the row is legible.
+                    agg.Name ?? agg.DockerNetName,
                     agg.Gateway,
                     gwDeviceId,
                     gwHostname,
                     agg.HostIps.Count,
-                    agg.Sources.OrderBy(s => s, StringComparer.Ordinal).ToArray()
+                    agg.Sources.OrderBy(s => s, StringComparer.Ordinal).ToArray(),
+                    agg.OwnerHost,
+                    agg.HostLocalDevice is not null
                 )
             );
         }
@@ -136,11 +140,11 @@ public static class SubnetsApi
         int routerSeq = 0;
         string? internetId = null;
 
-        void AddEdge(string fromId, string toId)
+        void AddEdge(string fromId, string toId, string? via = null)
         {
             if (drawnEdges.Add((fromId, toId)))
             {
-                edges.Add(new SubnetGraphEdge(fromId, toId));
+                edges.Add(new SubnetGraphEdge(fromId, toId, via));
             }
         }
 
@@ -165,8 +169,20 @@ public static class SubnetsApi
         {
             string id = "n" + subnetSeq++;
             subnetNodeId[agg] = id;
-            string label = agg.Network + (agg.Name is { Length: > 0 } n ? " · " + n : "")
-                         + $" · {agg.HostIps.Count} hosts";
+            string label;
+            if (agg.OwnerHost is { } host)
+            {
+                // Host-local Docker bridge: label with the owning host so two hosts' identical
+                // 172.17.0.0/16 nodes read as distinct, not one shared (routable) subnet.
+                string net = agg.DockerNetName is { Length: > 0 } dn ? dn : "docker";
+                label = $"{agg.Network} · {net}@{host}";
+            }
+            else
+            {
+                label = agg.Network + (agg.Name is { Length: > 0 } n ? " · " + n : "")
+                      + $" · {agg.HostIps.Count} hosts";
+            }
+
             nodes.Add(new SubnetGraphNode(id, SanitizeLabel(label), "subnet"));
         }
 
@@ -182,7 +198,11 @@ public static class SubnetsApi
                 await ResolveGatewayAsync(conn, agg.Gateway, interfaceByIp, ct);
             string key = gwDeviceId is { Length: > 0 } d ? "dev:" + d : "ip:" + agg.Gateway;
             string routerId = GetOrCreateRouter(key, gwHostname ?? agg.Gateway);
-            AddEdge(routerId, subnetNodeId[agg]);
+            // Track 3: label the edge with the router's own interface facing this subnet, when known.
+            string? via = interfaceByIp.TryGetValue(agg.Gateway, out SubnetInterface? gwIf)
+                ? gwIf.InterfaceName
+                : null;
+            AddEdge(routerId, subnetNodeId[agg], via);
         }
 
         // Router --> Subnet edges from devices whose interfaces span ≥2 subnets — a router even
@@ -218,8 +238,36 @@ public static class SubnetsApi
             string routerId = GetOrCreateRouter("dev:" + device, deviceHostname.GetValueOrDefault(device) ?? device);
             foreach (SubnetAggregate agg in owned)
             {
-                AddEdge(routerId, subnetNodeId[agg]);
+                // Track 3: label with this device's interface into that subnet.
+                string? via = agg.Interfaces
+                    .FirstOrDefault(i => string.Equals(i.Device, device, StringComparison.OrdinalIgnoreCase))?
+                    .InterfaceName;
+                AddEdge(routerId, subnetNodeId[agg], via);
             }
+        }
+
+        // Track 2 — VPN/overlay clouds: a subnet reached over a tailscale/wireguard/openvpn/
+        // zerotier interface egresses to an overlay network. Draw one cloud per overlay kind on
+        // the far side of the subnet, revealing which hosts are on the tailnet/VPN. Evidence-only
+        // (interface name; Tailscale additionally confirmed by its 100.64.0.0/10 CGNAT range) —
+        // the same honest simplification the Internet node already makes, never fabricated.
+        Dictionary<string, string> vpnIdByLabel = new(StringComparer.Ordinal);
+        foreach (SubnetAggregate agg in subnets)
+        {
+            string? overlay = OverlayLabel(agg);
+            if (overlay is null)
+            {
+                continue;
+            }
+
+            if (!vpnIdByLabel.TryGetValue(overlay, out string? vpnId))
+            {
+                vpnId = "vpn" + vpnIdByLabel.Count;
+                vpnIdByLabel[overlay] = vpnId;
+                nodes.Add(new SubnetGraphNode(vpnId, overlay, "vpn"));
+            }
+
+            AddEdge(subnetNodeId[agg], vpnId);
         }
 
         // Internet --> Router: only when a default-route gateway leads outside every known
@@ -250,6 +298,48 @@ public static class SubnetsApi
         return id;
     }
 
+    private static readonly IPNetwork TailscaleCgnat = IPNetwork.Parse("100.64.0.0/10");
+
+    /// <summary>
+    /// Classifies a subnet as an overlay/VPN by its attaching interface name, returning the
+    /// cloud label to draw (or null for an ordinary subnet). Tailscale is confirmed by the
+    /// 100.64.0.0/10 CGNAT range it always uses; the others are interface-name heuristics only
+    /// (WireGuard <c>wg*</c>, OpenVPN <c>tun*</c>/<c>tap*</c>, ZeroTier <c>zt*</c>).
+    /// </summary>
+    private static string? OverlayLabel(SubnetAggregate agg)
+    {
+        foreach (SubnetInterface iface in agg.Interfaces)
+        {
+            string name = iface.InterfaceName?.ToLowerInvariant() ?? "";
+            if (name.StartsWith("tailscale", StringComparison.Ordinal))
+            {
+                if (IPAddress.TryParse(iface.Ip, out IPAddress? ip) && TailscaleCgnat.Contains(ip))
+                {
+                    return "Tailscale";
+                }
+
+                continue;
+            }
+
+            if (name.StartsWith("wg", StringComparison.Ordinal))
+            {
+                return "WireGuard";
+            }
+
+            if (name.StartsWith("tun", StringComparison.Ordinal) || name.StartsWith("tap", StringComparison.Ordinal))
+            {
+                return "VPN";
+            }
+
+            if (name.StartsWith("zt", StringComparison.Ordinal))
+            {
+                return "ZeroTier";
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>Collapses embedded newlines so a node label always renders on one line.</summary>
     private static string SanitizeLabel(string label) =>
         label.Replace('\n', ' ').Replace('\r', ' ');
@@ -257,6 +347,45 @@ public static class SubnetsApi
     private static async Task<List<SubnetAggregate>> BuildAggregatesAsync(NpgsqlConnection conn, CancellationToken ct)
     {
         Dictionary<string, SubnetAggregate> subnets = new(StringComparer.Ordinal);
+
+        // Track 1 (docs/plans/l3-topology.md): a Docker bridge network is host-local NAT — its
+        // CIDR (172.17.0.0/16 et al.) exists on every host running Docker but routes nowhere
+        // between them, so identical CIDRs must NOT merge into one shared node. Keyed by
+        // (device, canonical CIDR); macvlan/ipvlan/overlay are routable and stay globally keyed.
+        Dictionary<(string Device, string Cidr), string?> hostLocalNets = new();
+        await foreach ((string dnDevice, string dnCidr, string? dnName, string? dnDriver, string? _)
+            in conn.ListDockerNetworksAsync(ct))
+        {
+            if (!string.Equals(dnDriver, "bridge", StringComparison.OrdinalIgnoreCase)
+             || !IPNetwork.TryParse(dnCidr, out IPNetwork dnNet))
+            {
+                continue;
+            }
+
+            hostLocalNets[(dnDevice, dnNet.ToString())] = dnName;
+        }
+
+        // Local: keys a host-local Docker-bridge subnet per (device, CIDR) so each host's copy
+        // is its own node attached only to that host; every other subnet keeps global CIDR keying.
+        SubnetAggregate GetOrAdd(IPNetwork network, string? device)
+        {
+            string cidr = network.ToString();
+            bool hostLocal = device is not null && hostLocalNets.TryGetValue((device, cidr), out string? _);
+            string key = hostLocal ? $"L {device} {cidr}" : cidr;
+            if (!subnets.TryGetValue(key, out SubnetAggregate? agg))
+            {
+                agg = new SubnetAggregate(network);
+                if (hostLocal && device is not null)
+                {
+                    agg.HostLocalDevice = device;
+                    agg.DockerNetName = hostLocalNets[(device, cidr)];
+                }
+
+                subnets[key] = agg;
+            }
+
+            return agg;
+        }
 
         await foreach ((string device, string? hostname, string? name, string? ipv4, int? ipv4PrefixLength)
             in conn.ListSubnetInterfacesAsync(ct))
@@ -280,7 +409,7 @@ public static class SubnetsApi
                 continue;
             }
 
-            SubnetAggregate agg = GetOrAdd(subnets, network);
+            SubnetAggregate agg = GetOrAdd(network, device);
             agg.Sources.Add("I");
             agg.Interfaces.Add(new SubnetInterface(device, hostname, name, hostAddress!.ToString()));
         }
@@ -296,7 +425,8 @@ public static class SubnetsApi
                 continue;
             }
 
-            SubnetAggregate agg = GetOrAdd(subnets, network);
+            // DHCP scopes are service-reported LAN subnets, never a host's Docker bridge — global key.
+            SubnetAggregate agg = GetOrAdd(network, null);
             agg.Sources.Add("D");
             agg.Name ??= scope;
             agg.Gateway ??= string.IsNullOrWhiteSpace(gateway) ? null : gateway;
@@ -305,14 +435,16 @@ public static class SubnetsApi
             agg.DhcpEnd ??= endAddress;
         }
 
-        await foreach ((string _, string destination) in conn.ListSubnetRoutesAsync(ct))
+        await foreach ((string device, string destination) in conn.ListSubnetRoutesAsync(ct))
         {
             if (!IPNetwork.TryParse(destination, out IPNetwork network))
             {
                 continue;
             }
 
-            GetOrAdd(subnets, network).Sources.Add("R");
+            // Pass the device so a host's own docker0 connected route lands on that host's
+            // per-host node instead of re-merging into a global CIDR node.
+            GetOrAdd(network, device).Sources.Add("R");
         }
 
         // Default-route gateways only ever fill a gap on an already-known subnet — 0.0.0.0/0
@@ -362,18 +494,6 @@ public static class SubnetsApi
         }
 
         return all;
-    }
-
-    private static SubnetAggregate GetOrAdd(Dictionary<string, SubnetAggregate> subnets, IPNetwork network)
-    {
-        string key = network.ToString();
-        if (!subnets.TryGetValue(key, out SubnetAggregate? agg))
-        {
-            agg = new SubnetAggregate(network);
-            subnets[key] = agg;
-        }
-
-        return agg;
     }
 
     /// <summary>
@@ -512,6 +632,22 @@ public static class SubnetsApi
         public string? DhcpService { get; set; }
         public string? DhcpStart { get; set; }
         public string? DhcpEnd { get; set; }
+
+        /// <summary>
+        /// Non-null when this subnet is a host-local Docker bridge, scoped to the owning device
+        /// — the graph labels it with that host and it never merges with another host's identical
+        /// CIDR. <see cref="DockerNetName" /> is the Docker network name (e.g. "bridge") for the label.
+        /// </summary>
+        public string? HostLocalDevice { get; set; }
+        public string? DockerNetName { get; set; }
+
+        /// <summary>
+        /// Owning host label for a host-local subnet (its hostname, or the raw device id when no
+        /// hostname is known) — the disambiguator when two hosts share an identical bridge CIDR.
+        /// Null for ordinary (shared) subnets.
+        /// </summary>
+        public string? OwnerHost =>
+            HostLocalDevice is null ? null : Interfaces.FirstOrDefault()?.Hostname ?? HostLocalDevice;
     }
 }
 
@@ -524,7 +660,12 @@ public sealed record SubnetListItem(
     string? GatewayDeviceId,
     string? GatewayHostname,
     int HostCount,
-    IReadOnlyList<string> Sources
+    IReadOnlyList<string> Sources,
+    // Owning host for a host-local (Docker bridge) subnet — disambiguates two hosts' identical
+    // bridge CIDR; null for an ordinary shared subnet. HostLocal marks the row non-routable
+    // (keyed per host, see docs/plans/l3-topology.md Track 1).
+    string? Host = null,
+    bool HostLocal = false
 );
 
 public sealed record SubnetDetail(
@@ -541,9 +682,10 @@ public sealed record SubnetDetail(
     IReadOnlyList<SubnetInterface> Interfaces
 );
 
-/// <summary>Node kinds for <see cref="SubnetGraph" />: "subnet", "router", or "internet".</summary>
+/// <summary>Node kinds for <see cref="SubnetGraph" />: "subnet", "router", "internet", or "vpn".</summary>
 public sealed record SubnetGraphNode(string Id, string Label, string Kind);
 
-public sealed record SubnetGraphEdge(string FromId, string ToId);
+/// <summary><see cref="Via" /> is the interface name the edge traverses (e.g. "eth0", "docker0"), when known.</summary>
+public sealed record SubnetGraphEdge(string FromId, string ToId, string? Via = null);
 
 public sealed record SubnetGraph(IReadOnlyList<SubnetGraphNode> Nodes, IReadOnlyList<SubnetGraphEdge> Edges);

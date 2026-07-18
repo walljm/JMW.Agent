@@ -84,6 +84,20 @@ public static partial class ReportingQueries
         CancellationToken cancellationToken
     );
 
+    /// <summary>
+    /// Docker network subnets per host (device, subnet CIDR, network name, driver, scope). Lets
+    /// <c>SubnetsApi</c> classify a subnet as host-local NAT (<c>driver='bridge'</c>) vs. routable
+    /// (macvlan/ipvlan/overlay) and key host-local CIDRs per-host — see docs/plans/l3-topology.md
+    /// Track 1. Cidr is the row's key dimension and is never null.
+    /// </summary>
+    [DatabaseCommand]
+    public static partial
+        IAsyncEnumerable<(string Device, string Cidr, string? Name, string? Driver, string? Scope)>
+        ListDockerNetworksAsync(
+            this NpgsqlConnection connection,
+            CancellationToken cancellationToken
+        );
+
     // ── Reporting: L2 Topology ───────────────────────────────────────────────────
 
     /// <summary>

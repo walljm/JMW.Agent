@@ -1,12 +1,29 @@
 ---
 date: 2026-07-16
-status: proposed
+status: implemented
 mode: standalone
 ---
 
 # L3 Topology Graph — Host-Local Subnet Correctness + Enrichment
 
-> **Status:** PROPOSED — design capture only, no code until Boss approves.
+> **Status:** IMPLEMENTED (2026-07-17). All four tracks shipped, with Track 1 on the
+> **authoritative** Docker `/networks` collection (not the fallback name heuristic), and
+> host-local subnets **shown scoped per host** (open question §8.1 → "show"). What landed:
+>
+> - **Track 1** — `DockerCollector` enumerates `GET /v1.43/networks` → `FactPaths.DockerNetwork*`
+>   → `proj_docker_networks` (migration `0091`, one row per IPAM subnet, key = subnet CIDR).
+>   `SubnetsApi.BuildAggregatesAsync` joins `(device, CIDR)` and keys any `driver=bridge` subnet
+>   per-host (interface + route sources both device-scoped), so identical container-bridge CIDRs
+>   no longer merge or chain hosts. Node labeled `CIDR · <net>@<host>`.
+> - **Track 3** — `SubnetGraphEdge` gained `Via`; gateway + span device↔subnet edges carry the
+>   interface name; the renderer draws it at the edge midpoint (labeled edges only).
+> - **Track 2** — new `vpn` node kind; `OverlayLabel` detects Tailscale (`tailscale*` + CGNAT
+>   `100.64.0.0/10`), WireGuard (`wg*`), OpenVPN (`tun*`/`tap*`), ZeroTier (`zt*`); one cloud per
+>   overlay kind on the far side of the subnet.
+> - **Track 4** — line-art icons (Lucide-style, vendored inline in `topology-graph.js`,
+>   themed via CSS vars) drawn above each node per kind.
+>
+> The rest of this document is the original design capture, retained for rationale.
 >
 > **Origin (Boss, 2026-07-16):** captured across a working discussion, in priority order:
 > 1. The L3 diagram must **not** draw one shared subnet node linking two devices when those
@@ -181,10 +198,17 @@ clearly*. Recommended order:
 
 ## 8. Open questions
 
-- Do we want host-local subnets shown at all on L3, or collapsed behind a per-host "N container
-  networks" affordance to reduce noise? (Leaning: show, scoped per host, but collapsible.)
+- ~~Do we want host-local subnets shown at all on L3~~ **DECIDED (Boss, 2026-07-17): show, scoped
+  per host.** Not collapsed — each host's Docker bridge is its own node attached only to that host.
+  A per-host "N container networks" collapse affordance was left as a future refinement, not built.
+  **Subnet List follow-up (Boss, 2026-07-18):** since the list is fed by the same aggregation, a
+  host-local bridge surfaces as one row per host. Added a **Host** column (owning hostname) to
+  disambiguate, a **host-local** tag on the CIDR (tooltip: not routable between hosts), the Docker
+  network name in the **Name** column, and dropped the detail-page link for these rows (they aren't
+  unique by CIDR, so there's no single detail page to point at).
 - macvlan/ipvlan containers hold real LAN IPs — should they merge into the real LAN subnet node
-  (correct L3 view) rather than render as a separate Docker subnet? (Leaning: yes — they *are* on
-  the LAN.)
-- Per-device Internet nodes vs. one shared Internet cloud: per-device is more honest about distinct
-  egress paths but busier. Decide during Track 2.
+  (correct L3 view) rather than render as a separate Docker subnet? **Resolved by construction:**
+  only `driver=bridge` is flagged host-local; macvlan/ipvlan are *not* flagged, so their real-LAN
+  CIDR keeps global keying and merges into the LAN node exactly as desired — no special case.
+- Per-device Internet nodes vs. one shared Internet cloud: **unchanged** — the existing shared
+  `internet` node behavior was kept; Track 2 added VPN clouds alongside it without touching it.

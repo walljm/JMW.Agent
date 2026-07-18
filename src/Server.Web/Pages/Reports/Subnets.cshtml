@@ -92,6 +92,7 @@
                         <tr>
                             <th>CIDR</th>
                             <th>Name</th>
+                            <th>Host</th>
                             <th>Gateway</th>
                             <th class="num">Hosts</th>
                             <th>Source</th>
@@ -101,8 +102,21 @@
                         @foreach (SubnetListItem s in Model.Subnets)
                         {
                             <tr>
-                                <td class="mono"><a href="@SubnetHref(s.Cidr)">@s.Cidr</a></td>
+                                <td class="mono">
+                                    @if (s.HostLocal)
+                                    {
+                                        @* Host-local Docker bridges aren't unique by CIDR (one per host),
+                                           so there's no single detail page to link to. *@
+                                        @s.Cidr
+                                        <span class="tag" title="Docker bridge network — local to this host, not routable between hosts">host-local</span>
+                                    }
+                                    else
+                                    {
+                                        <a href="@SubnetHref(s.Cidr)">@s.Cidr</a>
+                                    }
+                                </td>
                                 <td>@(s.Name ?? "—")</td>
+                                <td>@(s.Host ?? "—")</td>
                                 <td class="mono">
                                     @if (!string.IsNullOrEmpty(s.Gateway) && !string.IsNullOrEmpty(s.GatewayDeviceId))
                                     {

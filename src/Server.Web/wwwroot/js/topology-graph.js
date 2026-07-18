@@ -6,16 +6,29 @@
 //   renderTopologyGraph('topology-graph', { nodes: [{id, label, kind}], edges: [{fromId, toId, fromPort, toPort, via}] });
 //
 // Node kinds get a color/shape via KIND_STYLE below; unrecognized kinds fall back to a
-// neutral circle so a future node kind never renders invisibly.
+// neutral circle so a future node kind never renders invisibly. Each kind also gets a small
+// line-art icon (ICON_PATHS) drawn above the node — permissive glyphs (Tabler/Lucide-style,
+// MIT/ISC), hand-vendored as inline SVG paths so nothing loads under the no-'unsafe-eval' CSP.
 (function () {
     const KIND_STYLE = {
         subnet: { shape: 'rect', varName: '--info' },
         router: { shape: 'rect', varName: '--accent' },
         internet: { shape: 'circle', varName: '--ok' },
+        vpn: { shape: 'circle', varName: '--warn' },
         device: { shape: 'rect', varName: '--accent' },
         unknown: { shape: 'circle', varName: '--text-faint' },
     };
     const DEFAULT_STYLE = { shape: 'circle', varName: '--text-dim' };
+
+    // Icons on a 24×24 grid (Lucide viewBox), stroke line-art, drawn centered above each node.
+    // network / router / server / globe / shield — themeable via stroke color.
+    const ICON_PATHS = {
+        subnet: 'M12 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM18 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM12 9v3M7.5 16.5 10.5 12.5M16.5 16.5 13.5 12.5',
+        router: 'M6.5 17.5h11a2 2 0 0 0 2-2v-1a2 2 0 0 0-2-2h-11a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2ZM7 15v.01M11 15v.01M15 9l3-3M19 10l2-2M9 15h6',
+        internet: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM3.5 9h17M3.5 15h17M12 3a13 13 0 0 1 0 18 13 13 0 0 1 0-18Z',
+        vpn: 'M12 3 5 6v5c0 4 3 7.5 7 9 4-1.5 7-5 7-9V6l-7-3ZM12 11v3M12 8v.01',
+        device: 'M4 5h16v6H4zM4 13h16v6H4zM7 8h.01M7 16h.01',
+    };
 
     function cssVar(name) {
         return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -83,6 +96,22 @@
             .attr('stroke', linkColor)
             .attr('stroke-width', 1.5);
 
+        // Track 3: interface name (e.g. "eth0", "docker0") along each labeled device↔subnet edge,
+        // drawn at the edge midpoint. Only edges that carry a `via` get a label — keeps clutter down.
+        const edgeLabel = zoomLayer.append('g')
+            .attr('class', 'tgraph-edge-labels')
+            .selectAll('text')
+            .data(links.filter((l) => l.via))
+            .join('text')
+            .attr('class', 'tgraph-edge-label')
+            .attr('text-anchor', 'middle')
+            .attr('dy', '-2')
+            .attr('fill', textColor)
+            .attr('font-size', '8px')
+            .attr('opacity', 0.75)
+            .attr('pointer-events', 'none')
+            .text((d) => d.via);
+
         const node = zoomLayer.append('g')
             .attr('class', 'tgraph-nodes')
             .selectAll('g')
@@ -113,6 +142,23 @@
             }
 
             g.append('title').text(d.label);
+
+            // Track 4: line-art icon above the node, in the node's own accent color.
+            const iconPath = ICON_PATHS[d.kind];
+            if (iconPath) {
+                const iconSize = 18;
+                const shapeTop = style.shape === 'rect' ? -16 : -18;
+                g.append('path')
+                    .attr('class', 'tgraph-icon')
+                    .attr('d', iconPath)
+                    .attr('transform',
+                        `translate(${-iconSize / 2}, ${shapeTop - iconSize - 2}) scale(${iconSize / 24})`)
+                    .attr('fill', 'none')
+                    .attr('stroke', color)
+                    .attr('stroke-width', 2)
+                    .attr('stroke-linecap', 'round')
+                    .attr('stroke-linejoin', 'round');
+            }
         });
 
         node.append('text')
@@ -174,6 +220,10 @@
                 .attr('y2', (d) => d.target.y);
 
             node.attr('transform', (d) => `translate(${d.x},${d.y})`);
+
+            edgeLabel
+                .attr('x', (d) => (d.source.x + d.target.x) / 2)
+                .attr('y', (d) => (d.source.y + d.target.y) / 2);
         });
 
         function drag(sim) {

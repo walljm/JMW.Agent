@@ -63,6 +63,7 @@ public sealed class DockerCollector : ILocalCollector
         {
             await CollectDaemonInfoAsync(deviceId, http, facts, ct);
             await CollectContainersAsync(deviceId, http, facts, ct);
+            await CollectNetworksAsync(deviceId, http, facts, ct);
         }
         catch (Exception ex)
         {
@@ -159,6 +160,92 @@ public sealed class DockerCollector : ILocalCollector
             // TODO: fetch per-container stats via /v1.43/containers/{id}/stats?stream=false
             // for CPU%, memory usage, network I/O. Requires one HTTP call per container.
         }
+    }
+
+    // One fact-group per IPAM subnet, keyed by the subnet CIDR. The subnet is the L3
+    // entity the Subnets page joins on; a bridge network's driver/scope is what tells it
+    // the CIDR is host-local NAT (and so must be keyed per-host, not merged globally).
+    // Networks with no IPAM subnet (host/none) produce no rows — nothing to place on L3.
+    private static async Task CollectNetworksAsync(
+        string deviceId,
+        HttpClient http,
+        List<Fact> facts,
+        CancellationToken ct
+    )
+    {
+        HttpResponseMessage resp = await http.GetAsync("/v1.43/networks", ct);
+        resp.EnsureSuccessStatusCode();
+
+        using JsonDocument doc = await JsonDocument.ParseAsync(
+            await resp.Content.ReadAsStreamAsync(ct),
+            cancellationToken: ct
+        );
+
+        facts.AddRange(ParseNetworks(deviceId, doc.RootElement));
+    }
+
+    // Parses a Docker `GET /networks` response array into per-subnet facts. Split out from the
+    // HTTP fetch so the parsing is unit-testable against sample payloads. Tolerant of the shapes
+    // real daemons emit: a non-array root, networks with no IPAM/Config (host/none), empty subnet
+    // strings, and a missing bridge-name option all degrade to "emit less", never throw.
+    internal static IReadOnlyList<Fact> ParseNetworks(string deviceId, JsonElement root)
+    {
+        List<Fact> facts = new();
+        if (root.ValueKind != JsonValueKind.Array)
+        {
+            return facts;
+        }
+
+        foreach (JsonElement net in root.EnumerateArray())
+        {
+            if (net.ValueKind != JsonValueKind.Object
+             || !net.TryGetProperty("IPAM", out JsonElement ipam)
+             || ipam.ValueKind != JsonValueKind.Object
+             || !ipam.TryGetProperty("Config", out JsonElement config)
+             || config.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            string name = net.GetStr(nameof(Name)) ?? "";
+            string driver = net.GetStr("Driver") ?? "";
+            string scope = net.GetStr("Scope") ?? "";
+            string bridge = BridgeName(net);
+
+            foreach (JsonElement entry in config.EnumerateArray())
+            {
+                string? subnet = entry.ValueKind == JsonValueKind.Object ? entry.GetStr("Subnet") : null;
+                if (string.IsNullOrWhiteSpace(subnet))
+                {
+                    continue;
+                }
+
+                string[] keys = [deviceId, subnet];
+                facts.Add(Fact.Create(FactPaths.DockerNetworkName, keys, name));
+                facts.Add(Fact.Create(FactPaths.DockerNetworkDriver, keys, driver));
+                facts.Add(Fact.Create(FactPaths.DockerNetworkScope, keys, scope));
+                if (bridge.Length > 0)
+                {
+                    facts.Add(Fact.Create(FactPaths.DockerNetworkBridge, keys, bridge));
+                }
+            }
+        }
+
+        return facts;
+    }
+
+    // Options["com.docker.network.bridge.name"] ties a bridge network's CIDR back to its
+    // host interface: "docker0" for the default bridge, "br-<hash>" for user-defined ones.
+    private static string BridgeName(JsonElement net)
+    {
+        if (!net.TryGetProperty("Options", out JsonElement options) || options.ValueKind != JsonValueKind.Object)
+        {
+            return "";
+        }
+
+        return options.TryGetProperty("com.docker.network.bridge.name", out JsonElement br)
+            ? br.GetString() ?? ""
+            : "";
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

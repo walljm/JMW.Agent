@@ -172,6 +172,17 @@ public static class FactPaths
     public const string DockerMemBytes = "Device[].Docker.MemBytes";
     public const string DockerCpuCount = "Device[].Docker.CPUCount";
 
+    // ── Docker networks (Inventory.Docker.Networks[]) ─────────────────────────
+    // Key = the network's subnet CIDR (one row per IPAM subnet; a network with
+    // multiple subnets fans out to several rows). SubnetsApi reads driver/scope to
+    // tell a host-local NAT bridge (driver=bridge — Docker's 172.17.0.0/16 et al.,
+    // not routable between hosts) apart from a routable macvlan/ipvlan/overlay, and
+    // so keys those subnets per-host instead of merging identical CIDRs across hosts.
+    public const string DockerNetworkName = "Device[].DockerNet[].Name"; // "bridge", "mynet"
+    public const string DockerNetworkDriver = "Device[].DockerNet[].Driver"; // bridge/macvlan/ipvlan/overlay
+    public const string DockerNetworkScope = "Device[].DockerNet[].Scope"; // local/swarm/global
+    public const string DockerNetworkBridge = "Device[].DockerNet[].BridgeName"; // docker0 / br-<hash>
+
     // ── Container (Inventory.Docker.Containers[]) ─────────────────────────────
     // Key = short container ID (first 12 chars of the 64-char full ID)
     public const string ContainerName = "Device[].Container[].Name";

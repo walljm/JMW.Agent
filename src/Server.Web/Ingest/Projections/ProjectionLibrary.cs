@@ -172,6 +172,22 @@ public static class ProjectionLibrary
             ]
         ),
 
+        // Docker network subnets. Key = subnet CIDR (one row per IPAM subnet). SubnetsApi
+        // joins (device, cidr) here to classify a subnet as host-local NAT (driver=bridge)
+        // vs. routable (macvlan/ipvlan/overlay), so identical container-bridge CIDRs on
+        // different hosts are keyed per-host instead of merged into one bogus shared node.
+        // Not agent-scoped: the join is by device id, already globally unique per host.
+        new ProjectionDef(
+            "proj_docker_networks",
+            ["Device", "DockerNet"],
+            [
+                new(FactPaths.DockerNetworkName, "name", NpgsqlDbType.Text),
+                new(FactPaths.DockerNetworkDriver, "driver", NpgsqlDbType.Text),
+                new(FactPaths.DockerNetworkScope, "scope", NpgsqlDbType.Text),
+                new(FactPaths.DockerNetworkBridge, "bridge_name", NpgsqlDbType.Text),
+            ]
+        ),
+
 
         // ── Service identity ──────────────────────────────────────────────────
 

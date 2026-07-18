@@ -2226,6 +2226,7 @@ public sealed class SubnetsApiTests : IAsyncLifetime
             "proj_device_routes",
             "proj_dhcp_leases",
             "proj_discovered",
+            "proj_docker_networks",
             "proj_systems",
             "proj_devices",
             "device_fingerprints",
@@ -2595,6 +2596,112 @@ public sealed class SubnetsApiTests : IAsyncLifetime
         Assert.All(graph.Edges, e => Assert.Equal(router.Id, e.FromId));
     }
 
+    // ── Track 1: host-local Docker bridge keying ────────────────────────────────
+
+    [Fact]
+    public async Task GetGraph_TwoHostsSameDockerBridge_KeptSeparatePerHost()
+    {
+        // Both hosts run Docker, so both have docker0 = 172.17.0.0/16 (host-local NAT, driver
+        // bridge) plus a real LAN interface. The identical bridge CIDR must NOT merge into one
+        // shared node — that would falsely chain the two hosts through Docker's internal network.
+        await InsertInterfaceAsync("hostA", "eth0", "192.168.1.10/24");
+        await InsertInterfaceAsync("hostA", "docker0", "172.17.0.1/16");
+        await InsertDockerNetworkAsync("hostA", "172.17.0.0/16", "bridge");
+        await InsertInterfaceAsync("hostB", "eth0", "192.168.1.20/24");
+        await InsertInterfaceAsync("hostB", "docker0", "172.17.0.1/16");
+        await InsertDockerNetworkAsync("hostB", "172.17.0.0/16", "bridge");
+
+        SubnetGraph graph = await SubnetsApi.GetGraphAsync(_fixture.DataSource, CancellationToken.None);
+
+        // Two distinct 172.17.0.0/16 subnet nodes (one per host), not one shared node.
+        List<SubnetGraphNode> bridgeNodes = graph.Nodes
+            .Where(n => n.Kind == "subnet" && n.Label.Contains("172.17.0.0/16"))
+            .ToList();
+        Assert.Equal(2, bridgeNodes.Count);
+        Assert.Equal(2, bridgeNodes.Select(n => n.Id).Distinct().Count());
+
+        // Each bridge node attaches to exactly one router (its owning host) — no node bridges both.
+        foreach (SubnetGraphNode bridge in bridgeNodes)
+        {
+            Assert.Single(graph.Edges, e => e.ToId == bridge.Id);
+        }
+    }
+
+    [Fact]
+    public async Task GetGraph_MacvlanSameCidrAcrossHosts_MergesGlobally()
+    {
+        // macvlan holds real, routable LAN IPs — the same CIDR on two hosts IS the same subnet
+        // and must merge into one node. Only driver=bridge is host-local; macvlan is not flagged.
+        await InsertInterfaceAsync("hostA", "eth0", "10.10.0.5/24");
+        await InsertDockerNetworkAsync("hostA", "10.10.0.0/24", "macvlan", name: "pub");
+        await InsertInterfaceAsync("hostB", "eth0", "10.10.0.6/24");
+        await InsertDockerNetworkAsync("hostB", "10.10.0.0/24", "macvlan", name: "pub");
+
+        SubnetGraph graph = await SubnetsApi.GetGraphAsync(_fixture.DataSource, CancellationToken.None);
+
+        SubnetGraphNode subnet = Assert.Single(graph.Nodes, n => n.Kind == "subnet");
+        Assert.Contains("10.10.0.0/24", subnet.Label);
+    }
+
+    [Fact]
+    public async Task Query_TwoHostsSameDockerBridge_ListsPerHostRows()
+    {
+        // The list is fed by the same aggregation, so host-local bridges surface as one row per
+        // host (documents the per-host keying decision — see docs/plans/l3-topology.md §8).
+        await InsertInterfaceAsync("hostA", "docker0", "172.17.0.1/16");
+        await InsertDockerNetworkAsync("hostA", "172.17.0.0/16", "bridge");
+        await InsertInterfaceAsync("hostB", "docker0", "172.17.0.1/16");
+        await InsertDockerNetworkAsync("hostB", "172.17.0.0/16", "bridge");
+
+        List<SubnetListItem> items = await SubnetsApi.QueryAsync(_fixture.DataSource, null, CancellationToken.None);
+
+        Assert.Equal(2, items.Count(i => i.Cidr == "172.17.0.0/16"));
+    }
+
+    // ── Track 2: VPN/overlay clouds ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetGraph_TailscaleInterface_AddsVpnCloud()
+    {
+        await InsertInterfaceAsync("hostA", "eth0", "192.168.1.10/24");
+        await InsertInterfaceAsync("hostA", "tailscale0", "100.64.1.2/32");
+
+        SubnetGraph graph = await SubnetsApi.GetGraphAsync(_fixture.DataSource, CancellationToken.None);
+
+        SubnetGraphNode vpn = Assert.Single(graph.Nodes, n => n.Kind == "vpn");
+        Assert.Equal("Tailscale", vpn.Label);
+        SubnetGraphNode tailnet = Assert.Single(graph.Nodes, n => n.Kind == "subnet" && n.Label.Contains("100.64.1.2/32"));
+        Assert.Contains(graph.Edges, e => e.FromId == tailnet.Id && e.ToId == vpn.Id);
+    }
+
+    [Fact]
+    public async Task GetGraph_TailscaleNameOutsideCgnat_NoVpnCloud()
+    {
+        // A "tailscale"-named interface whose IP is NOT in 100.64.0.0/10 fails the CGNAT
+        // confirmation — no cloud is fabricated on a name alone.
+        await InsertInterfaceAsync("hostA", "eth0", "192.168.1.10/24");
+        await InsertInterfaceAsync("hostA", "tailscale0", "192.168.9.2/24");
+
+        SubnetGraph graph = await SubnetsApi.GetGraphAsync(_fixture.DataSource, CancellationToken.None);
+
+        Assert.DoesNotContain(graph.Nodes, n => n.Kind == "vpn");
+    }
+
+    // ── Track 3: interface labels on edges ──────────────────────────────────────
+
+    [Fact]
+    public async Task GetGraph_SpanEdges_CarryInterfaceName()
+    {
+        await InsertInterfaceAsync("udm", "eth0", "192.168.1.1/24");
+        await InsertInterfaceAsync("udm", "eth1", "192.168.10.1/24");
+
+        SubnetGraph graph = await SubnetsApi.GetGraphAsync(_fixture.DataSource, CancellationToken.None);
+
+        List<string?> vias = graph.Edges.Select(e => e.Via).ToList();
+        Assert.Contains("eth0", vias);
+        Assert.Contains("eth1", vias);
+    }
+
     // ── Seed helpers ──────────────────────────────────────────────────────────
 
     private async Task InsertInterfaceAsync(string device, string interfaceMac, string ipv4, int? ipv4PrefixLength = null)
@@ -2685,6 +2792,22 @@ public sealed class SubnetsApiTests : IAsyncLifetime
         await using NpgsqlCommand cmd = new(sql, conn);
         cmd.Parameters.AddWithValue("device", device);
         cmd.Parameters.AddWithValue("hostname", hostname);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private async Task InsertDockerNetworkAsync(string device, string cidr, string driver, string name = "bridge")
+    {
+        const string sql = """
+            INSERT INTO proj_docker_networks (device, dockernet, name, driver, scope)
+            VALUES (@device, @cidr, @name, @driver, 'local')
+            ON CONFLICT (device, dockernet) DO UPDATE SET driver = EXCLUDED.driver
+            """;
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        await using NpgsqlCommand cmd = new(sql, conn);
+        cmd.Parameters.AddWithValue("device", device);
+        cmd.Parameters.AddWithValue("cidr", cidr);
+        cmd.Parameters.AddWithValue("name", name);
+        cmd.Parameters.AddWithValue("driver", driver);
         await cmd.ExecuteNonQueryAsync();
     }
 }

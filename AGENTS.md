@@ -521,7 +521,16 @@ backed by two independent graph APIs sharing one D3 renderer:
 
 - **L3** (`SubnetsApi.GetGraphAsync`, existing): subnet/router graph synthesized
   query-time from `proj_interfaces`/`proj_dhcp_scopes`/`proj_device_routes` — no
-  dedicated `proj_subnets` table.
+  dedicated `proj_subnets` table. Node kinds: `subnet`/`router`/`internet`/`vpn`.
+  **Host-local Docker bridges are keyed per host, not by CIDR alone** — a `driver=bridge`
+  network's CIDR (Docker's `172.17.0.0/16` et al.) exists on every host but routes nowhere
+  between them, so merging identical CIDRs would draw a bogus shared subnet chaining hosts.
+  `SubnetsApi` joins `proj_docker_networks` (fed by `DockerCollector`'s `GET /v1.43/networks`,
+  one row per IPAM subnet keyed by CIDR) on `(device, CIDR)`; `driver=bridge` ⇒ per-host key,
+  macvlan/ipvlan/overlay stay globally keyed (they *are* routable). `vpn` clouds are drawn on
+  the far side of overlay subnets (Tailscale via the `100.64.0.0/10` CGNAT range; WireGuard/
+  OpenVPN/ZeroTier by interface-name heuristic). Device↔subnet edges carry the interface name
+  (`SubnetGraphEdge.Via`). See `docs/plans/l3-topology.md`.
 - **L2** (`L2TopologyApi.GetGraphAsync`, `GET /report/l2-topology`): device/port
   adjacency graph built from `Device[].Neighbor[]` facts (LLDP-derived — see
   `SnmpCollector`/`OnHubApBridgeVlan`/`SshCollector`). This subtree has **no
