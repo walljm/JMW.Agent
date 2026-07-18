@@ -67,7 +67,26 @@ public sealed record HeartbeatConfig(
     // compares this against a locally persisted marker of the last clear it acted on;
     // when this is newer, it wipes its tracker files and updates the marker.
     // </summary>
-    DateTimeOffset? ClearTrackersRequestedAt = null
+    DateTimeOffset? ClearTrackersRequestedAt = null,
+    // <summary>
+    // Set when an admin requests (via the Fleet UI) that this agent upload its recent
+    // console/journald log output for on-demand viewing — null means no pull has ever been
+    // requested. The agent compares this against a locally persisted marker of the last pull
+    // it acted on; when this is newer, it captures a page of logs and POSTs it to the server's
+    // in-memory cache. Same on-demand/next-heartbeat shape as <see cref="ClearTrackersRequestedAt" />.
+    // </summary>
+    DateTimeOffset? LogsRequestedAt = null,
+    // <summary>
+    // The page size (line count) the admin asked for with <see cref="LogsRequestedAt" />.
+    // Null falls back to the agent's default page size.
+    // </summary>
+    int? LogsRequestedLines = null,
+    // <summary>
+    // Opaque paging token relayed from the previous log upload's next-before token (a
+    // ring-buffer Seq or a journald __CURSOR). The server never parses it. Null requests the
+    // newest page; a value requests the page immediately older than that token.
+    // </summary>
+    string? LogsRequestedBefore = null
 );
 
 /// <summary>

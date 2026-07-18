@@ -147,7 +147,8 @@ public static partial class AgentQueries
     public static partial
         IAsyncEnumerable<(Guid AgentId, string Hostname, string Status, int HeartbeatIntervalSecs, int
             DiscoveryIntervalSecs
-          , int InventoryIntervalSecs, JsonElement CollectorsConfig, DateTimeOffset? ClearTrackersRequestedAt)>
+          , int InventoryIntervalSecs, JsonElement CollectorsConfig, DateTimeOffset? ClearTrackersRequestedAt,
+            DateTimeOffset? LogsRequestedAt, int? LogsRequestedLines, string? LogsRequestedBefore)>
         GetAgentConfigAsync(
             this NpgsqlConnection connection,
             Guid agentId,
@@ -162,6 +163,21 @@ public static partial class AgentQueries
     public static partial IAsyncEnumerable<AgentIdResult> RequestClearTrackersAsync(
         this NpgsqlConnection connection,
         Guid agentId,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// Requests that the agent upload its recent console/journald log output on its next
+    /// heartbeat. <paramref name="lines"/> is the page size; <paramref name="before"/> is an
+    /// opaque paging token (ring-buffer Seq or journald __CURSOR) relayed to the agent verbatim,
+    /// or null for the newest page. Returns the agent_id, or no rows if the agent is not found.
+    /// </summary>
+    [DatabaseCommand]
+    public static partial IAsyncEnumerable<(Guid AgentId, DateTimeOffset LogsRequestedAt)> RequestLogsAsync(
+        this NpgsqlConnection connection,
+        Guid agentId,
+        int lines,
+        string? before,
         CancellationToken cancellationToken
     );
 

@@ -1,6 +1,15 @@
 # Plan: Agent log viewer (on-demand journald/console pull)
 
-> **Status:** PROPOSED — spec only, no code yet.
+> **Status:** IMPLEMENTED. Shipped end-to-end per this spec. Notable deltas from the original
+> draft: the migration is `0092_agent_request_logs.sql` (0085–0091 were already taken); the
+> capture/collector files live at `src/Agent/` root (`RingBufferLog.cs`, `AgentLogCollector.cs`)
+> alongside `AgentLog.cs` rather than in a new `Capture/` folder, matching the flat agent-runtime
+> layout; the shared ring buffer is exposed as `AgentLog.Buffer`. The §7.3 Debug-level follow-up
+> is intentionally **not** included (flagged there as separate). §7.1 (`AddSystemdConsole` vs
+> `AddSimpleConsole`) and §7.2 (route the stray `Console.Error.WriteLine` through the logger) are
+> both done. The pre-ship secret-in-log audit (§6) was completed: all 68 agent `[LoggerMessage]`
+> sites verified clean, no credential material reaches a log sink.
+>
 > **Trigger:** Boss wants a way to see what an agent has been logging (cache clears, collector
 > errors, self-update activity) without SSHing into the host. Explicit constraints from
 > conversation: pull the **existing** console/journald output rather than build a new logging
@@ -211,7 +220,7 @@ holds. It does not carry the log text itself.
 
 | Change | Where |
 |---|---|
-| `agents.logs_requested_at TIMESTAMPTZ`, `agents.logs_requested_lines INT`, `agents.logs_requested_before TEXT` | new migration `0085_agent_request_logs.sql`, same shape as `0070_agent_clear_trackers.sql` |
+| `agents.logs_requested_at TIMESTAMPTZ`, `agents.logs_requested_lines INT`, `agents.logs_requested_before TEXT` | migration `0092_agent_request_logs.sql`, same shape as `0070_agent_clear_trackers.sql` |
 | `RequestLogs.sql` / `RequestLogsAsync` | `Data/Agents/`, mirrors `RequestClearTrackers.sql` |
 | `GetAgentConfig.sql` gains the three columns | feeds `AgentConfigAssembler` |
 | `HeartbeatConfig` gains `LogsRequestedAt`, `LogsRequestedLines`, `LogsRequestedBefore` | `src/Core/DeviceRegistration.cs`, alongside `ClearTrackersRequestedAt` |

@@ -32,7 +32,8 @@ public sealed class AgentConfigAssembler
         await using NpgsqlConnection conn = await _db.OpenConnectionAsync(ct);
 
         List<(Guid AgentId, string Hostname, string Status, int HeartbeatIntervalSecs, int DiscoveryIntervalSecs, int
-            InventoryIntervalSecs, JsonElement CollectorsConfig, DateTimeOffset? ClearTrackersRequestedAt)>
+            InventoryIntervalSecs, JsonElement CollectorsConfig, DateTimeOffset? ClearTrackersRequestedAt,
+            DateTimeOffset? LogsRequestedAt, int? LogsRequestedLines, string? LogsRequestedBefore)>
             configRows = await conn.GetAgentConfigAsync(agentId, ct).ToListAsync(ct);
         if (configRows.Count == 0)
         {
@@ -40,7 +41,8 @@ public sealed class AgentConfigAssembler
         }
 
         (Guid AgentId, string Hostname, string Status, int HeartbeatIntervalSecs, int DiscoveryIntervalSecs, int
-            InventoryIntervalSecs, JsonElement CollectorsConfig, DateTimeOffset? ClearTrackersRequestedAt) config =
+            InventoryIntervalSecs, JsonElement CollectorsConfig, DateTimeOffset? ClearTrackersRequestedAt,
+            DateTimeOffset? LogsRequestedAt, int? LogsRequestedLines, string? LogsRequestedBefore) config =
             configRows[0];
         Dictionary<string, CollectorSetting> collectors = ParseCollectors(config.CollectorsConfig);
 
@@ -77,7 +79,10 @@ public sealed class AgentConfigAssembler
             Collectors: collectors,
             Targets: targets,
             TrustedCaCertificates: _trustedCa.Certificates,
-            ClearTrackersRequestedAt: config.ClearTrackersRequestedAt
+            ClearTrackersRequestedAt: config.ClearTrackersRequestedAt,
+            LogsRequestedAt: config.LogsRequestedAt,
+            LogsRequestedLines: config.LogsRequestedLines,
+            LogsRequestedBefore: config.LogsRequestedBefore
         );
     }
 

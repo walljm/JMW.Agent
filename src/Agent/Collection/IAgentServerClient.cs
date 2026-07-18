@@ -43,4 +43,32 @@ public interface IAgentServerClient
         AgentFactsRequest request,
         CancellationToken ct
     );
+
+    /// <summary>
+    /// Uploads one on-demand page of captured log output to the server's in-memory cache, in
+    /// response to an admin log-pull request delivered via the heartbeat config. Fire-and-forget
+    /// from the agent's side — the server holds the page only transiently
+    /// (docs/plans/agent-log-viewer.md).
+    /// </summary>
+    Task PostLogsAsync(
+        string apiKey,
+        AgentLogUploadRequest request,
+        CancellationToken ct
+    );
 }
+
+/// <summary>
+/// One page of captured agent log output uploaded to the server. Serializes (snake_case)
+/// field-for-field to the server's own <c>AgentLogUploadRequest</c>. <c>RequestedAt</c> echoes the
+/// <c>logs_requested_at</c> the heartbeat delivered so the UI can match a page to its request;
+/// <c>Source</c> is "journald" or "buffer"; <c>NextBeforeToken</c> pages to older lines (null when
+/// the source has nothing older).
+/// </summary>
+public sealed record AgentLogUploadRequest(
+    Guid AgentId,
+    DateTimeOffset RequestedAt,
+    string Source,
+    bool Truncated,
+    string Text,
+    string? NextBeforeToken
+);

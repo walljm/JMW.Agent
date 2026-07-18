@@ -3183,7 +3183,8 @@ public sealed class AgentsApiTests : IAsyncLifetime
         await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
 
         List<(Guid AgentId, string Hostname, string Status, int HeartbeatIntervalSecs, int DiscoveryIntervalSecs, int
-            InventoryIntervalSecs, JsonElement CollectorsConfig, DateTimeOffset? ClearTrackersRequestedAt)>
+            InventoryIntervalSecs, JsonElement CollectorsConfig, DateTimeOffset? ClearTrackersRequestedAt,
+            DateTimeOffset? LogsRequestedAt, int? LogsRequestedLines, string? LogsRequestedBefore)>
             before = await conn.GetAgentConfigAsync(agentId, CancellationToken.None).ToListAsync(CancellationToken.None);
         Assert.Null(Assert.Single(before).ClearTrackersRequestedAt);
 
@@ -3192,9 +3193,49 @@ public sealed class AgentsApiTests : IAsyncLifetime
         Assert.Single(result);
 
         List<(Guid AgentId, string Hostname, string Status, int HeartbeatIntervalSecs, int DiscoveryIntervalSecs, int
-            InventoryIntervalSecs, JsonElement CollectorsConfig, DateTimeOffset? ClearTrackersRequestedAt)>
+            InventoryIntervalSecs, JsonElement CollectorsConfig, DateTimeOffset? ClearTrackersRequestedAt,
+            DateTimeOffset? LogsRequestedAt, int? LogsRequestedLines, string? LogsRequestedBefore)>
             after = await conn.GetAgentConfigAsync(agentId, CancellationToken.None).ToListAsync(CancellationToken.None);
         Assert.NotNull(Assert.Single(after).ClearTrackersRequestedAt);
+    }
+
+    [Fact]
+    public async Task RequestLogsAsync_SetsRequestFields_SurfacedByGetAgentConfig()
+    {
+        Guid agentId = await InsertAgentAsync("agent-logs", "host-logs");
+
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+
+        (Guid AgentId, string Hostname, string Status, int HeartbeatIntervalSecs, int DiscoveryIntervalSecs, int
+            InventoryIntervalSecs, JsonElement CollectorsConfig, DateTimeOffset? ClearTrackersRequestedAt,
+            DateTimeOffset? LogsRequestedAt, int? LogsRequestedLines, string? LogsRequestedBefore) before =
+            Assert.Single(await conn.GetAgentConfigAsync(agentId, CancellationToken.None).ToListAsync(CancellationToken.None));
+        Assert.Null(before.LogsRequestedAt);
+        Assert.Null(before.LogsRequestedLines);
+        Assert.Null(before.LogsRequestedBefore);
+
+        (Guid AgentId, DateTimeOffset LogsRequestedAt) result =
+            await conn.RequestLogsAsync(agentId, 500, "cursor-token", CancellationToken.None)
+                .FirstOrDefaultAsync(CancellationToken.None);
+        Assert.Equal(agentId, result.AgentId);
+
+        (Guid AgentId, string Hostname, string Status, int HeartbeatIntervalSecs, int DiscoveryIntervalSecs, int
+            InventoryIntervalSecs, JsonElement CollectorsConfig, DateTimeOffset? ClearTrackersRequestedAt,
+            DateTimeOffset? LogsRequestedAt, int? LogsRequestedLines, string? LogsRequestedBefore) after =
+            Assert.Single(await conn.GetAgentConfigAsync(agentId, CancellationToken.None).ToListAsync(CancellationToken.None));
+        Assert.NotNull(after.LogsRequestedAt);
+        Assert.Equal(500, after.LogsRequestedLines);
+        Assert.Equal("cursor-token", after.LogsRequestedBefore);
+    }
+
+    [Fact]
+    public async Task RequestLogsAsync_UnknownAgent_ReturnsNoRows()
+    {
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        List<(Guid AgentId, DateTimeOffset LogsRequestedAt)> result =
+            await conn.RequestLogsAsync(Guid.NewGuid(), 200, null, CancellationToken.None)
+                .ToListAsync(CancellationToken.None);
+        Assert.Empty(result);
     }
 
     [Fact]

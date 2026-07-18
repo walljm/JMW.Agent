@@ -75,6 +75,12 @@ builder.Services.AddScoped<AgentConfigAssembler>();
 builder.Services.AddSingleton(new ReleaseManager(Environment.GetEnvironmentVariable("JMW_RELEASES_DIR")));
 builder.Services.AddHostedService<ReleaseRescanService>();
 
+// Holds the most recent on-demand log page an agent uploaded, per agent, in memory only —
+// never persisted to Postgres (docs/plans/agent-log-viewer.md §4.3). A lightweight sweep
+// evicts stale/overflow entries.
+builder.Services.AddSingleton<AgentLogCache>();
+builder.Services.AddHostedService<AgentLogCacheSweepService>();
+
 // Ingest pipeline services
 builder.Services.AddSingleton<MetricsRepository>();
 builder.Services.AddSingleton<FactRepository>();
@@ -422,6 +428,7 @@ RouteGroupBuilder agentGroup = v1.MapGroup("/agent");
 AgentRegistrationEndpoint.Map(agentGroup);
 HeartbeatEndpoint.Map(agentGroup);
 FactsEndpoint.Map(agentGroup);
+AgentLogsEndpoint.Map(agentGroup);
 AgentReleaseDownloadEndpoint.Map(agentGroup);
 
 // Admin endpoints — require admin role. The filter below makes the X-CSRF-TOKEN header the admin

@@ -571,6 +571,9 @@
                 <button class="tab" role="tab" id="tab-btn-settings" aria-controls="tab-settings"
                         onclick="switchTab('settings')">Settings
                 </button>
+                <button class="tab" role="tab" id="tab-btn-logs" aria-controls="tab-logs"
+                        onclick="switchTab('logs')">Logs
+                </button>
             </div>
 
             <!-- Tab: Host Collectors -->
@@ -844,6 +847,34 @@
                     <button class="btn" style="color:var(--crit)" onclick="clearAgentCache()">Clear agent cache</button>
                 </div>
             </div>
+
+            <!-- Tab: Logs -->
+            <div class="tab-panel" id="tab-logs" role="tabpanel" aria-labelledby="tab-btn-logs" hidden>
+                <p class="prose text-dim" style="margin-bottom:var(--space-3)">
+                    Pull this agent's recent console/journald output on demand — cache clears, collector and
+                    scanner failures, self-update activity. The agent uploads a page on its
+                    <strong>next heartbeat</strong> (up to its heartbeat interval away), so this is not instant.
+                    Nothing is stored server-side: the text is held in memory only and expires shortly after.
+                </p>
+                <div class="toolbar" style="gap:var(--space-2);align-items:center;flex-wrap:wrap">
+                    <button class="btn btn-primary" id="logsFetchBtn" onclick="fetchLogs()">Fetch logs</button>
+                    <label for="logsLines" class="text-dim" style="margin-left:var(--space-2)">Lines</label>
+                    <select class="input" id="logsLines" style="width:auto">
+                        <option value="200">200</option>
+                        <option value="500" selected>500</option>
+                        <option value="1000">1000</option>
+                    </select>
+                    <button class="btn btn-sm" id="logsCopyBtn" onclick="copyLogs()" hidden>Copy</button>
+                </div>
+                <p class="prose text-dim" id="logsStatus" style="margin-top:var(--space-2)"></p>
+                <pre id="logsView" class="mono"
+                     style="display:none;max-height:60vh;overflow:auto;white-space:pre-wrap;word-break:break-word;margin-top:var(--space-2)"></pre>
+                <div class="toolbar" id="logsOlderBar" style="margin-top:var(--space-2)" hidden>
+                    <button class="btn btn-sm" id="logsOlderBtn" onclick="loadOlderLogs()">Load older (waits for next
+                        heartbeat)
+                    </button>
+                </div>
+            </div>
         </div>
         </div>
     }
@@ -919,11 +950,12 @@
     <script>
         const CSRF = '@Model.AntiforgeryToken';
         const AGENT_ID = '@Model.AgentId';
+        const HEARTBEAT_SECS = @Model.HeartbeatIntervalSecs;
         let targetEditId = null;
 
         // ── Two-level navigation: Overview (monitoring) vs Configuration ────────────
 
-        const CONFIG_TABS = ['collectors', 'scanners', 'targets', 'settings'];
+        const CONFIG_TABS = ['collectors', 'scanners', 'targets', 'settings', 'logs'];
 
         // Accepts either the mode name 'overview' or a config sub-tab name. 'activity' is the
         // legacy name for what is now the Overview, so old ?tab=activity links still resolve.
@@ -1143,6 +1175,127 @@
                 return;
             }
             toast('Cache clear requested — takes effect on the agent\'s next heartbeat.');
+        }
+
+        // ── On-demand log viewer ────────────────────────────────────────────────────
+        // The agent has no inbound channel (it's typically behind NAT), so a log pull is a request
+        // the agent picks up on its next heartbeat and uploads once. We POST a request, then poll a
+        // short-lived GET until a page whose requested_at matches the one we asked for lands in the
+        // server's in-memory cache. "Load older" is the same round trip with a paging token — not an
+        // instant client-side flip (docs/plans/agent-log-viewer.md §4.2).
+
+        let logsExpectedAt = null;   // requested_at we're currently waiting on
+        let logsAppend = false;      // true when the outstanding request is a "load older" page
+        let logsNextBefore = null;   // paging token for the next older page
+        let logsPollTimer = null;
+        let logsGiveUpAt = 0;
+
+        function logsSourceLabel(source) {
+            return source === 'journald'
+                ? 'journald'
+                : 'in-process buffer (no journald on this host)';
+        }
+
+        function setLogsBusy(busy) {
+            document.getElementById('logsFetchBtn').disabled = busy;
+            document.getElementById('logsOlderBtn').disabled = busy;
+        }
+
+        async function requestLogsPage(before) {
+            const lines = parseInt(document.getElementById('logsLines').value, 10);
+            const resp = await fetch('/api/v1/admin/agents/' + AGENT_ID + '/request-logs', {
+                method: 'POST',
+                headers: {'X-CSRF-TOKEN': CSRF, 'Content-Type': 'application/json'},
+                body: JSON.stringify({lines: lines, before: before ?? null}),
+            });
+            if (!resp.ok) {
+                toast('Request failed (' + resp.status + ').');
+                return false;
+            }
+            const data = await resp.json();
+            logsExpectedAt = data.requested_at;
+            logsGiveUpAt = Date.now() + Math.max(60, HEARTBEAT_SECS * 2 + 15) * 1000;
+            document.getElementById('logsStatus').textContent =
+                'Requested — waiting for the agent\'s next heartbeat (up to ' + HEARTBEAT_SECS + 's)…';
+            startLogsPoll();
+            return true;
+        }
+
+        async function fetchLogs() {
+            logsAppend = false;
+            setLogsBusy(true);
+            const ok = await requestLogsPage(null);
+            if (!ok) setLogsBusy(false);
+        }
+
+        async function loadOlderLogs() {
+            if (logsNextBefore == null) return;
+            logsAppend = true;
+            setLogsBusy(true);
+            const ok = await requestLogsPage(logsNextBefore);
+            if (!ok) setLogsBusy(false);
+        }
+
+        function startLogsPoll() {
+            if (logsPollTimer) clearInterval(logsPollTimer);
+            logsPollTimer = setInterval(pollLogs, 5000);
+        }
+
+        function stopLogsPoll() {
+            if (logsPollTimer) clearInterval(logsPollTimer);
+            logsPollTimer = null;
+        }
+
+        async function pollLogs() {
+            if (Date.now() > logsGiveUpAt) {
+                stopLogsPoll();
+                setLogsBusy(false);
+                document.getElementById('logsStatus').textContent =
+                    'No response yet — is the agent online? It applies this on its next heartbeat. You can try again.';
+                return;
+            }
+            let data;
+            try {
+                const resp = await fetch('/api/v1/admin/agents/' + AGENT_ID + '/logs');
+                if (!resp.ok) return;
+                data = await resp.json();
+            } catch { return; }
+            if (data.status !== 'ready' || logsExpectedAt == null) return;
+            if (new Date(data.requested_at) < new Date(logsExpectedAt)) return; // stale page
+
+            stopLogsPoll();
+            setLogsBusy(false);
+            renderLogsPage(data);
+        }
+
+        function renderLogsPage(data) {
+            const view = document.getElementById('logsView');
+            view.style.display = 'block';
+            if (logsAppend && view.textContent.length > 0) {
+                view.textContent += '\n' + data.text;
+            } else {
+                view.textContent = data.text;
+            }
+            document.getElementById('logsCopyBtn').hidden = false;
+
+            logsNextBefore = data.next_before_token;
+            const older = logsNextBefore != null;
+            document.getElementById('logsOlderBar').hidden = !older;
+
+            const received = Math.max(0, Math.round((Date.now() - new Date(data.received_at)) / 1000));
+            let status = 'Received ' + received + 's ago from ' + logsSourceLabel(data.source);
+            if (data.truncated) status += ' · truncated (byte cap)';
+            if (!older) status += ' · no earlier logs available (may be outside the in-memory buffer\'s retention)';
+            document.getElementById('logsStatus').textContent = status;
+        }
+
+        async function copyLogs() {
+            try {
+                await navigator.clipboard.writeText(document.getElementById('logsView').textContent);
+                toast('Logs copied to clipboard.');
+            } catch {
+                toast('Copy failed — select and copy manually.');
+            }
         }
 
         // ── Collectors & scanners (shared endpoints, keyed by name) ─────────────────

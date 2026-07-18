@@ -175,7 +175,8 @@ public static class AgentConfigApi
     )
     {
         List<(Guid AgentId, string Hostname, string Status, int HeartbeatIntervalSecs, int DiscoveryIntervalSecs, int
-            InventoryIntervalSecs, JsonElement CollectorsConfig, DateTimeOffset? ClearTrackersRequestedAt)>
+            InventoryIntervalSecs, JsonElement CollectorsConfig, DateTimeOffset? ClearTrackersRequestedAt,
+            DateTimeOffset? LogsRequestedAt, int? LogsRequestedLines, string? LogsRequestedBefore)>
             configRows = await conn.GetAgentConfigAsync(agentId, ct).ToListAsync(ct);
         if (configRows.Count == 0)
         {

@@ -118,5 +118,19 @@ public sealed class HttpAgentServerClient : IAgentServerClient, IDisposable
          ?? throw new InvalidOperationException("Empty facts response from server.");
     }
 
+    public async Task PostLogsAsync(
+        string apiKey,
+        AgentLogUploadRequest request,
+        CancellationToken ct
+    )
+    {
+        using HttpRequestMessage req = new(HttpMethod.Post, "api/v1/agent/logs");
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        req.Content = JsonContent.Create(request, options: JsonOpts);
+
+        HttpResponseMessage response = await _http.SendAsync(req, ct);
+        response.EnsureSuccessStatusCode();
+    }
+
     public void Dispose() => _http.Dispose();
 }

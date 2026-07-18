@@ -47,6 +47,10 @@ public sealed class Agent
     private string? _agentId;
     private string? _apiKey;
     private DateTimeOffset? _lastTrackersClearedAt;
+    private DateTimeOffset? _lastLogsUploadedAt;
+
+    // Serves on-demand log pulls (journalctl on native systemd, else the in-process ring buffer).
+    private readonly AgentLogCollector _logCollector = new(AgentLog.Buffer);
 
     // ── Server-delivered config (from the heartbeat config block) ─────────────
     // Null until the first heartbeat returns a config block. The file-based config
@@ -219,6 +223,12 @@ public sealed class Agent
                 // private-CA HTTPS endpoints. Applied every cycle so CA rotation propagates.
                 CaTrust.Update(config.TrustedCaCertificates);
                 ApplyClearTrackersRequestIfNeeded(config.ClearTrackersRequestedAt);
+                await ApplyLogsRequestIfNeeded(
+                    config.LogsRequestedAt,
+                    config.LogsRequestedLines,
+                    config.LogsRequestedBefore,
+                    ct
+                );
             }
 
             if (response.Update is { } update)
@@ -1014,6 +1024,7 @@ public sealed class Agent
     private string AgentIdPath => Path.Combine(_stateDir, "agent-id");
     private string ApiKeyPath => Path.Combine(_stateDir, "api-key");
     private string ClearTrackersMarkerPath => Path.Combine(_stateDir, "trackers-cleared-at");
+    private string LogsUploadedMarkerPath => Path.Combine(_stateDir, "logs-uploaded-at");
 
     private void LoadState()
     {
@@ -1031,6 +1042,12 @@ public sealed class Agent
          && DateTimeOffset.TryParse(File.ReadAllText(ClearTrackersMarkerPath).Trim(), out DateTimeOffset marker))
         {
             _lastTrackersClearedAt = marker;
+        }
+
+        if (File.Exists(LogsUploadedMarkerPath)
+         && DateTimeOffset.TryParse(File.ReadAllText(LogsUploadedMarkerPath).Trim(), out DateTimeOffset logsMarker))
+        {
+            _lastLogsUploadedAt = logsMarker;
         }
     }
 
@@ -1058,6 +1075,57 @@ public sealed class Agent
         _lastTrackersClearedAt = requested;
         File.WriteAllText(ClearTrackersMarkerPath, requested.ToString("O"));
         AgentMessages.TrackersCleared(_logger, requested);
+    }
+
+    /// <summary>
+    /// When the server requests a log pull newer than the last one this agent acted on, captures a
+    /// page of recent console/journald output (§4.1) and uploads it to the server's in-memory cache.
+    /// The local marker is advanced regardless of upload success — a server hiccup should not make
+    /// the agent re-capture and retry-storm on every subsequent heartbeat; the admin can just click
+    /// again. Honors the requested page size and paging token (docs/plans/agent-log-viewer.md §4.2).
+    /// </summary>
+    private async Task ApplyLogsRequestIfNeeded(
+        DateTimeOffset? requestedAt,
+        int? requestedLines,
+        string? before,
+        CancellationToken ct
+    )
+    {
+        if (requestedAt is not { } requested
+         || (_lastLogsUploadedAt is { } last && requested <= last))
+        {
+            return;
+        }
+
+        _lastLogsUploadedAt = requested;
+        File.WriteAllText(LogsUploadedMarkerPath, requested.ToString("O"));
+
+        try
+        {
+            int lines = requestedLines is { } n && n > 0 ? n : 500;
+            AgentLogCollector.LogPage page = await _logCollector.CaptureAsync(lines, before, ct);
+
+            await _server.PostLogsAsync(
+                ApiKey,
+                new AgentLogUploadRequest(
+                    AgentId: Guid.Parse(AgentId),
+                    RequestedAt: requested,
+                    Source: page.Source,
+                    Truncated: page.Truncated,
+                    Text: page.Text,
+                    NextBeforeToken: page.NextBeforeToken
+                ),
+                ct
+            );
+
+            AgentMessages.LogsUploaded(_logger, page.Source, requested);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            // Non-fatal — the marker is already advanced, so we won't retry-storm.
+            AgentMessages.LogsUploadFailed(_logger, ex);
+        }
     }
 
     private void SaveAgentId() =>
@@ -1569,6 +1637,22 @@ internal static partial class AgentMessages
         Message = "Server requested a cache clear ({RequestedAt}) — wiped local delta-tracker files."
     )]
     public static partial void TrackersCleared(ILogger logger, DateTimeOffset requestedAt);
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Server requested logs ({RequestedAt}) — uploaded a page from {Source}."
+    )]
+    public static partial void LogsUploaded(ILogger logger, string source, DateTimeOffset requestedAt);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Log upload failed.")]
+    public static partial void LogsUploadFailed(ILogger logger, Exception ex);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "UpdatePublicKey.Value is empty. This binary cannot receive self-updates. "
+                + "Rebuild with a real signing key before deploying to production."
+    )]
+    public static partial void UpdatePublicKeyMissing(ILogger logger);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Update offered: {Version}.")]
     public static partial void UpdateOffered(ILogger logger, string version);

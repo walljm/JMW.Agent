@@ -2,6 +2,7 @@ using JMW.Discovery.Server.Api;
 using JMW.Discovery.Server.Audit;
 using JMW.Discovery.Server.Auth;
 using JMW.Discovery.Server.Data;
+using JMW.Discovery.Server.Infrastructure;
 using JMW.Discovery.Server.Queries;
 using JMW.Discovery.Server.Reporting;
 
@@ -58,9 +59,21 @@ public static class AgentsApi
         app.MapPost("/agents/{id}/clear-cache", ClearCache)
             .RequireAuthorization(RbacPolicies.Admin);
 
+        app.MapPost("/agents/{id}/request-logs", RequestLogs)
+            .RequireAuthorization(RbacPolicies.Admin);
+
+        app.MapGet("/agents/{id}/logs", GetLogs)
+            .RequireAuthorization(RbacPolicies.Admin);
+
         app.MapDelete("/agents/{id}", DeleteAgent)
             .RequireAuthorization(RbacPolicies.Admin);
     }
+
+    /// <summary>Page sizes the admin may request. Discrete, small — this is a manual, occasional
+    /// pull, not a bulk export (docs/plans/agent-log-viewer.md §4.1).</summary>
+    public static readonly IReadOnlySet<int> AllowedLogLines = new HashSet<int> { 200, 500, 1000 };
+
+    public const int DefaultLogLines = 500;
 
     private static Task<IResult> ListAgents(
         NpgsqlDataSource db,
@@ -303,6 +316,92 @@ public static class AgentsApi
         );
     }
 
+    /// <summary>
+    /// Requests that the agent upload a page of its recent console/journald log output on its
+    /// next heartbeat, for on-demand viewing in the Fleet UI. Only a request timestamp + page
+    /// size + paging token are persisted (agents columns) — the log text itself is never written
+    /// to the database, only cached in memory once uploaded (docs/plans/agent-log-viewer.md).
+    /// Takes effect on the agent's next heartbeat; there is no synchronous confirmation.
+    /// </summary>
+    private static async Task<IResult> RequestLogs(
+        string id,
+        RequestLogsRequest request,
+        HttpContext context,
+        NpgsqlDataSource db,
+        AuditLog audit,
+        CancellationToken ct
+    )
+    {
+        if (!Guid.TryParse(id, out Guid agentGuid))
+        {
+            return ApiError.InvalidId("Invalid agent id.");
+        }
+
+        int lines = request.Lines ?? DefaultLogLines;
+        if (!AllowedLogLines.Contains(lines))
+        {
+            return ApiError.InvalidRequest("lines must be one of 200, 500, or 1000.");
+        }
+
+        string? before = string.IsNullOrWhiteSpace(request.Before) ? null : request.Before;
+
+        await using NpgsqlConnection conn = await db.OpenConnectionAsync(ct);
+
+        (Guid AgentId, DateTimeOffset LogsRequestedAt) result =
+            await conn.RequestLogsAsync(agentGuid, lines, before, ct).FirstOrDefaultAsync(ct);
+
+        if (result == default)
+        {
+            return ApiError.NotFound("Agent not found.");
+        }
+
+        string actor = context.User.Identity?.Name ?? "admin";
+        await audit.WriteAsync($"user:{actor}", "agent.request_logs", id, ct: ct);
+
+        return Results.Ok(
+            new
+            {
+                status = "requested",
+                requested_at = result.LogsRequestedAt,
+            }
+        );
+    }
+
+    /// <summary>
+    /// Returns the most recent log page this agent has uploaded, from the in-memory
+    /// <see cref="AgentLogCache" /> (never the database). Returns <c>status: "pending"</c> when no
+    /// page has arrived yet — the UI polls this after issuing a request until a page whose
+    /// <c>requested_at</c> matches (or is newer than) the one it asked for shows up.
+    /// </summary>
+    private static IResult GetLogs(
+        string id,
+        AgentLogCache cache
+    )
+    {
+        if (!Guid.TryParse(id, out Guid agentGuid))
+        {
+            return ApiError.InvalidId("Invalid agent id.");
+        }
+
+        if (!cache.TryGet(agentGuid, out AgentLogBundle? bundle) || bundle is null)
+        {
+            return Results.Ok(new { status = "pending" });
+        }
+
+        return Results.Ok(
+            new
+            {
+                status = "ready",
+                requested_at = bundle.RequestedAt,
+                received_at = bundle.ReceivedAt,
+                source = bundle.Source,
+                truncated = bundle.Truncated,
+                text = bundle.Text,
+                next_before_token = bundle.NextBeforeToken,
+            }
+        );
+    }
+
     private static async Task<IResult> DisableAgent(
         string id,
         HttpContext context,
@@ -454,3 +553,8 @@ public sealed record AgentListItem(
 );
 
 public sealed record SetZoneRequest(string? Zone);
+
+/// <summary>Body for POST /agents/{id}/request-logs. <c>Lines</c> is the page size (200/500/1000,
+/// default 500 when null); <c>Before</c> is the opaque paging token from a prior page's
+/// <c>next_before_token</c>, or null for the newest page.</summary>
+public sealed record RequestLogsRequest(int? Lines, string? Before);

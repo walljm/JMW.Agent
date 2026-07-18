@@ -17,5 +17,13 @@ internal static class AgentLog
         set => _factory = value;
     }
 
+    /// <summary>
+    /// Process-wide ring of recent formatted log lines, shared between the
+    /// <see cref="RingBufferLoggerProvider"/> (writes) that Program.cs registers on the logging
+    /// pipeline and the <see cref="AgentLogCollector"/> (reads) that serves on-demand log pulls.
+    /// The fallback capture source on every non-systemd host (docs/plans/agent-log-viewer.md §4.1).
+    /// </summary>
+    public static LogRingBuffer Buffer { get; } = new();
+
     public static ILogger<T> CreateLogger<T>() => _factory.CreateLogger<T>();
 }

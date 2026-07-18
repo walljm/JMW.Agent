@@ -12,9 +12,25 @@ Console.CancelKeyPress += (_, e) =>
     cts.Cancel();
 };
 
+// On a native systemd install, AddSystemdConsole prefixes each line with the <N> syslog level
+// journald expects, so `journalctl -u jmw-agent -p err`/`-p warning` filters correctly instead of
+// returning everything or nothing — which directly improves the on-demand log viewer's journald
+// path (docs/plans/agent-log-viewer.md §7). Everywhere else (Docker, dev, macOS, Windows) plain
+// AddSimpleConsole is right. The always-on ring buffer provider is the log viewer's fallback
+// capture source on non-systemd hosts.
+bool underSystemd = OperatingSystem.IsLinux() && Directory.Exists("/run/systemd/system");
 AgentLog.Factory = LoggerFactory.Create(b =>
     {
-        b.AddConsole();
+        if (underSystemd)
+        {
+            b.AddSystemdConsole();
+        }
+        else
+        {
+            b.AddSimpleConsole();
+        }
+
+        b.AddProvider(new RingBufferLoggerProvider(AgentLog.Buffer));
         b.SetMinimumLevel(LogLevel.Information);
     }
 );
@@ -28,10 +44,7 @@ string stateDir = Environment.GetEnvironmentVariable("JMW_AGENT_STATE_DIR")
 // update attempt will be rejected at signature-verification time.
 if (string.IsNullOrWhiteSpace(JMW.Discovery.Agent.Collection.UpdatePublicKey.Value))
 {
-    Console.Error.WriteLine(
-        "[WARN] UpdatePublicKey.Value is empty. This binary cannot receive self-updates. "
-      + "Rebuild with a real signing key before deploying to production."
-    );
+    AgentMessages.UpdatePublicKeyMissing(AgentLog.CreateLogger<Agent>());
 }
 
 Agent agent = new AgentBuilder()
