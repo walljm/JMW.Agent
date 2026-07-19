@@ -335,9 +335,9 @@ public static class DevicesApi
             }
         }
 
-        // Create the collection target.
+        // Create the collection target (address-keyed; the operator promotes by IP/hostname here).
         TargetIdResult targetRow = await conn
-            .InsertTargetAsync(agentId, body.TargetAddress, body.Protocol!, credentialId, null, ct)
+            .InsertTargetAsync(agentId, body.TargetAddress, body.Protocol!, credentialId, null, "address", ct)
             .FirstOrDefaultAsync(ct);
 
         // Flip management_status to managed.

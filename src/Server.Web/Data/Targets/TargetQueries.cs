@@ -15,7 +15,8 @@ public static partial class TargetQueries
     [DatabaseCommand]
     public static partial
         IAsyncEnumerable<(Guid TargetId, Guid AgentId, string Endpoint, string CollectorType, Guid? CredentialId,
-            string? Label, bool Enabled, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt)> ListTargetsAsync(
+            string? Label, bool Enabled, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string EndpointKind)>
+        ListTargetsAsync(
             this NpgsqlConnection connection,
             Guid? agentId,
             DateTimeOffset? afterCreatedAt,
@@ -30,7 +31,7 @@ public static partial class TargetQueries
     [DatabaseCommand]
     public static partial
         IAsyncEnumerable<(Guid TargetId, string Endpoint, string CollectorType, Guid? CredentialId, string? Label,
-            bool Enabled)>
+            bool Enabled, string EndpointKind)>
         ListTargetsForAgentAsync(
             this NpgsqlConnection connection,
             Guid agentId,
@@ -44,7 +45,7 @@ public static partial class TargetQueries
     [DatabaseCommand]
     public static partial
         IAsyncEnumerable<(Guid TargetId, string Endpoint, string CollectorType, Guid? CredentialId, string? Label,
-            bool Enabled)>
+            bool Enabled, string EndpointKind)>
         ListAgentTargetsDetailAsync(
             this NpgsqlConnection connection,
             Guid agentId,
@@ -60,6 +61,7 @@ public static partial class TargetQueries
         string collectorType,
         Guid? credentialId,
         string? label,
+        string endpointKind,
         CancellationToken cancellationToken
     );
 
@@ -75,6 +77,7 @@ public static partial class TargetQueries
         string collectorType,
         Guid? credentialId,
         string? label,
+        string endpointKind,
         CancellationToken cancellationToken
     );
 

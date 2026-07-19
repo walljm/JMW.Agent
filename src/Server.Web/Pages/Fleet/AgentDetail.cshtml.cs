@@ -1,5 +1,6 @@
 using System.Text.Json;
 
+using JMW.Discovery.Core;
 using JMW.Discovery.Server.Admin;
 using JMW.Discovery.Server.Agents;
 using JMW.Discovery.Server.Auth;
@@ -289,19 +290,41 @@ public sealed class AgentDetailModel : PageModel
         Dictionary<Guid, string> credNames = credRows.ToDictionary(c => c.CredentialId, c => c.Name);
 
         // Targets (enabled + disabled); credential names resolved from the lookup.
-        List<(Guid TargetId, string Endpoint, string CollectorType, Guid? CredentialId, string? Label, bool Enabled)>
+        List<(Guid TargetId, string Endpoint, string CollectorType, Guid? CredentialId, string? Label, bool Enabled,
+                string EndpointKind)>
             targetRows = await conn.ListAgentTargetsDetailAsync(id, ct).ToListAsync(ct);
-        Targets = targetRows.Select(t => new TargetRow(
-                    TargetId: t.TargetId.ToString(),
-                    Endpoint: t.Endpoint,
-                    CollectorType: t.CollectorType,
-                    CredentialId: t.CredentialId?.ToString(),
-                    CredentialName: t.CredentialId is { } cid && credNames.TryGetValue(cid, out string? n) ? n : null,
-                    Label: t.Label,
-                    Enabled: t.Enabled
-                )
-            )
-            .ToList();
+        List<TargetRow> targets = new(targetRows.Count);
+        foreach ((Guid TargetId, string Endpoint, string CollectorType, Guid? CredentialId, string? Label, bool Enabled,
+            string EndpointKind) t in targetRows)
+        {
+            // A mac-kind target stores the MAC in Endpoint; resolve it to the current IP for
+            // display so the operator can see whether the target will collect (and at which
+            // address). DisplayEndpoint is the colonized MAC for mac targets, the address as-is
+            // otherwise; ResolvedIp is null when the device hasn't been seen on this LAN yet.
+            string? resolvedIp = null;
+            string displayEndpoint = t.Endpoint;
+            if (t.EndpointKind == "mac")
+            {
+                displayEndpoint = MacFormat.Normalize(t.Endpoint);
+                ResolvedIpResult r = await conn.GetIpForMacAsync(t.Endpoint, id, ct).FirstOrDefaultAsync(ct);
+                resolvedIp = r.Ip;
+            }
+
+            targets.Add(new TargetRow(
+                TargetId: t.TargetId.ToString(),
+                Endpoint: t.Endpoint,
+                DisplayEndpoint: displayEndpoint,
+                EndpointKind: t.EndpointKind,
+                ResolvedIp: resolvedIp,
+                CollectorType: t.CollectorType,
+                CredentialId: t.CredentialId?.ToString(),
+                CredentialName: t.CredentialId is { } cid && credNames.TryGetValue(cid, out string? n) ? n : null,
+                Label: t.Label,
+                Enabled: t.Enabled
+            ));
+        }
+
+        Targets = targets;
 
         // Recent cycle history — date range and errors-only filter via query string.
         DateTimeOffset? sinceUtc = DateTimeOffset.TryParse(ActivitySince, out DateTimeOffset since)
@@ -649,6 +672,9 @@ public sealed class AgentDetailModel : PageModel
     public sealed record TargetRow(
         string TargetId,
         string Endpoint,
+        string DisplayEndpoint,
+        string EndpointKind,
+        string? ResolvedIp,
         string CollectorType,
         string? CredentialId,
         string? CredentialName,

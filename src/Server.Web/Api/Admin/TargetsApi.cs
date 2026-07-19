@@ -1,5 +1,6 @@
 using System.Text;
 
+using JMW.Discovery.Core;
 using JMW.Discovery.Server.Api;
 using JMW.Discovery.Server.Audit;
 using JMW.Discovery.Server.Auth;
@@ -38,6 +39,17 @@ public static class TargetsApi
         {
             "technitium-dns",
             "home-assistant",
+        };
+
+    // How a target's endpoint is interpreted: 'address' = the endpoint string is the host/IP/URL
+    // used as-is; 'mac' = the endpoint holds a canonical bare-hex MAC the server resolves to the
+    // device's current IP at config-assembly time. Must stay in sync with the targets_endpoint_kind
+    // CHECK constraint and the UI toggle.
+    private static readonly HashSet<string> ValidEndpointKinds =
+        new(StringComparer.Ordinal)
+        {
+            "address",
+            "mac",
         };
 
     public static void Map(IEndpointRouteBuilder app)
@@ -95,7 +107,7 @@ public static class TargetsApi
         await using NpgsqlConnection conn = await db.OpenConnectionAsync(ct);
 
         List<(Guid TargetId, Guid AgentId, string Endpoint, string CollectorType, Guid? CredentialId, string? Label,
-            bool Enabled, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt)> rows = await conn
+            bool Enabled, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string EndpointKind)> rows = await conn
             .ListTargetsAsync(agentId, afterCreatedAt, afterTargetId, limit + 1, ct)
             .ToListAsync(ct);
 
@@ -104,7 +116,8 @@ public static class TargetsApi
         {
             rows.RemoveAt(rows.Count - 1);
             (Guid TargetId, Guid AgentId, string Endpoint, string CollectorType, Guid? CredentialId, string? Label,
-                bool Enabled, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt) last = rows[rows.Count - 1];
+                bool Enabled, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string EndpointKind) last =
+                    rows[rows.Count - 1];
             nextCursor = EncodeCursor(last.CreatedAt, last.TargetId);
         }
 
@@ -116,6 +129,7 @@ public static class TargetsApi
                     CredentialId: r.CredentialId?.ToString(),
                     Label: r.Label,
                     Enabled: r.Enabled,
+                    EndpointKind: r.EndpointKind,
                     CreatedAt: r.CreatedAt.UtcDateTime,
                     UpdatedAt: r.UpdatedAt.UtcDateTime
                 )
@@ -182,9 +196,10 @@ public static class TargetsApi
             return Error("invalid_collector_type", $"Unknown collector type '{request.CollectorType}'.", 422);
         }
 
-        if (!TryNormalizeEndpoint(request.CollectorType, request.Endpoint, out string endpoint))
+        if (!TryNormalizeTarget(request.CollectorType, request.EndpointKind, request.Endpoint,
+                out string endpointKind, out string endpoint, out string endpointError))
         {
-            return Error("invalid_endpoint", EndpointErrorMessage(request.CollectorType), 422);
+            return Error("invalid_endpoint", endpointError, 422);
         }
 
         Guid? credentialId = null;
@@ -202,7 +217,7 @@ public static class TargetsApi
 
         await using NpgsqlConnection conn = await db.OpenConnectionAsync(ct);
         TargetIdResult result = await conn
-            .InsertTargetAsync(agentId, endpoint, request.CollectorType, credentialId, label, ct)
+            .InsertTargetAsync(agentId, endpoint, request.CollectorType, credentialId, label, endpointKind, ct)
             .FirstOrDefaultAsync(ct);
 
         if (result == default)
@@ -219,6 +234,7 @@ public static class TargetsApi
                 target_id = result.TargetId.ToString(),
                 agent_id = request.AgentId,
                 endpoint,
+                endpoint_kind = endpointKind,
                 collector_type = request.CollectorType,
                 credential_id = credentialId?.ToString(),
                 label,
@@ -246,9 +262,10 @@ public static class TargetsApi
             return Error("invalid_collector_type", $"Unknown collector type '{request.CollectorType}'.", 422);
         }
 
-        if (!TryNormalizeEndpoint(request.CollectorType, request.Endpoint, out string endpoint))
+        if (!TryNormalizeTarget(request.CollectorType, request.EndpointKind, request.Endpoint,
+                out string endpointKind, out string endpoint, out string endpointError))
         {
-            return Error("invalid_endpoint", EndpointErrorMessage(request.CollectorType), 422);
+            return Error("invalid_endpoint", endpointError, 422);
         }
 
         Guid? credentialId = null;
@@ -266,7 +283,7 @@ public static class TargetsApi
 
         await using NpgsqlConnection conn = await db.OpenConnectionAsync(ct);
         TargetIdResult result = await conn
-            .UpdateTargetAsync(targetId, endpoint, request.CollectorType, credentialId, label, ct)
+            .UpdateTargetAsync(targetId, endpoint, request.CollectorType, credentialId, label, endpointKind, ct)
             .FirstOrDefaultAsync(ct);
 
         if (result == default)
@@ -282,6 +299,7 @@ public static class TargetsApi
             {
                 target_id = id,
                 endpoint,
+                endpoint_kind = endpointKind,
                 collector_type = request.CollectorType,
                 credential_id = credentialId?.ToString(),
                 label,
@@ -350,6 +368,60 @@ public static class TargetsApi
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Validates and normalizes the (endpoint_kind, endpoint) pair for a target. A blank/absent
+    /// kind defaults to <c>address</c> (the pre-MAC behavior). For <c>mac</c> the endpoint is
+    /// canonicalized to bare 12-hex via <see cref="MacFormat.ToBareHex" />, and MAC targets are
+    /// rejected for URL-style collectors (their endpoint is a full service URL that can't be
+    /// derived from a MAC). For <c>address</c> the existing per-collector-type rules apply.
+    /// </summary>
+    private static bool TryNormalizeTarget(
+        string collectorType,
+        string? rawKind,
+        string? rawEndpoint,
+        out string endpointKind,
+        out string endpoint,
+        out string errorMessage
+    )
+    {
+        endpoint = string.Empty;
+        errorMessage = string.Empty;
+        endpointKind = string.IsNullOrWhiteSpace(rawKind) ? "address" : rawKind.Trim();
+
+        if (!ValidEndpointKinds.Contains(endpointKind))
+        {
+            errorMessage = $"Unknown endpoint kind '{endpointKind}'.";
+            return false;
+        }
+
+        if (endpointKind == "mac")
+        {
+            if (UrlStyleCollectorTypes.Contains(collectorType))
+            {
+                errorMessage =
+                    $"Collector type '{collectorType}' addresses a service URL and can't target a MAC address.";
+                return false;
+            }
+
+            if (MacFormat.ToBareHex(rawEndpoint) is not { } bare)
+            {
+                errorMessage = "A valid MAC address is required (e.g. 70:3a:cb:ea:a7:59).";
+                return false;
+            }
+
+            endpoint = bare;
+            return true;
+        }
+
+        if (!TryNormalizeEndpoint(collectorType, rawEndpoint, out endpoint))
+        {
+            errorMessage = EndpointErrorMessage(collectorType);
+            return false;
+        }
+
+        return true;
+    }
 
     /// <summary>
     /// Validates the endpoint for the given collector type: an absolute http(s) URL for
@@ -444,6 +516,7 @@ public sealed record TargetListItem(
     string? CredentialId,
     string? Label,
     bool Enabled,
+    string EndpointKind,
     DateTime CreatedAt,
     DateTime UpdatedAt
 );
@@ -461,7 +534,14 @@ public sealed record CreateTargetRequest(
     string CollectorType,
     string Endpoint,
     string? CredentialId,
-    string? Label
+    string? Label,
+    string? EndpointKind = null
 );
 
-public sealed record UpdateTargetRequest(string CollectorType, string Endpoint, string? CredentialId, string? Label);
+public sealed record UpdateTargetRequest(
+    string CollectorType,
+    string Endpoint,
+    string? CredentialId,
+    string? Label,
+    string? EndpointKind = null
+);

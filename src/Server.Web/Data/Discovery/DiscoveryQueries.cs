@@ -135,6 +135,23 @@ public static partial class DiscoveryQueries
     );
 
     /// <summary>
+    /// Resolves a MAC (<paramref name="mac" />, canonical bare 12-hex lowercase) to its best
+    /// current IP on <paramref name="agentId" />'s LAN — from that agent's ARP cache, DHCP leases
+    /// (service-polled and local), and previously-discovered rows. Prefers IPv4 over IPv6, private
+    /// LAN over public, then the most recently seen address so it follows DHCP moves. Returns no
+    /// rows when the MAC has never been seen (the target then can't be resolved yet). Used to turn
+    /// a mac-kind target into a concrete endpoint at config-assembly time. Agent-scoping mirrors
+    /// <see cref="GetKnownMacsForIpAsync" /> (RFC1918 addresses are reused across independent LANs).
+    /// </summary>
+    [DatabaseCommand]
+    public static partial IAsyncEnumerable<ResolvedIpResult> GetIpForMacAsync(
+        this NpgsqlConnection connection,
+        string mac,
+        Guid? agentId,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
     /// Twin of <see cref="GetKnownMacsForIpAsync" /> that also resolves each candidate's OUI
     /// vendor (see GetKnownMacsWithVendorForIp.sql) — the second corroboration signal for the
     /// Home Assistant IP-join (docs/plans/ha-device-enrichment.md §5), cross-checked against

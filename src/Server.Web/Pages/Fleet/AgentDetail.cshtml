@@ -739,7 +739,16 @@
                         {
                             <tr id="target-row-@t.TargetId">
                                 <td>@(t.Label ?? "—")</td>
-                                <td class="mono">@t.Endpoint</td>
+                                <td class="mono">
+                                    @t.DisplayEndpoint
+                                    @if (t.EndpointKind == "mac")
+                                    {
+                                        <span class="tag" title="Resolved to the device's current IP each collection cycle">MAC</span>
+                                        <div class="text-dim" style="font-size:var(--fs-sm)">
+                                            @(t.ResolvedIp is { } rip ? $"→ {rip}" : "not seen on this network yet")
+                                        </div>
+                                    }
+                                </td>
                                 <td>@t.CollectorType</td>
                                 <td>@(t.CredentialName ?? "—")</td>
                                 <td>
@@ -751,10 +760,14 @@
                                 </td>
                                 <td>
                                     @{
-                                        // Device-scanner stats key `target` by endpoint; service stats key
-                                        // it by label-or-endpoint — try both before giving up.
+                                        // Device-scanner stats key `target` by the address the agent connected
+                                        // to (the resolved IP for a mac target); service stats key it by
+                                        // label-or-endpoint — try each before giving up.
                                         AgentDetailModel.CollectorHealthRow? th = null;
-                                        if (!Model.TargetHealth.TryGetValue((t.Endpoint, t.CollectorType), out th)
+                                        string healthKey = t.EndpointKind == "mac" && t.ResolvedIp is { } rIp
+                                            ? rIp
+                                            : t.Endpoint;
+                                        if (!Model.TargetHealth.TryGetValue((healthKey, t.CollectorType), out th)
                                             && t.Label is { } tLabel)
                                         {
                                             Model.TargetHealth.TryGetValue((tLabel, t.CollectorType), out th);
@@ -773,11 +786,11 @@
                                 </td>
                                 <td style="display:flex;gap:var(--space-2)">
                                     <button class="btn btn-sm"
-                                            onclick="openTarget('@t.TargetId','@t.Endpoint','@t.CollectorType','@(t.CredentialId ?? "")','@(t.Label ?? "")')">
+                                            onclick="openTarget('@t.TargetId','@t.DisplayEndpoint','@t.EndpointKind','@t.CollectorType','@(t.CredentialId ?? "")','@(t.Label ?? "")')">
                                         Edit
                                     </button>
                                     <button class="btn btn-sm" style="color:var(--crit)"
-                                            onclick="deleteTarget('@t.TargetId','@(t.Label ?? t.Endpoint)')">Delete
+                                            onclick="deleteTarget('@t.TargetId','@(t.Label ?? t.DisplayEndpoint)')">Delete
                                     </button>
                                 </td>
                             </tr>
@@ -786,7 +799,7 @@
                     </table>
                 }
                 <div class="toolbar" style="margin-top:var(--space-3)">
-                    <button class="btn" onclick="openTarget(null,'','ssh','','')">+ Add Target</button>
+                    <button class="btn" onclick="openTarget(null,'','address','ssh','','')">+ Add Target</button>
                     <button class="btn" onclick="openTargetCandidates()">Discover targets…</button>
                 </div>
             </div>
@@ -903,7 +916,14 @@
                     <option value="home-assistant">home-assistant</option>
                 </select>
             </div>
-            <div class="field"><label for="tAddr">Endpoint</label><input class="input" id="tAddr"
+            <div class="field">
+                <label for="tKind">Address by</label>
+                <select class="input" id="tKind" onchange="syncTargetTypeHint()">
+                    <option value="address">IP / hostname</option>
+                    <option value="mac">MAC address</option>
+                </select>
+            </div>
+            <div class="field"><label for="tAddr" id="tAddrLabel">Endpoint</label><input class="input" id="tAddr"
                                                                         placeholder="10.0.0.x or hostname">
                 <span class="help" id="tAddrHelp"></span></div>
             <div class="field">
@@ -1344,11 +1364,12 @@
             'home-assistant': 'http://10.0.0.x:8123',
         };
 
-        function openTarget(id, endpoint, collectorType, credId, label) {
+        function openTarget(id, endpoint, kind, collectorType, credId, label) {
             targetEditId = id;
             document.getElementById('tTitle').textContent = id ? 'Edit Target' : 'Add Target';
             document.getElementById('tLabel').value = label || '';
             document.getElementById('tType').value = collectorType;
+            document.getElementById('tKind').value = kind || 'address';
             document.getElementById('tAddr').value = endpoint;
             document.getElementById('tCred').value = credId;
             syncTargetTypeHint();
@@ -1356,17 +1377,37 @@
             document.getElementById('tAddr').focus();
         }
 
-        // Endpoint helper text/placeholder flips between "IP or hostname" and "URL" based on
-        // the selected collector type. Google Wifi targets address the AP's local /api/v1
-        // endpoint directly — no credential needed.
+        // Endpoint helper text/placeholder flips with the "Address by" kind and the collector
+        // type. A MAC target resolves to the device's current IP server-side each cycle, so it
+        // survives DHCP moves. MAC targeting is disabled for URL-style service collectors (their
+        // endpoint is a full URL that can't be derived from a MAC). Google Wifi targets address
+        // the AP's local /api/v1 endpoint directly — no credential needed.
         function syncTargetTypeHint() {
             const type = document.getElementById('tType').value;
+            const kindSel = document.getElementById('tKind');
+            const macOpt = kindSel.querySelector("option[value='mac']");
             const addr = document.getElementById('tAddr');
+            const addrLabel = document.getElementById('tAddrLabel');
             const help = document.getElementById('tAddrHelp');
+
+            const urlStyle = type in URL_STYLE_COLLECTOR_TYPES;
+            macOpt.disabled = urlStyle;
+            if (urlStyle && kindSel.value === 'mac') {
+                kindSel.value = 'address';
+            }
+
+            if (kindSel.value === 'mac') {
+                addrLabel.textContent = 'MAC address';
+                addr.placeholder = 'e.g. 70:3a:cb:ea:a7:59';
+                help.textContent = "Resolved to the device's current IP each collection cycle.";
+                return;
+            }
+
+            addrLabel.textContent = 'Endpoint';
             if (type === 'google-wifi') {
                 addr.placeholder = 'AP IP, e.g. 192.168.1.1';
                 help.textContent = 'Local OnHub API — no credential needed.';
-            } else if (type in URL_STYLE_COLLECTOR_TYPES) {
+            } else if (urlStyle) {
                 addr.placeholder = URL_STYLE_COLLECTOR_TYPES[type];
                 help.textContent = 'Absolute http(s) URL, including the port.';
             } else {
@@ -1382,23 +1423,24 @@
         async function saveTarget() {
             const endpoint = document.getElementById('tAddr').value.trim();
             const collector_type = document.getElementById('tType').value;
+            const endpoint_kind = document.getElementById('tKind').value;
             const credRaw = document.getElementById('tCred').value;
             const credential_id = credRaw === '' ? null : credRaw;
             const labelRaw = document.getElementById('tLabel').value.trim();
             const label = labelRaw === '' ? null : labelRaw;
             if (!endpoint) {
-                toast('Endpoint is required.');
+                toast(endpoint_kind === 'mac' ? 'MAC address is required.' : 'Endpoint is required.');
                 return;
             }
             let url, method, body;
             if (targetEditId === null) {
                 url = '/api/v1/admin/targets';
                 method = 'POST';
-                body = JSON.stringify({agent_id: AGENT_ID, endpoint, collector_type, credential_id, label});
+                body = JSON.stringify({agent_id: AGENT_ID, endpoint, endpoint_kind, collector_type, credential_id, label});
             } else {
                 url = '/api/v1/admin/targets/' + targetEditId;
                 method = 'PUT';
-                body = JSON.stringify({endpoint, collector_type, credential_id, label});
+                body = JSON.stringify({endpoint, endpoint_kind, collector_type, credential_id, label});
             }
             const resp = await fetch(url, {
                 method,

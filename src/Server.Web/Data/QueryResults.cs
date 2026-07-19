@@ -49,6 +49,9 @@ public readonly record struct InUseResult(bool? InUse);
 
 public readonly record struct DiscoveredMacResult(string? Mac);
 
+// Nullable: the IP comes through a UNION ALL, reported nullable in SchemaOnly mode.
+public readonly record struct ResolvedIpResult(string? Ip);
+
 // Nullable: the ->> extraction is a computed expression, reported nullable in SchemaOnly mode.
 public readonly record struct CollectionKeyResult(string? CollectionKey);
 

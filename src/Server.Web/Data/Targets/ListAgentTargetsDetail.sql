@@ -5,6 +5,7 @@ SELECT
   , credential_id
   , label
   , enabled
+  , endpoint_kind
 FROM
     targets
 WHERE

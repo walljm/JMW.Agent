@@ -46,15 +46,34 @@ public sealed class AgentConfigAssembler
             configRows[0];
         Dictionary<string, CollectorSetting> collectors = ParseCollectors(config.CollectorsConfig);
 
-        // Materialize targets first — the reader must be closed before we run the
-        // per-target credential lookups (a connection serves one reader at a time).
-        List<(Guid TargetId, string Endpoint, string CollectorType, Guid? CredentialId, string? Label, bool Enabled)>
+        // Materialize targets first — the reader must be closed before we run the per-target
+        // credential lookups and MAC resolution (a connection serves one reader at a time).
+        List<(Guid TargetId, string Endpoint, string CollectorType, Guid? CredentialId, string? Label, bool Enabled,
+                string EndpointKind)>
             targetRows = await conn.ListTargetsForAgentAsync(agentId, ct).ToListAsync(ct);
 
         List<TargetConfig> targets = new(targetRows.Count);
         foreach ((Guid TargetId, string Endpoint, string CollectorType, Guid? CredentialId, string? Label, bool
-            Enabled) row in targetRows)
+            Enabled, string EndpointKind) row in targetRows)
         {
+            // Resolve a mac-kind target to the device's current IP so collection follows DHCP
+            // moves. The agent contract is unchanged — it always receives a concrete address. If
+            // the MAC has never been seen on this LAN there's nothing to resolve yet, so skip the
+            // target this cycle (it self-heals once ARP/DHCP/discovery records the device; the
+            // Agent Detail page surfaces the unresolved state to the operator).
+            string endpoint = row.Endpoint;
+            if (row.EndpointKind == "mac")
+            {
+                ResolvedIpResult resolved =
+                    await conn.GetIpForMacAsync(row.Endpoint, agentId, ct).FirstOrDefaultAsync(ct);
+                if (resolved.Ip is not { } resolvedIp)
+                {
+                    continue;
+                }
+
+                endpoint = resolvedIp;
+            }
+
             TargetCredential? credential = null;
             if (row.CredentialId is { } credId)
             {
@@ -69,7 +88,7 @@ public sealed class AgentConfigAssembler
                 }
             }
 
-            targets.Add(new TargetConfig(row.Endpoint, row.CollectorType, row.Label, credential));
+            targets.Add(new TargetConfig(endpoint, row.CollectorType, row.Label, credential));
         }
 
         return new HeartbeatConfig(

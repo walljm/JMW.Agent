@@ -8,6 +8,7 @@ SELECT
   , enabled
   , created_at
   , updated_at
+  , endpoint_kind
 FROM
     targets
 WHERE
