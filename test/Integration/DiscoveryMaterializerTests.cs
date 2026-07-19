@@ -328,6 +328,46 @@ public sealed class DiscoveryMaterializerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task MaterializeAsync_SshHostKey_NoMac_PromotesConnectIp()
+    {
+        // A MAC-less SSH host resolves on its ssh-host-key fingerprint; the connect IP the scanner
+        // reached it at must be promoted to last_seen_ip so the devices list shows an address —
+        // there is no MAC-matchable proj_discovered row to recover it read-side.
+        await InsertBareDiscoveredRowAsync("observer-ssh-1", "192.168.1.90");
+        await InsertMaterializationFactAsync(
+            "observer-ssh-1",
+            "192.168.1.90",
+            "Device[].Discovered[].SshHostKey",
+            "SHA256:abc123deadbeef"
+        );
+
+        await _materializer.MaterializeAsync(CancellationToken.None);
+
+        // NormalizeSshHostKey lowercases the algorithm ("SHA256:" -> "sha256:").
+        string? viaKey = await ReadScalarAsync(
+            "SELECT device_id::text FROM device_fingerprints WHERE fp_type = 'ssh-host-key' AND fp_value = 'sha256:abc123deadbeef'"
+        );
+        Assert.NotNull(viaKey);
+        Assert.Equal(
+            "192.168.1.90",
+            await ReadScalarAsync($"SELECT last_seen_ip FROM proj_systems WHERE device = '{viaKey}'")
+        );
+    }
+
+    private async Task InsertBareDiscoveredRowAsync(string device, string ip)
+    {
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        await using NpgsqlCommand cmd = new(
+            "INSERT INTO proj_discovered (device, discovered) VALUES (@device, @ip) "
+          + "ON CONFLICT (device, discovered) DO NOTHING",
+            conn
+        );
+        cmd.Parameters.AddWithValue("device", device);
+        cmd.Parameters.AddWithValue("ip", ip);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    [Fact]
     public async Task MaterializeAsync_DiscoveredSerial_NoMac_ResolvesByUuidAndPromotes()
     {
         // The scanner-serial source: a device with no MAC but a UUID resolves on the UUID

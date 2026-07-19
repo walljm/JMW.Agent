@@ -174,7 +174,7 @@ public static partial class DiscoveryQueries
     /// non-nullable here (unlike the old proj_discovered.ssh_host_key-backed query).
     /// </summary>
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<(string? Mac, string SshHostKey)> GetSshHostKeyRowsAsync(
+    public static partial IAsyncEnumerable<(string? Mac, string SshHostKey, string Ip)> GetSshHostKeyRowsAsync(
         this NpgsqlConnection connection,
         CancellationToken cancellationToken
     );
@@ -185,7 +185,7 @@ public static partial class DiscoveryQueries
     /// unioned with the MAC, so an observer that sees only the id still merges onto the device.
     /// </summary>
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<(string? Mac, string? HueBridgeId, string? OnvifHardwareId)>
+    public static partial IAsyncEnumerable<(string? Mac, string? HueBridgeId, string? OnvifHardwareId, string Ip)>
         GetScannerIdRowsAsync(
             this NpgsqlConnection connection,
             CancellationToken cancellationToken

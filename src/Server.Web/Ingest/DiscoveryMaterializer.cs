@@ -192,11 +192,11 @@ public sealed class DiscoveryMaterializer
         // stable per-unit id → a ChassisSerial fingerprint, unioned with the row's MAC so the id
         // merges onto the device an ARP/scanner observer sees by MAC. An extra fingerprint is
         // cheap and may be the only match when an observer has the id but not the MAC.
-        List<(string? Mac, string? HueBridgeId, string? OnvifHardwareId)> rows =
+        List<(string? Mac, string? HueBridgeId, string? OnvifHardwareId, string Ip)> rows =
             await conn.GetScannerIdRowsAsync(ct).ToListAsync(ct);
         // Reader closed — conn is free for the resolves below.
 
-        foreach ((string? mac, string? hueBridgeId, string? onvifHardwareId) in rows)
+        foreach ((string? mac, string? hueBridgeId, string? onvifHardwareId, string ip) in rows)
         {
             List<Fingerprint> fps = [];
             if (!string.IsNullOrWhiteSpace(hueBridgeId))
@@ -219,16 +219,19 @@ public sealed class DiscoveryMaterializer
                 fps.Add(new Fingerprint(FingerprintType.Mac, mac));
             }
 
-            await TryResolveDiscoveredAsync(conn, fps, source: "scanner", ct, logTag: "scanner-id");
+            string? deviceId = await TryResolveDiscoveredAsync(conn, fps, source: "scanner", ct, logTag: "scanner-id");
+            // Promote the connect IP so a MAC-less scanner-id device (Hue/ONVIF) still shows an
+            // address, matching how the serial-based scanner source already promotes it.
+            await PromoteConnectIpAsync(conn, deviceId, ip, ct);
         }
     }
 
     private async Task MaterializeSshHostKeysAsync(NpgsqlConnection conn, CancellationToken ct)
     {
-        List<(string? Mac, string SshHostKey)> rows = await conn.GetSshHostKeyRowsAsync(ct).ToListAsync(ct);
+        List<(string? Mac, string SshHostKey, string Ip)> rows = await conn.GetSshHostKeyRowsAsync(ct).ToListAsync(ct);
         // Reader closed — conn is free for the resolves below.
 
-        foreach ((string? mac, string sshHostKey) in rows)
+        foreach ((string? mac, string sshHostKey, string ip) in rows)
         {
             // The host key is a stable per-host identity; unioning it with the row's MAC
             // merges any device already resolved by that MAC, and cross-observer rows that
@@ -241,7 +244,10 @@ public sealed class DiscoveryMaterializer
                 fps.Add(new Fingerprint(FingerprintType.Mac, mac));
             }
 
-            await TryResolveDiscoveredAsync(conn, fps, source: "ssh-banner", ct);
+            string? deviceId = await TryResolveDiscoveredAsync(conn, fps, source: "ssh-banner", ct);
+            // A MAC-less SSH host has no MAC-matchable proj_discovered row, so the devices list
+            // can't recover its IP read-side — promote the connect IP we reached it at here.
+            await PromoteConnectIpAsync(conn, deviceId, ip, ct);
         }
     }
 
@@ -310,6 +316,24 @@ public sealed class DiscoveryMaterializer
             DiscoveryMaterializerLog.MacNormalizationFailed(_logger, logTag ?? source);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Promotes a discovered connect-IP to the resolved device's <c>last_seen_ip</c> (IP is not a
+    /// fact — direct upsert, mirroring the DiscoverySource PromoteIp path). No-op when the resolve
+    /// failed or the IP is blank. Used by the SSH-host-key and scanner-id passes so a MAC-less
+    /// device — which has no MAC-matchable proj_discovered row — still shows the address we reached
+    /// it at, instead of a blank IP on the devices list.
+    /// </summary>
+    private static async Task PromoteConnectIpAsync(NpgsqlConnection conn, string? deviceId, string? ip, CancellationToken ct)
+    {
+        if (deviceId is null || NullIfBlank(ip) is not { } cleanIp)
+        {
+            return;
+        }
+
+        await conn.UpsertDeviceSystemAsync(deviceId, hostname: null, friendlyName: null, cleanIp, osFamily: null, ct)
+            .ExecuteAsync(ct);
     }
 
     // ── Discovered-row sources (DHCP + scanner) ───────────────────────────────

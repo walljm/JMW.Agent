@@ -4,7 +4,8 @@
 -- Phase 2b); mac stays on proj_discovered (§2).
 SELECT
     d.mac
-  , idf.value AS ssh_host_key
+  , idf.value       AS ssh_host_key
+  , d.discovered    AS ip
 FROM
     materialization_facts idf
 JOIN proj_discovered d ON d.device = idf.device AND d.discovered = idf.entity_key

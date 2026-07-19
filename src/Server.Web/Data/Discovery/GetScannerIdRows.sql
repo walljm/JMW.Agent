@@ -7,6 +7,7 @@ SELECT
     d.mac
   , idf.hue_bridge_id
   , idf.onvif_hardware_id
+  , d.discovered AS ip
 FROM (
     SELECT
         device
