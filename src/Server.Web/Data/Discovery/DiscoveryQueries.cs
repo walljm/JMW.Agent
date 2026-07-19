@@ -115,16 +115,20 @@ public static partial class DiscoveryQueries
 
     /// <summary>
     /// Returns the real full MACs (12 lowercase hex, no separators) the server has
-    /// attested for <paramref name="ip" />, scoped to <paramref name="agentId" />'s own
-    /// LAN — from that agent's ARP cache, DHCP leases (both service-polled and local), and
-    /// previously-discovered non-obscured MACs. Rows with no recorded agent_id (written
-    /// before this scoping existed) are treated as unscoped rather than excluded. Pass null
-    /// for <paramref name="agentId" /> when the caller's own agent is unknown — this matches
-    /// only other unscoped rows, never a row belonging to a known different agent. Used to
-    /// reconstruct an obscured Google Wifi MAC by IP join (the caller then corroborates by
-    /// OUI), and by the Home Assistant IP-join (see docs/plans/ha-device-enrichment.md §5).
-    /// Scoping matters because RFC1918 addresses can be reused across independent LANs this
-    /// server ingests from.
+    /// attested for <paramref name="ip" />, scoped to <paramref name="agentId" />'s LAN —
+    /// from the ARP cache, DHCP leases (both service-polled and local), and previously-
+    /// discovered non-obscured MACs of <paramref name="agentId" /> AND of any agent proven
+    /// co-located with it (agent_colocation view — same L2 broadcast domain, proven via
+    /// shared globally-unique ARP MACs). That cross-agent recall is what lets a MAC captured
+    /// by one agent reconstruct an obscured Google Wifi station polled by a different same-LAN
+    /// agent. Rows with no recorded agent_id (written before scoping existed) are treated as
+    /// unscoped rather than excluded. Pass null for <paramref name="agentId" /> when the
+    /// caller's own agent is unknown — this matches only other unscoped rows, never a row
+    /// belonging to a known agent. Used to reconstruct an obscured Google Wifi MAC by IP join
+    /// (the caller then corroborates by OUI), and by the Home Assistant IP-join (see
+    /// docs/plans/ha-device-enrichment.md §5). Scoping matters because RFC1918 addresses can
+    /// be reused across independent LANs this server ingests from; co-location keeps recall
+    /// within the real LAN without collapsing distinct sites.
     /// </summary>
     [DatabaseCommand]
     public static partial IAsyncEnumerable<DiscoveredMacResult> GetKnownMacsForIpAsync(
