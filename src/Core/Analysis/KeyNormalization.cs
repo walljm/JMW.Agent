@@ -58,6 +58,16 @@ public static class KeyNormalization
         }
 
         string newId = string.Join('.', segments.Select(s => s.ToString()));
-        return Fact.Create(newId, fact.Value, fact.CollectedAt);
+        // Preserve provenance — Fact.Create doesn't copy it. Dropping AgentId here left
+        // agent-scoped projections (proj_discovered.agent_id, etc.) NULL for any fact whose key
+        // needed canonicalizing (Google Wifi station IPs, DHCP-lease MAC keys, non-canonical ARP),
+        // which then broke the obscured-MAC reconstruction's agent-scope match. Mirrors how
+        // RewriteFactIds and AnalysisEngine.Normalize carry provenance across a rebuild.
+        return Fact.Create(newId, fact.Value, fact.CollectedAt) with
+        {
+            Source = fact.Source,
+            SourceName = fact.SourceName,
+            AgentId = fact.AgentId,
+        };
     }
 }

@@ -35,4 +35,26 @@ public sealed class KeyNormalizationTests
         Fact result = KeyNormalization.Normalize(Fact.Create("Device[d1].ARP[FE80::1].MAC", "aabbccddeeff"));
         Assert.Equal("aabbccddeeff", result.Value.AsString());
     }
+
+    [Fact]
+    public void Normalize_PreservesProvenance_WhenKeyRebuilt()
+    {
+        // Regression: canonicalizing a key rebuilt the fact via Fact.Create, dropping AgentId/
+        // Source/SourceName — which left agent-scoped projections (proj_discovered.agent_id) NULL
+        // for Google Wifi / DHCP-lease / non-canonical keys and broke obscured-MAC reconstruction.
+        Guid agentId = Guid.NewGuid();
+        Fact fact = Fact.Create("Device[d1].Discovered[FE80::0:1].Hostname", "host") with
+        {
+            Source = FactSource.SshBanner,
+            SourceName = "obs-agent",
+            AgentId = agentId,
+        };
+
+        Fact result = KeyNormalization.Normalize(fact);
+
+        Assert.Equal("Device[d1].Discovered[fe80::1].Hostname", result.Id); // key was rebuilt
+        Assert.Equal(agentId, result.AgentId);
+        Assert.Equal(FactSource.SshBanner, result.Source);
+        Assert.Equal("obs-agent", result.SourceName);
+    }
 }
