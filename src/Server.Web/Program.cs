@@ -516,11 +516,16 @@ RouteGroupBuilder prefsGroup = v1.MapGroup("")
     );
 PreferencesApi.Map(prefsGroup);
 
-// Agents/AgentDetail moved from /admin/agents to /fleet/agents — keep old bookmarks/links
-// working for one release. Query string (filters, cursors) carries through unchanged.
+// The Agents list was folded into the Fleet overview (/fleet). Redirect the old list routes
+// there, preserving the query string so filters/cursors (?status=pending, ?liveness=offline)
+// become on-page filters. Agent detail still lives at /fleet/agents/{id}.
+app.MapGet(
+    "/fleet/agents",
+    (HttpContext ctx) => Results.Redirect("/fleet" + ctx.Request.QueryString, permanent: false)
+);
 app.MapGet(
     "/admin/agents",
-    (HttpContext ctx) => Results.Redirect("/fleet/agents" + ctx.Request.QueryString, permanent: true)
+    (HttpContext ctx) => Results.Redirect("/fleet" + ctx.Request.QueryString, permanent: true)
 );
 app.MapGet(
     "/admin/agents/{id:guid}",

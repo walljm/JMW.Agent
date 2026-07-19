@@ -2,15 +2,15 @@
 @using JMW.Discovery.Server.Admin
 @using JMW.Discovery.Server.Pages.Fleet
 @using JMW.Discovery.Server.Pages.Reports
+@using JMW.Discovery.Server.UI
 @model JMW.Discovery.Server.Pages.Fleet.OverviewModel
 @{
-    ViewData["Title"] = "Fleet Overview — JMW Discovery";
+    ViewData["Title"] = "Fleet — JMW Discovery";
     ViewData["ActiveNav"] = "fleet";
 }
 <main class="main">
     <div class="page-head">
-        <h1>Fleet Overview</h1>
-        <a class="btn btn-sm" href="/fleet/agents">All agents →</a>
+        <h1>Fleet</h1>
     </div>
 
     <partial name="_HubTabs" model="@(new HubTabsModel(HubTabSets.Fleet, "/fleet", "Fleet views"))"/>
@@ -77,45 +77,8 @@
                 </table>
             </div>
             <p class="meta" style="margin-top:calc(-1 * var(--space-4));margin-bottom:var(--space-5)">
-                <a href="/fleet/agents?liveness=offline">View all offline agents →</a>
+                <a href="/fleet?liveness=offline#agents-table">View all offline agents →</a>
             </p>
-        }
-
-        @if (Model.Pending.Count > 0)
-        {
-            <h2 class="section-title">Pending Approval</h2>
-            <div class="grid-scroll">
-                <table class="data" aria-label="Pending agents">
-                    <thead>
-                    <tr>
-                        <th>Hostname</th>
-                        <th>IP</th>
-                        <th>OS</th>
-                        <th>Zone</th>
-                        <th>Registered</th>
-                        <th></th>
-                    </tr>
-                    </thead>
-                    <tbody id="pending-tbody">
-                    @foreach (AgentListItem a in Model.Pending)
-                    {
-                        <tr id="pending-row-@a.AgentId">
-                            <td>@a.Hostname</td>
-                            <td class="mono">@(a.IpAddress ?? "—")</td>
-                            <td>@(a.Os ?? "—")</td>
-                            <td>@(a.Zone ?? "—")</td>
-                            <td><time data-utc="@ViewFormat.IsoUtc(a.CreatedAt)">@a.CreatedAt.ToString("yyyy-MM-dd HH:mm") UTC</time></td>
-                            <td>
-                                <button class="btn btn-sm btn-primary js-pending-approve-btn"
-                                        data-agent-id="@a.AgentId" data-hostname="@a.Hostname">
-                                    Approve
-                                </button>
-                            </td>
-                        </tr>
-                    }
-                    </tbody>
-                </table>
-            </div>
         }
 
         <h2 class="section-title">Versions</h2>
@@ -146,31 +109,253 @@
             </div>
         }
     }
+
+    @* Full agents management grid — folded in from the former Agents tab. Pending agents show
+       here with Approve / bulk-approve, superseding the old standalone "Pending Approval" card. *@
+    <h2 class="section-title">Agents</h2>
+    <partial name="_FilterBar" model="Model.FilterBar"/>
+    <partial name="_AgentsTable" model="Model"/>
 </main>
+
+<!-- Bulk-approve confirmation -->
+<div class="modal-scrim" id="bulkApproveModal" hidden role="dialog" aria-modal="true" aria-labelledby="bulkApproveTitle">
+    <div class="modal">
+        <header>
+            <h3 id="bulkApproveTitle">Approve Agents</h3>
+            <button class="btn btn-sm" onclick="closeBulkApprove()" aria-label="Close">✕</button>
+        </header>
+        <div class="body">
+            <p class="prose text-dim" id="bulkApproveDesc"></p>
+            <ul id="bulkApproveList" class="prose" style="max-height:240px;overflow:auto"></ul>
+        </div>
+        <footer>
+            <button class="btn" onclick="closeBulkApprove()">Cancel</button>
+            <button class="btn btn-primary" id="bulkApproveConfirm" onclick="doBulkApprove()">Approve</button>
+        </footer>
+    </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
 
 @section Scripts {
     <script>
         const CSRF = '@Model.AntiforgeryToken';
 
-        async function approvePendingAgent(id, hostname) {
+        function toast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.hidden = false;
+            setTimeout(() => t.hidden = true, 4000);
+        }
+
+        async function approveAgentRow(id, hostname) {
             const resp = await fetch(`/api/v1/admin/agents/${id}/approve`, {
                 method: 'PATCH',
                 headers: {'X-CSRF-TOKEN': CSRF},
             });
-            if (!resp.ok) {
-                alert(`Failed to approve ${hostname} (${resp.status}). Check the console for details.`);
-                return;
+            if (!resp.ok) { toast(`Failed to approve ${hostname} (${resp.status}).`); return; }
+            const row = document.getElementById('agent-row-' + id);
+            if (!row) return;
+            const statusCell = row.querySelector('.approval-status');
+            if (statusCell) {
+                statusCell.className = 'status approval-status ok';
+                statusCell.textContent = 'approved';
             }
-
-            const row = document.getElementById('pending-row-' + id);
-            if (row) row.remove();
+            const approveBtn = row.querySelector('.js-approve-btn');
+            if (approveBtn) approveBtn.remove();
+            const checkbox = row.querySelector('.js-pending-check');
+            if (checkbox) checkbox.remove();
+            updateBulkBar();
         }
 
-        document.addEventListener('click', function (e) {
-            const approveBtn = e.target.closest('.js-pending-approve-btn');
-            if (approveBtn) {
-                approvePendingAgent(approveBtn.dataset.agentId, approveBtn.dataset.hostname);
+        async function disableAgentRow(id, hostname) {
+            if (!confirm(`Disable ${hostname}? It will stop accepting heartbeats and facts until re-enabled. This is reversible.`)) return;
+            const resp = await fetch(`/api/v1/admin/agents/${id}/disable`, {
+                method: 'PATCH',
+                headers: {'X-CSRF-TOKEN': CSRF},
+            });
+            if (!resp.ok) { toast('Failed to disable agent.'); return; }
+            const row = document.getElementById('agent-row-' + id);
+            if (!row) return;
+            const statusCell = row.querySelector('.approval-status');
+            if (statusCell) {
+                statusCell.className = 'status approval-status crit';
+                statusCell.textContent = 'disabled';
             }
+            const btn = row.querySelector('.js-disable-btn');
+            if (btn) {
+                btn.textContent = 'Enable';
+                btn.classList.remove('js-disable-btn');
+                btn.classList.add('js-enable-btn');
+            }
+        }
+
+        async function enableAgentRow(id, hostname) {
+            const resp = await fetch(`/api/v1/admin/agents/${id}/enable`, {
+                method: 'PATCH',
+                headers: {'X-CSRF-TOKEN': CSRF},
+            });
+            if (!resp.ok) { toast('Failed to enable agent.'); return; }
+            const row = document.getElementById('agent-row-' + id);
+            if (!row) return;
+            const statusCell = row.querySelector('.approval-status');
+            if (statusCell) {
+                statusCell.className = 'status approval-status ok';
+                statusCell.textContent = 'approved';
+            }
+            const btn = row.querySelector('.js-enable-btn');
+            if (btn) {
+                btn.textContent = 'Disable';
+                btn.classList.remove('js-enable-btn');
+                btn.classList.add('js-disable-btn');
+            }
+        }
+
+        async function deleteAgent(id, hostname) {
+            if (!confirm(`Deregister ${hostname} (${id})? This cannot be undone.`)) return;
+            try {
+                const resp = await fetch(`/api/v1/admin/agents/${id}`, {
+                    method: 'DELETE',
+                    headers: {'X-CSRF-TOKEN': CSRF},
+                });
+                if (resp.status === 204) {
+                    const row = document.getElementById('agent-row-' + id);
+                    if (row) row.remove();
+                } else if (resp.status === 401 || resp.status === 302) {
+                    window.location.href = '/Login';
+                } else {
+                    alert('Delete failed (' + resp.status + '). Check the console for details.');
+                }
+            } catch (err) {
+                alert('Delete failed: ' + err.message);
+            }
+        }
+
+        // Event delegation — reads data-* attributes so no JS string injection from network data.
+        document.addEventListener('click', function (e) {
+            const approveBtn = e.target.closest('.js-approve-btn');
+            if (approveBtn) {
+                approveAgentRow(approveBtn.dataset.agentId, approveBtn.dataset.hostname);
+                return;
+            }
+            const disableBtn = e.target.closest('.js-disable-btn');
+            if (disableBtn) {
+                disableAgentRow(disableBtn.dataset.agentId, disableBtn.dataset.hostname);
+                return;
+            }
+            const enableBtn = e.target.closest('.js-enable-btn');
+            if (enableBtn) {
+                enableAgentRow(enableBtn.dataset.agentId, enableBtn.dataset.hostname);
+                return;
+            }
+            const deleteBtn = e.target.closest('.js-delete-btn');
+            if (deleteBtn) {
+                deleteAgent(deleteBtn.dataset.agentId, deleteBtn.dataset.hostname);
+            }
+        });
+
+        function toggleSelectAllPending(checkbox) {
+            document.querySelectorAll('.js-pending-check').forEach(cb => cb.checked = checkbox.checked);
+            updateBulkBar();
+        }
+
+        function selectedPendingCheckboxes() {
+            return Array.from(document.querySelectorAll('.js-pending-check:checked'));
+        }
+
+        function updateBulkBar() {
+            const selected = selectedPendingCheckboxes();
+            const bar = document.getElementById('bulkBar');
+            const count = document.getElementById('bulkCount');
+            if (!bar || !count) return;
+            if (selected.length === 0) {
+                bar.hidden = true;
+                return;
+            }
+            bar.hidden = false;
+            count.textContent = selected.length + ' selected';
+        }
+
+        function openBulkApprove() {
+            const selected = selectedPendingCheckboxes();
+            if (selected.length === 0) return;
+            document.getElementById('bulkApproveDesc').textContent =
+                `Approve ${selected.length} agent${selected.length === 1 ? '' : 's'}?`;
+            const list = document.getElementById('bulkApproveList');
+            list.innerHTML = '';
+            for (const cb of selected) {
+                const li = document.createElement('li');
+                li.id = 'bulk-item-' + cb.value;
+                li.textContent = cb.dataset.hostname;
+                list.appendChild(li);
+            }
+            document.getElementById('bulkApproveModal').hidden = false;
+        }
+
+        function closeBulkApprove() {
+            document.getElementById('bulkApproveModal').hidden = true;
+        }
+
+        async function doBulkApprove() {
+            const selected = selectedPendingCheckboxes();
+            const confirmBtn = document.getElementById('bulkApproveConfirm');
+            confirmBtn.disabled = true;
+
+            const results = await Promise.all(selected.map(async cb => {
+                const id = cb.value;
+                try {
+                    const resp = await fetch(`/api/v1/admin/agents/${id}/approve`, {
+                        method: 'PATCH',
+                        headers: {'X-CSRF-TOKEN': CSRF},
+                    });
+                    return {id, hostname: cb.dataset.hostname, ok: resp.ok};
+                } catch {
+                    return {id, hostname: cb.dataset.hostname, ok: false};
+                }
+            }));
+
+            confirmBtn.disabled = false;
+
+            let approved = 0, failed = 0;
+            for (const r of results) {
+                const item = document.getElementById('bulk-item-' + r.id);
+                if (r.ok) {
+                    approved++;
+                    const row = document.getElementById('agent-row-' + r.id);
+                    if (row) {
+                        const statusCell = row.querySelector('.approval-status');
+                        if (statusCell) {
+                            statusCell.className = 'status approval-status ok';
+                            statusCell.textContent = 'approved';
+                        }
+                        const approveBtn = row.querySelector('.js-approve-btn');
+                        if (approveBtn) approveBtn.remove();
+                        const checkbox = row.querySelector('.js-pending-check');
+                        if (checkbox) checkbox.remove();
+                    }
+                    if (item) item.remove();
+                } else {
+                    failed++;
+                    if (item) {
+                        item.textContent += ' — failed';
+                        item.style.color = 'var(--crit)';
+                    }
+                }
+            }
+
+            updateBulkBar();
+            const summary = failed === 0
+                ? `${approved} approved`
+                : `${approved} approved, ${failed} failed`;
+            toast(summary);
+
+            if (failed === 0) {
+                closeBulkApprove();
+            }
+        }
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') closeBulkApprove();
         });
     </script>
 }

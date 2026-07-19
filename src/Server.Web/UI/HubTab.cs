@@ -34,8 +34,9 @@ public static class HubTabSets
 
     public static readonly IReadOnlyList<HubTab> Fleet =
     [
+        // The former "Agents" tab was folded into Overview (agents grid under the fleet health
+        // summary) — /fleet/agents now redirects to /fleet. Agent detail lives at /fleet/agents/{id}.
         new HubTab("Overview", "/fleet"),
-        new HubTab("Agents", "/fleet/agents"),
         new HubTab("Credentials", "/admin/credentials"),
     ];
 
