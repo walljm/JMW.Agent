@@ -488,6 +488,34 @@ L2TopologyApi.Map(reportGroup);
 ChangesApi.Map(reportGroup);
 TerrainApi.Map(reportGroup);
 
+// Per-user preferences — any authenticated user; CSRF-validated on writes (mirrors the admin
+// group's filter: GET/HEAD/OPTIONS/TRACE pass through, other methods must carry X-CSRF-TOKEN).
+RouteGroupBuilder prefsGroup = v1.MapGroup("")
+    .RequireAuthorization(ReadPolicy.Name)
+    .AddEndpointFilter(async (context, next) =>
+        {
+            string method = context.HttpContext.Request.Method;
+            if (HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method)
+             || HttpMethods.IsTrace(method))
+            {
+                return await next(context);
+            }
+
+            IAntiforgery antiforgery = context.HttpContext.RequestServices.GetRequiredService<IAntiforgery>();
+            try
+            {
+                await antiforgery.ValidateRequestAsync(context.HttpContext);
+            }
+            catch (AntiforgeryValidationException)
+            {
+                return ApiError.Problem(400, "invalid_csrf_token", "Missing or invalid CSRF token.");
+            }
+
+            return await next(context);
+        }
+    );
+PreferencesApi.Map(prefsGroup);
+
 // Agents/AgentDetail moved from /admin/agents to /fleet/agents — keep old bookmarks/links
 // working for one release. Query string (filters, cursors) carries through unchanged.
 app.MapGet(

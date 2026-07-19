@@ -1,3 +1,4 @@
+@inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
 @{
     string active = ViewData["ActiveNav"] as string ?? string.Empty;
 
@@ -16,6 +17,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="@Antiforgery.GetAndStoreTokens(Context).RequestToken">
     <title>@ViewData["Title"]</title>
     <link rel="stylesheet" href="/css/design-system.css" asp-append-version="true">
     <script src="/js/htmx.min.js" asp-append-version="true"></script>
@@ -23,6 +25,7 @@
     <script src="/js/row-nav.js" defer asp-append-version="true"></script>
     <script src="/js/local-time.js" defer asp-append-version="true"></script>
     <script src="/js/grid-infinite-scroll.js" defer asp-append-version="true"></script>
+    <script src="/js/column-resize.js" defer asp-append-version="true"></script>
 </head>
 <body class="dark-mode">
 <script>

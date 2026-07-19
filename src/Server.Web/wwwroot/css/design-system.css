@@ -552,6 +552,23 @@ table.data thead th[aria-sort="descending"]::after {
     border-top: 5px solid var(--accent);
 }
 
+/* Drag-to-resize handle on each header cell (see column-resize.js). The sticky header cell is
+   already a positioning context, so the handle anchors to its right edge. */
+.col-resize-handle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    user-select: none;
+}
+
+.col-resize-handle:hover {
+    background: var(--accent);
+    opacity: 0.5;
+}
+
 table.data tbody td {
     padding: var(--space-2) var(--space-3);
     border-bottom: var(--border-hair);

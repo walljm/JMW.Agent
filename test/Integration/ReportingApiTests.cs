@@ -4307,3 +4307,100 @@ public sealed class ResolveServiceHostDeviceTests : IAsyncLifetime
         await cmd.ExecuteNonQueryAsync();
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PreferencesQueries — per-user preference storage (table column widths, etc.)
+// ─────────────────────────────────────────────────────────────────────────────
+
+[Collection("Integration")]
+public sealed class UserPreferencesTests : IAsyncLifetime
+{
+    private readonly IntegrationFixture _fixture;
+
+    public UserPreferencesTests(IntegrationFixture fixture)
+    {
+        _fixture = fixture;
+    }
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync() => await _fixture.TruncateAsync("user_preferences", "users");
+
+    [Fact]
+    public async Task Upsert_ThenGet_RoundTripsValue()
+    {
+        Guid userId = await InsertUserAsync("prefs-user-1");
+
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        await conn.UpsertUserPreferenceAsync(userId, "cols:devices", Json("""{"0":120,"1":80}"""), CancellationToken.None)
+            .FirstOrDefaultAsync(CancellationToken.None);
+
+        UserPreferenceValue row = await conn.GetUserPreferenceAsync(userId, "cols:devices", CancellationToken.None)
+            .FirstAsync(CancellationToken.None);
+
+        Assert.Equal(120, row.PrefValue.GetProperty("0").GetInt32());
+        Assert.Equal(80, row.PrefValue.GetProperty("1").GetInt32());
+    }
+
+    [Fact]
+    public async Task Upsert_Overwrites_ExistingValue()
+    {
+        Guid userId = await InsertUserAsync("prefs-user-2");
+
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        await conn.UpsertUserPreferenceAsync(userId, "cols:devices", Json("""{"0":100}"""), CancellationToken.None)
+            .FirstOrDefaultAsync(CancellationToken.None);
+        await conn.UpsertUserPreferenceAsync(userId, "cols:devices", Json("""{"0":200}"""), CancellationToken.None)
+            .FirstOrDefaultAsync(CancellationToken.None);
+
+        UserPreferenceValue row = await conn.GetUserPreferenceAsync(userId, "cols:devices", CancellationToken.None)
+            .FirstAsync(CancellationToken.None);
+
+        Assert.Equal(200, row.PrefValue.GetProperty("0").GetInt32());
+    }
+
+    [Fact]
+    public async Task Get_Unset_ReturnsNoRows()
+    {
+        Guid userId = await InsertUserAsync("prefs-user-3");
+
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        List<UserPreferenceValue> rows = await conn.GetUserPreferenceAsync(userId, "cols:nope", CancellationToken.None)
+            .ToListAsync(CancellationToken.None);
+
+        Assert.Empty(rows);
+    }
+
+    [Fact]
+    public async Task Preferences_AreScopedPerUser()
+    {
+        Guid a = await InsertUserAsync("prefs-user-a");
+        Guid b = await InsertUserAsync("prefs-user-b");
+
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        await conn.UpsertUserPreferenceAsync(a, "cols:devices", Json("""{"0":111}"""), CancellationToken.None)
+            .FirstOrDefaultAsync(CancellationToken.None);
+
+        // b must not see what a saved for the same key.
+        List<UserPreferenceValue> bRows = await conn.GetUserPreferenceAsync(b, "cols:devices", CancellationToken.None)
+            .ToListAsync(CancellationToken.None);
+
+        Assert.Empty(bRows);
+    }
+
+    private static JsonElement Json(string json) => JsonDocument.Parse(json).RootElement;
+
+    private async Task<Guid> InsertUserAsync(string username)
+    {
+        Guid id = Guid.NewGuid();
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        await using NpgsqlCommand cmd = new(
+            "INSERT INTO users (user_id, username, password_hash, role) VALUES (@id, @u, 'x', 'viewer')",
+            conn
+        );
+        cmd.Parameters.AddWithValue("id", id);
+        cmd.Parameters.AddWithValue("u", username);
+        await cmd.ExecuteNonQueryAsync();
+        return id;
+    }
+}
