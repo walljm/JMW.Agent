@@ -209,75 +209,12 @@ public static class DeviceListApi
     // Filters + per-row decoration (best IP, OUI, sources). The sort/keyset/LIMIT are applied by
     // the outer query in QueryAsync so every column — including the computed best IP — is sortable.
     private const string BaseCte = """
-        WITH mac_obs AS (
-            -- Passive network observers, keyed by MAC. Every MAC column is stored in the canonical
-            -- bare-hex form (normalized at ingest), so it matches device_fingerprints.fp_value directly.
-            -- Each projection row contributes the discovery-source label for its sighting.
-            SELECT mac AS m, 'arp'        AS source FROM proj_device_arp        WHERE mac   IS NOT NULL
-            UNION ALL
-            SELECT lease,     'dhcp'                FROM proj_dhcp_leases       WHERE lease IS NOT NULL
-            UNION ALL
-            SELECT lease,     'dhcp-local'          FROM proj_dhcp_local_leases WHERE lease IS NOT NULL
-            UNION ALL
-            -- One row per network scanner that actually touched this MAC (not one generic
-            -- 'scanner' label) — `sources` is a comma-joined list of scanner class names (see
-            -- NetworkDiscoveryCollector's write side). Mapped to the same short slug shown
-            -- elsewhere in the app (AgentDetailModel.ScannerStatNames); an unrecognized class
-            -- name falls back to its own lowercased form rather than being dropped silently.
-            SELECT
-                d.mac,
-                COALESCE(names.slug, lower(tok)) AS source
-            FROM
-                proj_discovered d
-                CROSS JOIN LATERAL unnest(string_to_array(d.sources, ',')) AS tok
-                LEFT JOIN LATERAL (
-                    VALUES
-                        ('ArpScanner', 'arp'),
-                        ('MdnsScanner', 'mdns'),
-                        ('SsdpScanner', 'ssdp'),
-                        ('SnmpBroadcastScanner', 'snmp-broadcast'),
-                        ('GatewaySnmpArpScanner', 'gateway-arp'),
-                        ('NbnsScanner', 'nbns'),
-                        ('LlmnrScanner', 'llmnr'),
-                        ('WsDiscoveryScanner', 'ws-discovery'),
-                        ('DnsPtrScanner', 'dns-ptr'),
-                        ('HttpBannerScanner', 'http-banner'),
-                        ('TlsCertScanner', 'tls-cert'),
-                        ('Smb2Scanner', 'smb2'),
-                        ('SshBannerScanner', 'ssh-banner'),
-                        ('LdapScanner', 'ldap'),
-                        ('EurekaScanner', 'eureka'),
-                        ('IppScanner', 'ipp'),
-                        ('SnmpPrinterScanner', 'snmp-printer'),
-                        ('RokuScanner', 'roku'),
-                        ('AirPlayScanner', 'airplay'),
-                        ('PingSweepScanner', 'ping-sweep'),
-                        ('CoApScanner', 'coap'),
-                        ('RtspScanner', 'rtsp'),
-                        ('MqttScanner', 'mqtt'),
-                        ('PhilipsHueScanner', 'philips-hue'),
-                        ('OnvifScanner', 'onvif'),
-                        ('BacnetScanner', 'bacnet'),
-                        ('ModbusScanner', 'modbus')
-                ) AS names (class_name, slug) ON names.class_name = tok
-            WHERE
-                d.mac IS NOT NULL
-                AND tok <> ''
-        ),
-        device_sources AS (
-            -- The full "observed by" set per device: the identifying source stamped on each
-            -- fingerprint, UNIONed with passive observers derived from projection presence.
-            -- The passive ones are dropped from device_fingerprints.source by the ingest
-            -- anti-joins (a source is stamped only when it FIRST mints a MAC) and by the
-            -- last-writer-wins source overwrite, so a host already known by another source
-            -- would otherwise never report 'arp'/'dhcp'/'scanner' even when it plainly sits
-            -- in those tables. Matched against ALL of a device's MACs, not just its best one.
-            SELECT device_id, source FROM device_fingerprints WHERE source IS NOT NULL
-            UNION
-            SELECT df.device_id, mo.source
-                FROM device_fingerprints df
-                    JOIN mac_obs mo ON mo.m = df.fp_value
-                WHERE df.fp_type = 'mac'
+        WITH device_sources AS (
+            -- The full "observed by" set per device (identifying fingerprint source + passive
+            -- ARP/DHCP/scanner observers, mapped to short slugs). Shared with the dashboard
+            -- composition breakdown via the device_discovery_sources view (migration 0096) so the
+            -- scanner-slug map isn't duplicated here.
+            SELECT device_id, source FROM device_discovery_sources
         ),
         filtered AS (
             SELECT

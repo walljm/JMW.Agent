@@ -407,7 +407,11 @@ public sealed class DashboardModel : PageModel
                 ),
                 // Only two buckets (managed/discovered); no roll-up needed. Proper-case for display —
                 // the stored values are lowercase, but we don't show raw canonical tokens to users.
-                mgmt.Select(r => r with { Label = ProperCaseStatus(r.Label) }).ToList()
+                mgmt.Select(r => r with { Label = ProperCaseStatus(r.Label) }).ToList(),
+                DashboardViz.TopNWithOther(
+                    await ReadLabelCounts(conn.GetCompositionByDiscoverySourceAsync(ct), ct),
+                    CompositionTop
+                )
             );
             Cache("dash_composition", vm, SlowTtl);
             Composition = vm;

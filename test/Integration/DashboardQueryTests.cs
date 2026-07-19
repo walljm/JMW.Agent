@@ -23,6 +23,7 @@ public sealed class DashboardQueryTests
         "agents", "agent_cycles", "services",
         "proj_disks", "proj_filesystems", "proj_containers", "proj_hardware_inventory",
         "proj_service_ca", "proj_devices", "proj_systems", "proj_hardware",
+        "proj_discovered", "proj_device_arp",
         "incidents", "change_events",
     ];
 
@@ -435,5 +436,36 @@ public sealed class DashboardQueryTests
         Assert.Equal(1, byVendor.Single(r => r.Vendor == "Dell").Count);
         Assert.Equal(1, byVendor.Single(r => r.Vendor == "HP").Count);
         Assert.DoesNotContain(byVendor, r => r.Vendor == "Ghost");
+    }
+
+    [Fact]
+    public async Task Composition_by_discovery_source_counts_per_device_per_source()
+    {
+        await ResetAsync();
+        Guid d1 = await _fx.InsertDeviceAsync("discovered");
+        Guid d2 = await _fx.InsertDeviceAsync("managed");
+        Guid alias = await _fx.InsertDeviceAsync("discovered");
+        await _fx.InsertAliasAsync(alias, d2);
+
+        // d1: stamped source 'arp' on its fingerprint AND seen by a network scanner (SshBannerScanner
+        // → slug 'ssh-banner') via proj_discovered matched on the same MAC → counts in both buckets.
+        await _fx.InsertFingerprintAsync(d1, "mac", "aa1122334455", "arp");
+        await ExecAsync(
+            "INSERT INTO proj_discovered (device, discovered, mac, sources) VALUES ('obs-1', @ip, 'aa1122334455', 'SshBannerScanner')",
+            ("ip", "192.168.1.10")
+        );
+        // d2: stamped source 'agent'.
+        await _fx.InsertFingerprintAsync(d2, "mac", "bb1122334455", "agent");
+        // alias: merged away → excluded from live_devices, so its 'arp' must not be counted.
+        await _fx.InsertFingerprintAsync(alias, "mac", "cc1122334455", "arp");
+
+        await using NpgsqlConnection conn = await _fx.DataSource.OpenConnectionAsync();
+        List<(string? Source, long? Count)> bySource =
+            await conn.GetCompositionByDiscoverySourceAsync(CancellationToken.None).ToListAsync(CancellationToken.None);
+
+        // 'arp' = d1 only (alias excluded); d1 also counts under the scanner slug; d2 under 'agent'.
+        Assert.Equal(1, bySource.Single(r => r.Source == "arp").Count);
+        Assert.Equal(1, bySource.Single(r => r.Source == "ssh-banner").Count);
+        Assert.Equal(1, bySource.Single(r => r.Source == "agent").Count);
     }
 }

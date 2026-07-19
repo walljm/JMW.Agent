@@ -103,7 +103,8 @@ public sealed record CompositionVm(
     IReadOnlyList<LabelCount> ByVendor,
     IReadOnlyList<LabelCount> ByOsFamily,
     IReadOnlyList<LabelCount> ByKind,
-    IReadOnlyList<LabelCount> ByManagementStatus
+    IReadOnlyList<LabelCount> ByManagementStatus,
+    IReadOnlyList<LabelCount> ByDiscoverySource
 );
 
 /// <summary>Small pure helpers for dashboard rendering (top-N rollup, inline-SVG sparklines).</summary>

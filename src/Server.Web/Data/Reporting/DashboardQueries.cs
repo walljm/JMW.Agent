@@ -196,4 +196,16 @@ public static partial class DashboardQueries
             this NpgsqlConnection connection,
             CancellationToken cancellationToken
         );
+
+    /// <summary>
+    /// Live-device counts by discovery source (ARP, google-wifi, ssh-banner, …), descending. A
+    /// device counts once per source it was seen by, so totals exceed the device count — a
+    /// per-source reach breakdown, not a partition.
+    /// </summary>
+    [DatabaseCommand]
+    public static partial
+        IAsyncEnumerable<(string? Source, long? Count)> GetCompositionByDiscoverySourceAsync(
+            this NpgsqlConnection connection,
+            CancellationToken cancellationToken
+        );
 }
