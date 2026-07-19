@@ -46,6 +46,15 @@ public sealed class ServiceDetailModel : PageModel
     public IReadOnlyList<ServiceDnsRecord> Records { get; private set; } = [];
     public IReadOnlyList<RenderedFactView> FactViews { get; private set; } = [];
 
+    /// <summary>Every fact keyed to this service (attribute/key/value) — feeds the "All Facts" section.</summary>
+    public IReadOnlyList<FactViewFact> AllFacts { get; private set; } = [];
+
+    /// <summary>Grouped left-nav sections (mirrors the Device Detail layout).</summary>
+    public IReadOnlyList<DeviceSectionGroup> NavGroups { get; private set; } = [];
+
+    /// <summary>The section the page lands on when no ?tab= is supplied.</summary>
+    public string DefaultSection { get; private set; } = "allfacts";
+
     public async Task<IActionResult> OnGetAsync(string id, CancellationToken ct)
     {
         Service = id;
@@ -97,8 +106,92 @@ public sealed class ServiceDetailModel : PageModel
         List<FactViewFact> facts = await conn.GetServiceAllFactsAsync(id, ct)
             .Select(r => new FactViewFact(r.AttributePath, FactViewRenderer.ExtractRowKey(r.KeyValues, "Service"), r.Value))
             .ToListAsync(ct);
+        AllFacts = facts;
         FactViews = FactViewRenderer.Render(facts, FactViewLibrary.Service);
 
+        BuildNav();
         return Page();
+    }
+
+    // Group display order + labels for the section nav — same order as Device Detail.
+    private static readonly (FactViewGroup Group, string Label)[] GroupOrder =
+    [
+        (FactViewGroup.History, "History"),
+        (FactViewGroup.Hardware, "Hardware"),
+        (FactViewGroup.Storage, "Storage"),
+        (FactViewGroup.Network, "Network"),
+        (FactViewGroup.Software, "Software"),
+        (FactViewGroup.Security, "Security"),
+        (FactViewGroup.Protocols, "Protocols"),
+        (FactViewGroup.Discovery, "Discovery"),
+        (FactViewGroup.Custom, "Custom"),
+    ];
+
+    /// <summary>
+    /// Assembles the grouped left-nav from the curated built-in sections (CA/DNS/DHCP) and the
+    /// rendered fact views, keeping only sections that have data — mirrors DeviceDetailModel.BuildNav.
+    /// </summary>
+    private void BuildNav()
+    {
+        bool hasCa = CaStatus is not null || RootSubjectDn is not null;
+        bool hasDns = TotalQueries.HasValue || BlockedPct.HasValue || Zones.Count > 0 || Records.Count > 0;
+        bool hasDhcp = Scopes.Count > 0;
+
+        (string Id, string Label, FactViewGroup Group, bool Show, int? Count)[] builtins =
+        [
+            ("ca", "CA Certificate", FactViewGroup.Security, hasCa, null),
+            ("dns", "DNS Zones", FactViewGroup.Network, hasDns, Zones.Count > 0 ? Zones.Count : null),
+            ("dhcp", "DHCP Scopes", FactViewGroup.Network, hasDhcp, Scopes.Count),
+            ("allfacts", "All Facts", FactViewGroup.Discovery, AllFacts.Count > 0, AllFacts.Count),
+        ];
+
+        List<DeviceSectionGroup> groups = new(GroupOrder.Length);
+        List<string> flatIds = [];
+        foreach ((FactViewGroup group, string label) in GroupOrder)
+        {
+            List<DeviceSectionItem> items = [];
+            foreach ((string id, string itemLabel, FactViewGroup g, bool show, int? count) in builtins)
+            {
+                if (g == group && show)
+                {
+                    items.Add(new DeviceSectionItem(id, itemLabel, count));
+                }
+            }
+
+            foreach (RenderedFactView view in FactViews)
+            {
+                if (view.Group == group)
+                {
+                    int? count = view.Kind == FactViewKind.List ? view.Rows.Count : null;
+                    items.Add(new DeviceSectionItem(FactViewSectionId(view.Title), view.Title, count));
+                }
+            }
+
+            if (items.Count > 0)
+            {
+                groups.Add(new DeviceSectionGroup(label, items));
+                flatIds.AddRange(items.Select(i => i.Id));
+            }
+        }
+
+        NavGroups = groups;
+        DefaultSection = flatIds.Count > 0 ? flatIds[0] : "allfacts";
+    }
+
+    /// <summary>
+    /// Stable DOM id for a fact-view section, e.g. "Add-ons" → "fv-add-ons". Shared by the nav
+    /// builder and the panel markup so their data-tab / data-panel ids match. (Same rule as
+    /// DeviceDetailModel.FactViewSectionId.)
+    /// </summary>
+    public static string FactViewSectionId(string title)
+    {
+        char[] buf = new char[title.Length];
+        for (int i = 0; i < title.Length; i++)
+        {
+            char c = char.ToLowerInvariant(title[i]);
+            buf[i] = char.IsLetterOrDigit(c) ? c : '-';
+        }
+
+        return "fv-" + new string(buf);
     }
 }
