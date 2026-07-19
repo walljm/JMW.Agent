@@ -569,6 +569,16 @@ table.data thead th[aria-sort="descending"]::after {
     opacity: 0.5;
 }
 
+/* Once columns are resized the table switches to fixed layout, where an over-wide cell would
+   otherwise overflow its column and lie on top of the next one. Clip + ellipsize so a narrowed
+   column truncates its content instead. Applied only in resized mode — auto-layout tables size to
+   content and never overlap. (column-resize.js adds .cols-resized when it sets fixed layout.) */
+.data.cols-resized th,
+.data.cols-resized td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 table.data tbody td {
     padding: var(--space-2) var(--space-3);
     border-bottom: var(--border-hair);

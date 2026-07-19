@@ -38,6 +38,9 @@
 
         if (applied) {
             table.style.tableLayout = 'fixed';
+            // Fixed layout means an over-wide cell overflows its column — clip+ellipsize so a
+            // narrowed column doesn't bleed its content over the next one (see .cols-resized CSS).
+            table.classList.add('cols-resized');
         }
     }
 
@@ -103,6 +106,7 @@
             }
 
             table.style.tableLayout = 'fixed';
+            table.classList.add('cols-resized'); // clip overflowing cells (see .cols-resized CSS)
             document.body.style.userSelect = 'none';
 
             var startX = e.pageX;
