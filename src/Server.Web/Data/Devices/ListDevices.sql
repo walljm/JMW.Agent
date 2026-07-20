@@ -6,11 +6,10 @@ SELECT
     -- SystemOsDistroDerivation's lowest-priority fan-in input.
   , s.os_distro AS os_distro
   , d.management_status
-  , CASE
-        WHEN s.device IS NULL
-            THEN NULL
-        ELSE s.updated_at
-    END AS last_seen
+    -- Newest fingerprint sighting: stamped on every resolution, so it reflects true recency for
+    -- every device (managed included) and matches the liveness-window filter. proj_systems.updated_at
+    -- is deliberately NOT used — it only moves on a data change and goes stale on a live static host.
+  , (SELECT max(df.last_seen) FROM device_fingerprints df WHERE df.device_id = d.device_id) AS last_seen
     -- Already includes the inferred guess (VendorFromOsDistroDerivation et al.) as
     -- DeviceVendorDerivation's lowest-priority fan-in input.
   , pd.vendor AS vendor
@@ -22,7 +21,7 @@ LEFT JOIN proj_devices  pd
 ON pd.device = d.device_id::text
 WHERE
     EXISTS (
-    SELECT 1 FROM live_devices ld WHERE ld.device_id = d.device_id
+    SELECT 1 FROM visible_devices ld WHERE ld.device_id = d.device_id
     )
   AND (
     $1::text IS NULL

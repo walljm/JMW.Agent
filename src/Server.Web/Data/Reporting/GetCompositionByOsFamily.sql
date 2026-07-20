@@ -4,7 +4,7 @@ SELECT
     s.os_family
   , count(*) AS count
 FROM
-    live_devices           d
+    visible_devices           d
     LEFT JOIN proj_systems s ON s.device = d.device_id::text
 GROUP BY
     s.os_family

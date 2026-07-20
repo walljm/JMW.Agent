@@ -6,7 +6,7 @@ SELECT
   , count(DISTINCT ds.device_id) AS COUNT
 FROM
     device_discovery_sources ds
-    JOIN live_devices d
+    JOIN visible_devices d
     ON d.device_id = ds.device_id
 GROUP BY
     ds.source

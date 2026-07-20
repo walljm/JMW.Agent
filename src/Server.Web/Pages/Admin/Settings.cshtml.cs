@@ -24,6 +24,7 @@ public sealed class SettingsModel : PageModel
     public List<RetentionPolicyRow> RetentionPolicies { get; private set; } = [];
     public int OnlineMultiplier { get; private set; }
     public int OfflineCeilingSecs { get; private set; }
+    public int DeviceLivenessWindowHours { get; private set; }
     public string AntiforgeryToken { get; private set; } = string.Empty;
 
     public async Task OnGetAsync(CancellationToken ct)
@@ -51,6 +52,8 @@ public sealed class SettingsModel : PageModel
             await conn.GetAgentLivenessSettingsAsync(ct).FirstAsync(ct);
         OnlineMultiplier = livenessSettings.OnlineMultiplier;
         OfflineCeilingSecs = livenessSettings.OfflineCeilingSecs;
+
+        DeviceLivenessWindowHours = (await conn.GetDeviceLivenessSettingsAsync(ct).FirstAsync(ct)).WindowHours;
     }
 
     public sealed record RetentionPolicyRow(

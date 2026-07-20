@@ -8,7 +8,7 @@ SELECT
     coalesce(pdv.vendor, hw.system_vendor) AS vendor
   , count(*) AS COUNT
 FROM
-    live_devices d
+    visible_devices d
     LEFT JOIN proj_hardware hw
 ON hw.device = d.device_id::text
     LEFT JOIN proj_devices pdv ON pdv.device = d.device_id::text

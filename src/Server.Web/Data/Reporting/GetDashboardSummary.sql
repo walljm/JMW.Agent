@@ -1,12 +1,14 @@
 -- PERF-005: two FILTER aggregates replace five separate COUNT(*) subqueries.
 -- devices scanned once, agents scanned once.
 WITH device_counts AS (
+    -- visible_devices: excludes merged-away aliases AND devices hidden by the liveness window,
+    -- so the headline tiles count only the live inventory the Devices list shows.
     SELECT
         count(*) AS total_devices
       , count(*) FILTER (WHERE management_status = 'managed')    AS managed_devices
       , count(*) FILTER (WHERE management_status = 'discovered') AS discovered_devices
     FROM
-        devices
+        visible_devices
     )
    , agent_counts  AS (
     SELECT

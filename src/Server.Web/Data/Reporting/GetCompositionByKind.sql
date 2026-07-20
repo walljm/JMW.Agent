@@ -4,7 +4,7 @@ SELECT
     pd.kind
   , count(*) AS COUNT
 FROM
-    live_devices d
+    visible_devices d
     LEFT JOIN proj_devices pd
 ON pd.device = d.device_id::text
 GROUP BY

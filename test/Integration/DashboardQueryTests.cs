@@ -384,6 +384,10 @@ public sealed class DashboardQueryTests
         Guid d2 = await _fx.InsertDeviceAsync("managed");
         Guid alias = await _fx.InsertDeviceAsync("discovered");
         await _fx.InsertAliasAsync(alias, d1);
+        // A recently-seen fingerprint each, so they pass the liveness-window filter (visible_devices).
+        await _fx.InsertFingerprintAsync(d1, "mac", "aa0011223301");
+        await _fx.InsertFingerprintAsync(d2, "mac", "aa0011223302");
+        await _fx.InsertFingerprintAsync(alias, "mac", "aa0011223303");
 
         await ExecAsync(
             "INSERT INTO proj_devices (device, kind, updated_at) VALUES (@d,'server',now())",

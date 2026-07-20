@@ -466,6 +466,7 @@ RetentionApi.Map(adminGroup);
 OuiApi.Map(adminGroup);
 ConflictsApi.Map(adminGroup);
 AgentLivenessSettingsApi.Map(adminGroup);
+DeviceLivenessSettingsApi.Map(adminGroup);
 UsersApi.Map(adminGroup);
 OperatorFactsApi.Map(adminGroup);
 

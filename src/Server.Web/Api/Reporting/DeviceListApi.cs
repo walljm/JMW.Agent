@@ -238,17 +238,16 @@ public static class DeviceListApi
                 s.os_distro,
                 s.last_seen_ip,
                 d.management_status,
-                -- Last seen: the projection's updated_at when the device has a proj_systems row,
-                -- else the newest fingerprint sighting. device_fingerprints.last_seen is stamped
-                -- every time a device is resolved (DeviceRegistry.UpsertFingerprintsAsync), so a
-                -- passively-discovered device (ARP-/SSH-/scanner-only, no proj_systems row) still
-                -- reports when it was last observed instead of a blank — if we have any data about
-                -- a device, we necessarily saw it.
-                COALESCE(
-                    CASE WHEN s.device IS NULL THEN NULL ELSE s.updated_at END,
-                    (SELECT max(df.last_seen) FROM device_fingerprints df WHERE df.device_id = d.device_id)
-                ) AS last_seen
-            FROM live_devices d
+                -- Last seen = the newest fingerprint sighting. device_fingerprints.last_seen is
+                -- stamped on every resolution (DeviceRegistry.UpsertFingerprintsAsync), so it
+                -- reflects true recency for every device — passively-discovered (ARP-/SSH-/scanner-
+                -- only) AND managed. We deliberately do NOT prefer proj_systems.updated_at: that
+                -- only moves on a data change, so it goes stale on a live-but-static managed device
+                -- and would misreport it as long-gone. This is the same signal the liveness-window
+                -- filter (visible_devices) uses, so the shown time and the hide decision agree.
+                (SELECT max(df.last_seen) FROM device_fingerprints df WHERE df.device_id = d.device_id)
+                    AS last_seen
+            FROM visible_devices d
                 LEFT JOIN proj_systems  s   ON s.device   = d.device_id::text
                 LEFT JOIN proj_hardware hw  ON hw.device  = d.device_id::text
                 LEFT JOIN proj_devices  pdv ON pdv.device = d.device_id::text

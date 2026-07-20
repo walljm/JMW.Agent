@@ -37,6 +37,25 @@
     </div>
 
     <div class="section">
+        <h3 style="margin-top:0">Device Liveness Window</h3>
+        <p class="prose text-dim" style="margin-bottom:var(--space-3)">
+            Devices not seen within this window are hidden from the Devices list, Dashboard totals, and
+            composition breakdowns — but never deleted. They stay reachable by link and remain in the
+            history and Not-Seen views, and reappear automatically the next time they're observed. Keeps
+            transient guests off the live inventory without losing the record.
+        </p>
+        <div style="display:flex;gap:var(--space-4);align-items:flex-end">
+            <div class="field">
+                <label for="deviceLivenessWindowHours">Hide after</label>
+                <input class="input" type="number" min="1" id="deviceLivenessWindowHours" style="width:100px"
+                       value="@Model.DeviceLivenessWindowHours">
+                <span class="help">hours since a device was last seen</span>
+            </div>
+            <button class="btn btn-primary" onclick="saveDeviceLivenessSettings()">Save</button>
+        </div>
+    </div>
+
+    <div class="section">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3)">
             <h3 style="margin:0">Data Retention</h3>
             <button class="btn" onclick="runSweep()">Run Sweep Now</button>
@@ -176,6 +195,28 @@
 
             if (resp.ok) {
                 toast('Liveness thresholds saved');
+            } else {
+                const j = await resp.json().catch(() => null);
+                toast('Error: ' + (j?.detail ?? resp.status));
+            }
+        }
+
+        async function saveDeviceLivenessSettings() {
+            const windowHours = parseInt(document.getElementById('deviceLivenessWindowHours').value, 10);
+
+            if (!Number.isFinite(windowHours) || windowHours < 1) {
+                toast('Hide-after window must be a positive number of hours.');
+                return;
+            }
+
+            const resp = await fetch('/api/v1/admin/device-liveness-settings', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF},
+                body: JSON.stringify({window_hours: windowHours}),
+            });
+
+            if (resp.ok) {
+                toast('Device liveness window saved');
             } else {
                 const j = await resp.json().catch(() => null);
                 toast('Error: ' + (j?.detail ?? resp.status));

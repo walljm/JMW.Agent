@@ -49,6 +49,8 @@ public readonly record struct InUseResult(bool? InUse);
 
 public readonly record struct DiscoveredMacResult(string? Mac);
 
+public readonly record struct DeviceLivenessSettingsResult(int WindowHours);
+
 // Nullable: the IP comes through a UNION ALL, reported nullable in SchemaOnly mode.
 public readonly record struct ResolvedIpResult(string? Ip);
 

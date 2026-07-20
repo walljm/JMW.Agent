@@ -23,4 +23,19 @@ public static partial class SettingsQueries
             int offlineCeilingSecs,
             CancellationToken cancellationToken
         );
+
+    /// <summary>Returns the single device liveness settings row (the hide-after window, in hours).</summary>
+    [DatabaseCommand]
+    public static partial IAsyncEnumerable<DeviceLivenessSettingsResult> GetDeviceLivenessSettingsAsync(
+        this NpgsqlConnection connection,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>Updates the device liveness window. Returns the new value.</summary>
+    [DatabaseCommand]
+    public static partial IAsyncEnumerable<DeviceLivenessSettingsResult> UpdateDeviceLivenessSettingsAsync(
+        this NpgsqlConnection connection,
+        int windowHours,
+        CancellationToken cancellationToken
+    );
 }
