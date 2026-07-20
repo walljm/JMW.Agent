@@ -634,7 +634,13 @@ public sealed class Agent
         // filters here purely to avoid re-sending unchanged data over the wire.
         IReadOnlyList<Fact> changed = tracker.FilterChanged(allFacts);
 
-        FactBatchElement? element = changed.Count == 0 ? null : new FactBatchElement(fingerprints, changed);
+        // Always emit an element when we have fingerprints, even with zero changed facts. A
+        // fingerprints-only element is a LIVENESS TOUCH: the server re-resolves the device and
+        // stamps device_fingerprints.last_seen (the signal the liveness window keys on) so a static
+        // host is never wrongly aged out of the live view just because its facts stopped changing.
+        // The server ingests facts only when Facts is non-empty, so an empty-facts element adds no
+        // projection churn — it is pure "still here".
+        FactBatchElement element = new(fingerprints, changed);
         return new LocalCollectResult(element, collectorStats, scannerStats);
     }
 
@@ -863,11 +869,10 @@ public sealed class Agent
         // Raw facts over the wire; the server normalizes. Tracker only suppresses unchanged data.
         IReadOnlyList<Fact> changed = tracker.FilterChanged(rawFacts);
 
-        if (changed.Count == 0)
-        {
-            return (null, rawFacts.Count);
-        }
-
+        // Even when nothing changed, emit a fingerprints-only element as a LIVENESS TOUCH: it
+        // re-resolves the device server-side and stamps device_fingerprints.last_seen so a static
+        // polled device isn't wrongly hidden by the liveness window. The server ingests facts only
+        // when Facts is non-empty, so an empty-facts element is pure "still here" with no churn.
         return (new FactBatchElement(fingerprints, changed), rawFacts.Count);
     }
 

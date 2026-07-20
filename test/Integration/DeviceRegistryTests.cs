@@ -1,6 +1,8 @@
 using JMW.Discovery.Core;
 using JMW.Discovery.Server;
 
+using Npgsql;
+
 namespace JMW.Discovery.Tests;
 
 /// <summary>
@@ -71,6 +73,58 @@ public sealed class DeviceRegistryTests : IAsyncLifetime
         Assert.True(firstIsNew);
         Assert.False(secondIsNew);
         Assert.Equal(firstId, secondId);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ReResolve_BumpsLastSeen_ForLivenessTouch()
+    {
+        // The agent's fingerprints-only "liveness touch" (a batch element with zero changed facts)
+        // re-resolves an existing device so device_fingerprints.last_seen advances — the recency
+        // signal visible_devices keys on. This guards the server-side contract that touch relies on:
+        // re-resolution keeps a static device fresh and mints no duplicate.
+        // Globally-administered MAC (first-octet low nibble has multicast/local bits clear) so it
+        // survives NormalizeMac.
+        List<Fingerprint> fps = [new(FingerprintType.Mac, "001122aabbcc")];
+        (string id, _) = await _registry.ResolveAsync(fps, source: "test");
+
+        // Age the sighting well past a typical window.
+        await ExecAsync(
+            "UPDATE device_fingerprints SET last_seen = now() - interval '48 hours' WHERE device_id::text = @id",
+            ("id", id)
+        );
+        Assert.True(await LastSeenAsync(id) < DateTime.UtcNow - TimeSpan.FromHours(47));
+
+        // Re-resolve with the same fingerprints — exactly what a liveness touch triggers server-side.
+        (string id2, bool isNew2) = await _registry.ResolveAsync(fps, source: "test");
+
+        Assert.Equal(id, id2);
+        Assert.False(isNew2);
+        Assert.True(await LastSeenAsync(id) > DateTime.UtcNow - TimeSpan.FromMinutes(5));
+        Assert.Equal(1, await _fixture.CountAsync("devices", $"device_id::text = '{id}'"));
+    }
+
+    private async Task ExecAsync(string sql, params (string, object?)[] ps)
+    {
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        await using NpgsqlCommand cmd = new(sql, conn);
+        foreach ((string name, object? val) in ps)
+        {
+            cmd.Parameters.AddWithValue(name, val ?? DBNull.Value);
+        }
+
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private async Task<DateTime> LastSeenAsync(string deviceId)
+    {
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        await using NpgsqlCommand cmd = new(
+            "SELECT max(last_seen) FROM device_fingerprints WHERE device_id::text = @id",
+            conn
+        );
+        cmd.Parameters.AddWithValue("id", deviceId);
+        object v = await cmd.ExecuteScalarAsync() ?? throw new InvalidOperationException("no rows");
+        return v is DateTimeOffset dto ? dto.UtcDateTime : ((DateTime)v).ToUniversalTime();
     }
 
     [Fact]
