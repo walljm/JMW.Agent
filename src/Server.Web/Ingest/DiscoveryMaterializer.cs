@@ -142,6 +142,13 @@ public sealed class DiscoveryMaterializer
         // fingerprinted early by plain ARP/DHCP (no vendor/model/os) never revisits that
         // promotion once minted — this pass closes that gap on every cycle instead.
         await MaterializePromotionGapsAsync(conn, ct);
+
+        // Passive-device liveness: the new-MAC-only resolution passes above never revisit an
+        // already-fingerprinted device, so a device seen only via passive ARP/DHCP/discovery would
+        // have a frozen last_seen and be wrongly hidden by the liveness window. Advance last_seen for
+        // every observed MAC to its freshest sighting (forward-only, so departed devices still age
+        // out). Cheap single UPDATE; results discarded. See StampObservedMacLastSeen.sql.
+        await conn.StampObservedMacLastSeenAsync(ct).ExecuteAsync(ct);
     }
 
     private async Task MaterializePromotionGapsAsync(NpgsqlConnection conn, CancellationToken ct)

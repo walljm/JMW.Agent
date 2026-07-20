@@ -114,6 +114,19 @@ public static partial class DiscoveryQueries
     );
 
     /// <summary>
+    /// Passive-device liveness: advances device_fingerprints.last_seen for every existing MAC
+    /// fingerprint to the freshest time that MAC was observed across the presence projections
+    /// (ARP/DHCP/discovered). Only moves last_seen forward to a real observation, so a present
+    /// device stays fresh while a departed device still ages out. Returns the touched device ids
+    /// (drained by the caller). See StampObservedMacLastSeen.sql.
+    /// </summary>
+    [DatabaseCommand]
+    public static partial IAsyncEnumerable<TouchedDeviceResult> StampObservedMacLastSeenAsync(
+        this NpgsqlConnection connection,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
     /// Returns the real full MACs (12 lowercase hex, no separators) the server has
     /// attested for <paramref name="ip" />, scoped to <paramref name="agentId" />'s LAN —
     /// from the ARP cache, DHCP leases (both service-polled and local), and previously-

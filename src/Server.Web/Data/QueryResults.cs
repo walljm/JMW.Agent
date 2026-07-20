@@ -111,6 +111,10 @@ public readonly record struct AgentStatusResult(string? Status);
 
 public readonly record struct DeviceRefResult(string Device);
 
+// Nullable: device_id::text is a computed expression, reported nullable in SchemaOnly mode. Used by
+// fire-and-forget UPDATEs whose RETURNING rows are only drained to drive execution.
+public readonly record struct TouchedDeviceResult(string? Device);
+
 public readonly record struct CycleIdResult(long CycleId);
 
 // TableName is nullable because FirstOrDefaultAsync yields default(struct) — a null

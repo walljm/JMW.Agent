@@ -632,17 +632,43 @@ public sealed class Agent
 
         // Agents emit RAW facts; the server normalizes + derives at ingest. The delta tracker still
         // filters here purely to avoid re-sending unchanged data over the wire.
-        IReadOnlyList<Fact> changed = tracker.FilterChanged(allFacts);
+        //
+        // Ephemeral presence facts (ARP / local DHCP) bypass the delta tracker and are re-sent every
+        // cycle. Their projections carry a short (ephemeral) retention, and an IP↔MAC binding can sit
+        // unchanged for days — so if the tracker suppressed them, the short-lived rows would prune
+        // into a multi-day gap in "who is on the network right now" (the data discovery + co-location
+        // read). Always sending them keeps those projections a true live snapshot; a departed device
+        // drops out within the ephemeral window. It's cheap — these tables are small.
+        List<Fact> ephemeral = [];
+        List<Fact> trackable = [];
+        foreach (Fact fact in allFacts)
+        {
+            (IsEphemeralPresenceSource(fact.Source) ? ephemeral : trackable).Add(fact);
+        }
 
-        // Always emit an element when we have fingerprints, even with zero changed facts. A
+        IReadOnlyList<Fact> changed = tracker.FilterChanged(trackable);
+        List<Fact> outgoing = ephemeral.Count == 0 ? [.. changed] : [.. ephemeral, .. changed];
+
+        // Always emit an element when we have fingerprints, even with zero outgoing facts. A
         // fingerprints-only element is a LIVENESS TOUCH: the server re-resolves the device and
         // stamps device_fingerprints.last_seen (the signal the liveness window keys on) so a static
         // host is never wrongly aged out of the live view just because its facts stopped changing.
         // The server ingests facts only when Facts is non-empty, so an empty-facts element adds no
         // projection churn — it is pure "still here".
-        FactBatchElement element = new(fingerprints, changed);
+        FactBatchElement element = new(fingerprints, outgoing);
         return new LocalCollectResult(element, collectorStats, scannerStats);
     }
+
+    // Ephemeral network-presence sources: ARP (local table, active scan, gateway) and local DHCP
+    // leases. These feed short-retention "who's on the network now" projections and are re-sent
+    // every cycle rather than delta-tracked (see CollectLocalAsync). NOT included: discovery
+    // scanners that carry identity/service data (mDNS/SSDP/TLS/etc.) and google-wifi obscured MACs,
+    // which are stable identity signals kept on the longer retention tier.
+    private static bool IsEphemeralPresenceSource(FactSource source) =>
+        source is FactSource.ArpLocal
+            or FactSource.ArpScanner
+            or FactSource.GatewayArp
+            or FactSource.DhcpLeasesLocal;
 
     // Backfills FactSource on every fact still Unknown, keyed by the collector-kind
     // identifier (ILocalCollector.Name / Target.CollectorType / IServiceCollector.ServiceType).

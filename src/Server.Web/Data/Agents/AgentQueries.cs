@@ -167,6 +167,18 @@ public static partial class AgentQueries
     );
 
     /// <summary>
+    /// Approved agents due for a forced full re-collect — trackers last requested-cleared more than
+    /// the cadence (¼ of the shortest 'steady' retention) ago, or never — oldest-first and capped at
+    /// <paramref name="maxAgents"/> per sweep to stagger the fleet. See GetAgentsDueForRecollect.sql.
+    /// </summary>
+    [DatabaseCommand]
+    public static partial IAsyncEnumerable<AgentIdResult> GetAgentsDueForRecollectAsync(
+        this NpgsqlConnection connection,
+        int maxAgents,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
     /// Requests that the agent upload its recent console/journald log output on its next
     /// heartbeat. <paramref name="lines"/> is the page size; <paramref name="before"/> is an
     /// opaque paging token (ring-buffer Seq or journald __CURSOR) relayed to the agent verbatim,
