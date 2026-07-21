@@ -722,16 +722,16 @@
                 }
                 else
                 {
-                    <table class="data">
+                    <table class="data" aria-label="Configured targets" data-client-grid>
                         <thead>
                         <tr>
-                            <th>Label</th>
-                            <th>Endpoint</th>
-                            <th>Collector type</th>
-                            <th>Credential</th>
-                            <th>Enabled</th>
-                            <th>Health <span class="text-dim" style="font-weight:var(--fw-normal)">(last @AgentDetailModel.LookbackHours h)</span></th>
-                            <th></th>
+                            <th data-col-key="label">Label</th>
+                            <th data-col-key="endpoint">Endpoint</th>
+                            <th data-col-key="collector-type">Collector type</th>
+                            <th data-col-key="credential">Credential</th>
+                            <th data-no-sort>Enabled</th>
+                            <th data-col-key="health">Health <span class="text-dim" style="font-weight:var(--fw-normal)">(last @AgentDetailModel.LookbackHours h)</span></th>
+                            <th data-no-sort></th>
                         </tr>
                         </thead>
                         <tbody id="targets-tbody">

@@ -21,14 +21,14 @@
                         <input type="checkbox" id="selectAllPending" aria-label="Select all pending agents"
                                onchange="toggleSelectAllPending(this)"/>
                     </th>
-                    <th style="cursor:default">Hostname</th>
-                    <th style="cursor:default">IP</th>
-                    <th style="cursor:default">OS</th>
-                    <th style="cursor:default">Arch</th>
+                    <th style="cursor:default" data-col-key="hostname">Hostname</th>
+                    <th style="cursor:default" data-col-key="ip">IP</th>
+                    <th style="cursor:default" data-col-key="os">OS</th>
+                    <th style="cursor:default" data-col-key="arch">Arch</th>
                     <th sort-key="status" sort-grid="Model.Grid" sort-target="#agents-table">Status</th>
-                    <th style="cursor:default">Liveness</th>
-                    <th style="cursor:default">Version</th>
-                    <th style="cursor:default">Zone</th>
+                    <th style="cursor:default" data-col-key="liveness">Liveness</th>
+                    <th style="cursor:default" data-col-key="version">Version</th>
+                    <th style="cursor:default" data-col-key="zone">Zone</th>
                     <th sort-key="created_at" sort-grid="Model.Grid" sort-target="#agents-table">Registered</th>
                     <th></th>
                 </tr>

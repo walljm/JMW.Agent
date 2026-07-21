@@ -2012,6 +2012,7 @@ public sealed class StorageApiTests : IAsyncLifetime
             _fixture.DataSource,
             null,
             null,
+            null,
             10,
             CancellationToken.None
         );
@@ -2039,6 +2040,7 @@ public sealed class StorageApiTests : IAsyncLifetime
             _fixture.DataSource,
             null,
             null,
+            null,
             10,
             CancellationToken.None
         );
@@ -2064,6 +2066,7 @@ public sealed class StorageApiTests : IAsyncLifetime
             _fixture.DataSource,
             null,
             null,
+            null,
             10,
             CancellationToken.None
         );
@@ -2083,6 +2086,7 @@ public sealed class StorageApiTests : IAsyncLifetime
             _fixture.DataSource,
             null,
             null,
+            null,
             2,
             CancellationToken.None
         );
@@ -2094,6 +2098,7 @@ public sealed class StorageApiTests : IAsyncLifetime
 
         (List<DiskListItem> page2, string? cursor2) = await StorageApi.QueryDisksAsync(
             _fixture.DataSource,
+            null,
             parts[0],
             parts[1],
             2,
@@ -2105,6 +2110,63 @@ public sealed class StorageApiTests : IAsyncLifetime
         Assert.Equal("sdc", page2[0].Disk);
     }
 
+    [Fact]
+    public async Task QueryDisks_Search_MatchesModelCaseInsensitive()
+    {
+        await InsertDiskAsync("nas-1", "sda", model: "WD Red 4TB");
+        await InsertDiskAsync("nas-2", "sda", model: "Samsung 870 EVO");
+
+        (List<DiskListItem> items, _) = await StorageApi.QueryDisksAsync(
+            _fixture.DataSource,
+            "samsung",
+            null,
+            null,
+            10,
+            CancellationToken.None
+        );
+
+        Assert.Single(items);
+        Assert.Equal("nas-2", items[0].Device);
+    }
+
+    [Fact]
+    public async Task QueryDisks_Search_MatchesJoinedHostname()
+    {
+        await InsertSystemAsync("nas-1", "file-server");
+        await InsertDiskAsync("nas-1", "sda");
+        await InsertDiskAsync("other", "sda");
+
+        (List<DiskListItem> items, _) = await StorageApi.QueryDisksAsync(
+            _fixture.DataSource,
+            "file-serv",
+            null,
+            null,
+            10,
+            CancellationToken.None
+        );
+
+        Assert.Single(items);
+        Assert.Equal("nas-1", items[0].Device);
+    }
+
+    [Fact]
+    public async Task QueryDisks_Search_BlankIsIgnored()
+    {
+        await InsertDiskAsync("nas-1", "sda");
+        await InsertDiskAsync("nas-2", "sda");
+
+        (List<DiskListItem> items, _) = await StorageApi.QueryDisksAsync(
+            _fixture.DataSource,
+            "   ",
+            null,
+            null,
+            10,
+            CancellationToken.None
+        );
+
+        Assert.Equal(2, items.Count);
+    }
+
     // ── Filesystems ───────────────────────────────────────────────────────────
 
     [Fact]
@@ -2112,6 +2174,7 @@ public sealed class StorageApiTests : IAsyncLifetime
     {
         (List<FilesystemListItem> items, string? next) = await StorageApi.QueryFilesystemsAsync(
             _fixture.DataSource,
+            null,
             null,
             null,
             10,
@@ -2139,6 +2202,7 @@ public sealed class StorageApiTests : IAsyncLifetime
             _fixture.DataSource,
             null,
             null,
+            null,
             10,
             CancellationToken.None
         );
@@ -2163,6 +2227,7 @@ public sealed class StorageApiTests : IAsyncLifetime
             _fixture.DataSource,
             null,
             null,
+            null,
             2,
             CancellationToken.None
         );
@@ -2174,6 +2239,7 @@ public sealed class StorageApiTests : IAsyncLifetime
 
         (List<FilesystemListItem> page2, string? cursor2) = await StorageApi.QueryFilesystemsAsync(
             _fixture.DataSource,
+            null,
             parts[0],
             parts[1],
             2,
@@ -2183,6 +2249,35 @@ public sealed class StorageApiTests : IAsyncLifetime
         Assert.Single(page2);
         Assert.Null(cursor2);
         Assert.Equal("/home", page2[0].Filesystem);
+    }
+
+    [Fact]
+    public async Task QueryFilesystems_Search_MatchesMountAndType()
+    {
+        await InsertFilesystemAsync("nas-1", "/data", fsType: "ext4");
+        await InsertFilesystemAsync("nas-1", "/boot", fsType: "vfat");
+
+        (List<FilesystemListItem> byMount, _) = await StorageApi.QueryFilesystemsAsync(
+            _fixture.DataSource,
+            "/data",
+            null,
+            null,
+            10,
+            CancellationToken.None
+        );
+        Assert.Single(byMount);
+        Assert.Equal("/data", byMount[0].Filesystem);
+
+        (List<FilesystemListItem> byType, _) = await StorageApi.QueryFilesystemsAsync(
+            _fixture.DataSource,
+            "vfat",
+            null,
+            null,
+            10,
+            CancellationToken.None
+        );
+        Assert.Single(byType);
+        Assert.Equal("/boot", byType[0].Filesystem);
     }
 
     // ── Seed helpers ──────────────────────────────────────────────────────────

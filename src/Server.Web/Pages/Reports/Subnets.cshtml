@@ -44,40 +44,65 @@
         </button>
     </div>
 
-    <form class="toolbar" method="get" action="/subnets">
-        <input type="hidden" name="tab" value="@activeTab"/>
-        <input class="input" type="search" name="q" value="@Model.Q"
-               aria-label="Search subnets" placeholder="Search CIDR, name, gateway…" style="flex:1"/>
-        <button class="btn" type="submit">Filter</button>
-        @if (!string.IsNullOrEmpty(Model.Q))
-        {
-            <a class="btn" href="@Model.ClearHref">Clear</a>
-        }
-    </form>
-
     <partial name="_SectionError" model="Model.LoadError"/>
     @if (Model.LoadError is null)
     {
         <div class="tabpanel" id="tab-topology" role="tabpanel" aria-labelledby="tab-btn-topology" @(activeTab == "topology" ? "" : "hidden")>
-            <div class="card" style="overflow-x:auto">
+            <div class="card graph-card" id="topology-card">
+                <div class="graph-toolbar">
+                    <div class="btn-group graph-layout" role="group" aria-label="Graph layout">
+                        <button class="btn btn-sm active" type="button" data-layout="force"
+                                onclick="setGraphLayout('topology-graph', 'force')">Force</button>
+                        <button class="btn btn-sm" type="button" data-layout="hier"
+                                onclick="setGraphLayout('topology-graph', 'hier')">Hierarchical</button>
+                    </div>
+                    <span class="graph-hint" hidden>Shift-click a node to set it as a top node.</span>
+                    <button class="btn btn-sm graph-reset-roots" type="button" hidden
+                            onclick="resetGraphRoots('topology-graph')">Reset roots</button>
+                    <button class="btn btn-sm" type="button" aria-label="Enter fullscreen"
+                            onclick="toggleGraphFullscreen('topology-card', 'topology-graph')">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M8 21H5a2 2 0 0 1-2-2v-3m18 0v3a2 2 0 0 1-2 2h-3"/></svg>
+                        Fullscreen
+                    </button>
+                </div>
+                <button class="btn btn-sm graph-fullscreen-exit" type="button" aria-label="Exit fullscreen"
+                        onclick="toggleGraphFullscreen('topology-card', 'topology-graph')">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>
+                    Exit
+                </button>
                 <div id="topology-graph" class="tgraph-container" data-graph="@Model.L3GraphJson"></div>
             </div>
         </div>
 
         <div class="tabpanel" id="tab-l2" role="tabpanel" aria-labelledby="tab-btn-l2" @(activeTab == "l2" ? "" : "hidden")>
-            <div class="card" style="overflow-x:auto">
+            <div class="card graph-card" id="l2-card">
+                <div class="graph-toolbar">
+                    <div class="btn-group graph-layout" role="group" aria-label="Graph layout">
+                        <button class="btn btn-sm active" type="button" data-layout="force"
+                                onclick="setGraphLayout('l2-graph', 'force')">Force</button>
+                        <button class="btn btn-sm" type="button" data-layout="hier"
+                                onclick="setGraphLayout('l2-graph', 'hier')">Hierarchical</button>
+                    </div>
+                    <span class="graph-hint" hidden>Shift-click a node to set it as a top node.</span>
+                    <button class="btn btn-sm graph-reset-roots" type="button" hidden
+                            onclick="resetGraphRoots('l2-graph')">Reset roots</button>
+                    <button class="btn btn-sm" type="button" aria-label="Enter fullscreen"
+                            onclick="toggleGraphFullscreen('l2-card', 'l2-graph')">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M8 21H5a2 2 0 0 1-2-2v-3m18 0v3a2 2 0 0 1-2 2h-3"/></svg>
+                        Fullscreen
+                    </button>
+                </div>
+                <button class="btn btn-sm graph-fullscreen-exit" type="button" aria-label="Exit fullscreen"
+                        onclick="toggleGraphFullscreen('l2-card', 'l2-graph')">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>
+                    Exit
+                </button>
                 <div id="l2-graph" class="tgraph-container" data-graph="@Model.L2GraphJson"></div>
             </div>
         </div>
 
         <div class="tabpanel" id="tab-list" role="tabpanel" aria-labelledby="tab-btn-list" @(activeTab == "list" ? "" : "hidden")>
-            @if (Model.Subnets.Count == 0 && !string.IsNullOrEmpty(Model.Q))
-            {
-                <div class="empty">
-                    No subnets match “@Model.Q”. <a href="@Model.ClearHref">Clear the filter</a> to see all subnets.
-                </div>
-            }
-            else if (Model.Subnets.Count == 0)
+            @if (Model.Subnets.Count == 0)
             {
                 <div class="empty">
                     No subnets found yet. Subnets are derived from agent interface CIDRs and DHCP
@@ -87,15 +112,15 @@
             else
             {
                 <div class="grid-scroll">
-                    <table class="data" aria-label="Subnets">
+                    <table class="data" aria-label="Subnets" data-client-grid>
                         <thead>
                         <tr>
-                            <th>CIDR</th>
-                            <th>Name</th>
-                            <th>Host</th>
-                            <th>Gateway</th>
-                            <th class="num">Hosts</th>
-                            <th>Source</th>
+                            <th data-col-key="cidr">CIDR</th>
+                            <th data-col-key="name">Name</th>
+                            <th data-col-key="host">Host</th>
+                            <th data-col-key="gateway">Gateway</th>
+                            <th class="num" data-col-key="hosts">Hosts</th>
+                            <th data-col-key="source">Source</th>
                         </tr>
                         </thead>
                         <tbody>
@@ -154,15 +179,81 @@
     <script src="/js/d3.v7.min.js" asp-append-version="true"></script>
     <script src="/js/topology-graph.js" asp-append-version="true"></script>
     <script>
+        // Layout mode + chosen root nodes are navigation state, so they live in the URL
+        // (l3layout/l3roots, l2layout/l2roots) — bookmarkable, shareable, refresh-safe.
+        const GRAPH_KEYS = { 'topology-graph': 'l3', 'l2-graph': 'l2' };
+
+        function readGraphState(graphId) {
+            const key = GRAPH_KEYS[graphId];
+            const p = new URL(location.href).searchParams;
+            const layout = p.get(key + 'layout') === 'hier' ? 'hier' : 'force';
+            const rootsRaw = p.get(key + 'roots');
+            const roots = rootsRaw != null && rootsRaw.length > 0
+                ? rootsRaw.split(',').map(decodeURIComponent).filter((s) => s.length > 0)
+                : [];
+            return { layout, roots };
+        }
+
+        function writeGraphState(graphId, state) {
+            const key = GRAPH_KEYS[graphId];
+            const url = new URL(location.href);
+            if (state.layout === 'hier') {
+                url.searchParams.set(key + 'layout', 'hier');
+            } else {
+                url.searchParams.delete(key + 'layout');
+            }
+            if (state.roots != null && state.roots.length > 0) {
+                url.searchParams.set(key + 'roots', state.roots.map(encodeURIComponent).join(','));
+            } else {
+                url.searchParams.delete(key + 'roots');
+            }
+            history.replaceState(null, '', url);
+            syncGraphControls(graphId, state);
+        }
+
+        function syncGraphControls(graphId, state) {
+            const el = document.getElementById(graphId);
+            const card = el != null ? el.closest('.graph-card') : null;
+            if (card == null) {
+                return;
+            }
+            card.querySelectorAll('.graph-layout .btn').forEach((b) => {
+                b.classList.toggle('active', b.dataset.layout === state.layout);
+            });
+            const isHier = state.layout === 'hier';
+            const hint = card.querySelector('.graph-hint');
+            if (hint != null) {
+                hint.hidden = !isHier;
+            }
+            const reset = card.querySelector('.graph-reset-roots');
+            if (reset != null) {
+                reset.hidden = !(isHier && state.roots != null && state.roots.length > 0);
+            }
+        }
+
+        function setGraphLayout(graphId, layout) {
+            // Fires onStateChange → writeGraphState, which updates the URL and toolbar.
+            window.setTopologyLayout(graphId, layout);
+        }
+
+        function resetGraphRoots(graphId) {
+            window.resetTopologyRoots(graphId);
+        }
+
         (function () {
-            const l3El = document.getElementById('topology-graph');
-            if (l3El) {
-                renderTopologyGraph('topology-graph', JSON.parse(l3El.dataset.graph || '{}'));
-            }
-            const l2El = document.getElementById('l2-graph');
-            if (l2El) {
-                renderTopologyGraph('l2-graph', JSON.parse(l2El.dataset.graph || '{}'));
-            }
+            ['topology-graph', 'l2-graph'].forEach((graphId) => {
+                const el = document.getElementById(graphId);
+                if (el == null) {
+                    return;
+                }
+                const state = readGraphState(graphId);
+                renderTopologyGraph(graphId, JSON.parse(el.dataset.graph || '{}'), {
+                    layout: state.layout,
+                    roots: state.roots,
+                    onStateChange: (s) => writeGraphState(graphId, s),
+                });
+                syncGraphControls(graphId, state);
+            });
         })();
 
         const TABS = ['topology', 'l2', 'list'];
@@ -183,7 +274,31 @@
             const url = new URL(location.href);
             url.searchParams.set('tab', name);
             history.replaceState(null, '', url);
-            document.querySelector('form.toolbar input[name="tab"]').value = name;
         }
+
+        // Fullscreen a graph card (CSS position:fixed overlay) and redraw the SVG at the new size,
+        // since topology-graph.js measures its height from the available viewport space at draw time.
+        function toggleGraphFullscreen(cardId, graphId) {
+            const card = document.getElementById(cardId);
+            if (!card) {
+                return;
+            }
+            card.classList.toggle('tgraph-fullscreen');
+            const el = document.getElementById(graphId);
+            if (el && window.renderTopologyGraph) {
+                renderTopologyGraph(graphId, el.__topoGraph || JSON.parse(el.dataset.graph || '{}'));
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                document.querySelectorAll('.graph-card.tgraph-fullscreen').forEach((card) => {
+                    const graph = card.querySelector('.tgraph-container');
+                    if (graph) {
+                        toggleGraphFullscreen(card.id, graph.id);
+                    }
+                });
+            }
+        });
     </script>
 }

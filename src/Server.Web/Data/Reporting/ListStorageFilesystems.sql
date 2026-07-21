@@ -13,14 +13,18 @@ FROM
     LEFT JOIN proj_systems s
     ON s.device = f.device
 WHERE
-    (
-        $1::text IS NULL
-  OR (
-    f.device
-   , f.filesystem)
-   > (
-    $1
-   , $2))
+      (
+          $1::text IS NULL
+     OR f.device        ILIKE '%' || $1 || '%'
+     OR s.hostname      ILIKE '%' || $1 || '%'
+     OR s.friendly_name ILIKE '%' || $1 || '%'
+     OR f.filesystem    ILIKE '%' || $1 || '%'
+     OR f.fs_type       ILIKE '%' || $1 || '%'
+          )
+  AND (
+          $2::text IS NULL
+     OR (f.device, f.filesystem) > ($2::text, $3::text)
+          )
 ORDER BY
     f.device     ASC
-  , f.filesystem ASC LIMIT $3
+  , f.filesystem ASC LIMIT $4

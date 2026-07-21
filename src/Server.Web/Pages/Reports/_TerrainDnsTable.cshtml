@@ -10,14 +10,14 @@
         {
             <h2 class="section-title">DNS Services</h2>
             <div class="grid-scroll">
-                <table class="data" aria-label="DNS service stats">
+                <table class="data" aria-label="DNS service stats" data-client-grid>
                     <thead>
                     <tr>
-                        <th>Service</th>
-                        <th class="num">Total Queries</th>
-                        <th class="num">Blocked</th>
-                        <th class="num">Blocked %</th>
-                        <th>Last Updated</th>
+                        <th data-col-key="service">Service</th>
+                        <th class="num" data-col-key="total-queries">Total Queries</th>
+                        <th class="num" data-col-key="blocked">Blocked</th>
+                        <th class="num" data-col-key="blocked-pct">Blocked %</th>
+                        <th data-col-key="last-updated">Last Updated</th>
                     </tr>
                     </thead>
                     <tbody>
@@ -47,12 +47,12 @@
                 <table class="data" aria-label="DNS records">
                     <thead>
                     <tr>
-                        <th>Service</th>
-                        <th>Zone</th>
-                        <th>Record</th>
-                        <th>Type</th>
-                        <th>Value</th>
-                        <th class="num">TTL</th>
+                        <th data-col-key="service">Service</th>
+                        <th data-col-key="zone">Zone</th>
+                        <th data-col-key="record">Record</th>
+                        <th data-col-key="type">Type</th>
+                        <th data-col-key="value">Value</th>
+                        <th class="num" data-col-key="ttl">TTL</th>
                     </tr>
                     </thead>
                     <tbody>

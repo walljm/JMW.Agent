@@ -206,13 +206,13 @@
                     else
                     {
                         <div class="detail-table-scroll">
-                            <table class="data">
+                            <table class="data" aria-label="Discovery sources" data-client-grid>
                                 <thead>
                                 <tr>
-                                    <th>Type</th>
-                                    <th>Value</th>
-                                    <th>Source</th>
-                                    <th>Last Seen</th>
+                                    <th data-col-key="type">Type</th>
+                                    <th data-col-key="value">Value</th>
+                                    <th data-col-key="source">Source</th>
+                                    <th data-col-key="last-seen">Last Seen</th>
                                 </tr>
                                 </thead>
                                 <tbody>
@@ -243,15 +243,15 @@
                     else
                     {
                         <div class="detail-table-scroll">
-                            <table class="data">
+                            <table class="data" aria-label="Device services" data-client-grid>
                                 <thead>
                                 <tr>
-                                    <th>Service</th>
-                                    <th>Type</th>
-                                    <th>CA Status</th>
-                                    <th>CA Expiry</th>
-                                    <th>DNS Queries</th>
-                                    <th>Blocked</th>
+                                    <th data-col-key="service">Service</th>
+                                    <th data-col-key="type">Type</th>
+                                    <th data-col-key="ca-status">CA Status</th>
+                                    <th data-col-key="ca-expiry">CA Expiry</th>
+                                    <th data-col-key="dns-queries">DNS Queries</th>
+                                    <th data-col-key="blocked">Blocked</th>
                                 </tr>
                                 </thead>
                                 <tbody>
@@ -340,7 +340,7 @@
                     else
                     {
                         <div class="detail-table-scroll">
-                            <table class="data" style="table-layout:fixed;width:100%">
+                            <table class="data" style="table-layout:fixed;width:100%" aria-label="Interfaces" data-client-grid>
                                 <colgroup>
                                     <col style="width:110px">
                                     <col style="width:130px">
@@ -355,16 +355,16 @@
                                 </colgroup>
                                 <thead>
                                 <tr>
-                                    <th>Name</th>
-                                    <th>IPv4</th>
-                                    <th>IPv6</th>
-                                    <th>MAC</th>
-                                    <th>OUI</th>
-                                    <th>MAC Type</th>
-                                    <th>MTU</th>
-                                    <th>State</th>
-                                    <th>Speed</th>
-                                    <th>Type</th>
+                                    <th data-col-key="name">Name</th>
+                                    <th data-col-key="ipv4">IPv4</th>
+                                    <th data-col-key="ipv6">IPv6</th>
+                                    <th data-col-key="mac">MAC</th>
+                                    <th data-col-key="oui">OUI</th>
+                                    <th data-col-key="mac-type">MAC Type</th>
+                                    <th data-col-key="mtu">MTU</th>
+                                    <th data-col-key="state">State</th>
+                                    <th data-col-key="speed">Speed</th>
+                                    <th data-col-key="type">Type</th>
                                 </tr>
                                 </thead>
                                 <tbody>
@@ -416,15 +416,15 @@
                     else
                     {
                         <div class="detail-table-scroll">
-                            <table class="data">
+                            <table class="data" aria-label="Disks" data-client-grid>
                                 <thead>
                                 <tr>
-                                    <th>Name</th>
-                                    <th>Model</th>
-                                    <th>Size</th>
-                                    <th>Type</th>
-                                    <th>SMART</th>
-                                    <th>Temp</th>
+                                    <th data-col-key="name">Name</th>
+                                    <th data-col-key="model">Model</th>
+                                    <th data-col-key="size">Size</th>
+                                    <th data-col-key="type">Type</th>
+                                    <th data-col-key="smart">SMART</th>
+                                    <th data-col-key="temp">Temp</th>
                                 </tr>
                                 </thead>
                                 <tbody>
@@ -457,15 +457,15 @@
                     else
                     {
                         <div class="detail-table-scroll">
-                            <table class="data">
+                            <table class="data" aria-label="Filesystems" data-client-grid>
                                 <thead>
                                 <tr>
-                                    <th>Mount</th>
-                                    <th>Type</th>
-                                    <th>Total</th>
-                                    <th>Used</th>
-                                    <th>Free</th>
-                                    <th>Used %</th>
+                                    <th data-col-key="mount">Mount</th>
+                                    <th data-col-key="type">Type</th>
+                                    <th data-col-key="total">Total</th>
+                                    <th data-col-key="used">Used</th>
+                                    <th data-col-key="free">Free</th>
+                                    <th data-col-key="used-pct">Used %</th>
                                 </tr>
                                 </thead>
                                 <tbody>
@@ -498,15 +498,15 @@
                     else
                     {
                         <div class="detail-table-scroll">
-                            <table class="data">
+                            <table class="data" aria-label="Containers" data-client-grid>
                                 <thead>
                                 <tr>
-                                    <th>Name</th>
-                                    <th>Container ID</th>
-                                    <th>Image</th>
-                                    <th>State</th>
-                                    <th>Health</th>
-                                    <th>Restarts</th>
+                                    <th data-col-key="name">Name</th>
+                                    <th data-col-key="container-id">Container ID</th>
+                                    <th data-col-key="image">Image</th>
+                                    <th data-col-key="state">State</th>
+                                    <th data-col-key="health">Health</th>
+                                    <th data-col-key="restarts">Restarts</th>
                                 </tr>
                                 </thead>
                                 <tbody>
@@ -543,14 +543,14 @@
                             For services it broadcasts on the network, see Advertised Services.
                         </p>
                         <div class="detail-table-scroll">
-                            <table class="data">
+                            <table class="data" aria-label="Listening ports" data-client-grid>
                                 <thead>
                                 <tr>
-                                    <th>Protocol</th>
-                                    <th>Address</th>
-                                    <th>Port</th>
-                                    <th>Process</th>
-                                    <th>PID</th>
+                                    <th data-col-key="protocol">Protocol</th>
+                                    <th data-col-key="address">Address</th>
+                                    <th data-col-key="port">Port</th>
+                                    <th data-col-key="process">Process</th>
+                                    <th data-col-key="pid">PID</th>
                                 </tr>
                                 </thead>
                                 <tbody>
@@ -585,18 +585,18 @@
                             CPU/memory/system-level summary, see the Hardware tab.
                         </p>
                         <div class="detail-table-scroll">
-                            <table class="data">
+                            <table class="data" aria-label="Hardware components" data-client-grid>
                                 <thead>
                                 <tr>
-                                    <th>Class</th>
-                                    <th>Slot</th>
-                                    <th>Description</th>
-                                    <th>Vendor</th>
-                                    <th>Model</th>
-                                    <th>Serial</th>
-                                    <th>Firmware</th>
-                                    <th>Status</th>
-                                    <th>FRU</th>
+                                    <th data-col-key="class">Class</th>
+                                    <th data-col-key="slot">Slot</th>
+                                    <th data-col-key="description">Description</th>
+                                    <th data-col-key="vendor">Vendor</th>
+                                    <th data-col-key="model">Model</th>
+                                    <th data-col-key="serial">Serial</th>
+                                    <th data-col-key="firmware">Firmware</th>
+                                    <th data-col-key="status">Status</th>
+                                    <th data-col-key="fru">FRU</th>
                                 </tr>
                                 </thead>
                                 <tbody>
@@ -636,14 +636,14 @@
                             Telemetry" in the Discovery section.
                         </p>
                         <div class="detail-table-scroll">
-                            <table class="data">
+                            <table class="data" aria-label="Device sightings" data-client-grid>
                                 <thead>
                                 <tr>
-                                    <th>Observer</th>
-                                    <th>Seen at IP</th>
-                                    <th>Via</th>
-                                    <th>OUI</th>
-                                    <th>Services</th>
+                                    <th data-col-key="observer">Observer</th>
+                                    <th data-col-key="seen-at-ip">Seen at IP</th>
+                                    <th data-col-key="via">Via</th>
+                                    <th data-col-key="oui">OUI</th>
+                                    <th data-col-key="services">Services</th>
                                 </tr>
                                 </thead>
                                 <tbody>
@@ -706,12 +706,12 @@
                      hidden>
                     <partial name="_SectionError" model="Model.FactViews.Error"/>
                     <div class="detail-table-scroll">
-                        <table class="data">
+                        <table class="data" aria-label="@view.Title" data-client-grid>
                             <thead>
                             <tr>
                                 @foreach (string header in view.Headers)
                                 {
-                                    <th>@header</th>
+                                    <th data-col-key="@header">@header</th>
                                 }
                             </tr>
                             </thead>
@@ -810,16 +810,16 @@
                     else
                     {
                         <div class="detail-table-scroll">
-                            <table class="data">
+                            <table class="data" aria-label="Operator-authored facts" data-client-grid>
                                 <thead>
                                 <tr>
-                                    <th>Path</th>
-                                    <th>Scope</th>
-                                    <th>Kind</th>
-                                    <th>Label</th>
-                                    <th>Value</th>
-                                    <th>Set by / when</th>
-                                    <th></th>
+                                    <th data-col-key="path">Path</th>
+                                    <th data-col-key="scope">Scope</th>
+                                    <th data-col-key="kind">Kind</th>
+                                    <th data-col-key="label">Label</th>
+                                    <th data-col-key="value">Value</th>
+                                    <th data-col-key="set-by">Set by / when</th>
+                                    <th data-no-sort></th>
                                 </tr>
                                 </thead>
                                 <tbody>
@@ -895,15 +895,15 @@
                             </div>
                         }
                         <div class="detail-table-scroll">
-                            <table class="data">
+                            <table class="data" aria-label="All facts" data-client-grid>
                                 <thead>
                                 <tr>
-                                    <th>Attribute</th>
-                                    <th>Key</th>
-                                    <th>Value</th>
-                                    <th>Observer</th>
-                                    <th>Collector</th>
-                                    <th>Collected</th>
+                                    <th data-col-key="attribute">Attribute</th>
+                                    <th data-col-key="key">Key</th>
+                                    <th data-col-key="value">Value</th>
+                                    <th data-col-key="observer">Observer</th>
+                                    <th data-col-key="collector">Collector</th>
+                                    <th data-col-key="collected">Collected</th>
                                 </tr>
                                 </thead>
                                 <tbody id="allfacts-tbody">
@@ -1097,44 +1097,9 @@
             switchTab(TABS.indexOf(tab) >= 0 ? tab : fallback);
         });
 
-        // Client-side column sorting for the device-detail tables. Scoped to
-        // .tabpanel tables so it never interferes with the server-sorted,
-        // paginated grids elsewhere in the app.
-        document.querySelectorAll('.tabpanel table.data').forEach(function (table) {
-            var headers = table.tHead ? Array.prototype.slice.call(table.tHead.rows[0].cells) : [];
-            headers.forEach(function (th, col) {
-                th.addEventListener('click', function () {
-                    var ascending = th.getAttribute('aria-sort') !== 'ascending';
-                    headers.forEach(function (h) {
-                        h.removeAttribute('aria-sort');
-                    });
-                    th.setAttribute('aria-sort', ascending ? 'ascending' : 'descending');
-
-                    var body = table.tBodies[0];
-                    var rows = Array.prototype.slice.call(body.rows);
-                    var numeric = /^-?\d+(\.\d+)?%?$/;
-                    rows.sort(function (a, b) {
-                        var x = (a.cells[col] ? a.cells[col].textContent : '').trim();
-                        var y = (b.cells[col] ? b.cells[col].textContent : '').trim();
-                        var xEmpty = x === '' || x === '—';
-                        var yEmpty = y === '' || y === '—';
-                        if (xEmpty || yEmpty) {
-                            return xEmpty === yEmpty ? 0 : (xEmpty ? 1 : -1);
-                        }
-                        var cmp;
-                        if (numeric.test(x) && numeric.test(y)) {
-                            cmp = parseFloat(x) - parseFloat(y);
-                        } else {
-                            cmp = x.localeCompare(y, undefined, {numeric: true, sensitivity: 'base'});
-                        }
-                        return ascending ? cmp : -cmp;
-                    });
-                    rows.forEach(function (r) {
-                        body.appendChild(r);
-                    });
-                });
-            });
-        });
+        // Client-side column sorting + search for these tables is provided by client-grid.js
+        // (they carry data-client-grid), which also coexists with column-reorder.js. No inline
+        // sort handler here — a second one would double-toggle the sort on each header click.
 
         // ── Operator facts (unified override / arbitrary) ───────────────────
         var ofDataEl = document.getElementById('ofData');

@@ -151,13 +151,15 @@ public static partial class ReportingQueries
 
     /// <summary>
     /// Lists physical disks across the fleet with SMART health, joined to the
-    /// host's hostname. Keyset pagination ordered by (device, disk).
+    /// host's hostname. Supports device/hostname/model/type search and keyset
+    /// pagination ordered by (device, disk).
     /// </summary>
     [DatabaseCommand]
     public static partial IAsyncEnumerable<(string Device, string? Hostname, string Disk, string? Name, string? Model,
         string? Type, string? SmartHealth, double? SmartTempC, double? SmartWearPct, long? SmartPowerOnHours, long?
         SizeBytes, string? FriendlyName)> ListStorageDisksAsync(
         this NpgsqlConnection connection,
+        string? search,
         string? afterDevice,
         string? afterDisk,
         int limit,
@@ -166,13 +168,15 @@ public static partial class ReportingQueries
 
     /// <summary>
     /// Lists filesystems across the fleet with capacity/usage, joined to the
-    /// host's hostname. Keyset pagination ordered by (device, filesystem).
+    /// host's hostname. Supports device/hostname/mount/type search and keyset
+    /// pagination ordered by (device, filesystem).
     /// </summary>
     [DatabaseCommand]
     public static partial
         IAsyncEnumerable<(string Device, string? Hostname, string Filesystem, string? FsType, long? TotalBytes, long?
             UsedBytes, long? FreeBytes, double? UsedPct, string? FriendlyName)> ListStorageFilesystemsAsync(
             this NpgsqlConnection connection,
+            string? search,
             string? afterDevice,
             string? afterFilesystem,
             int limit,

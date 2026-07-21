@@ -18,17 +18,17 @@
                     <th sort-key="hostname" sort-grid="Model.Grid" sort-target="#devices-table">Hostname</th>
                     <th sort-key="ip" sort-grid="Model.Grid" sort-target="#devices-table">IP Address</th>
                     <th sort-key="mac" sort-grid="Model.Grid" sort-target="#devices-table">MAC</th>
-                    <th style="cursor:default" title="MAC address scope from the first octet: universal (burned-in), locally administered (software-assigned — VMs, containers, MAC-privacy), or multicast">Scope</th>
-                    <th style="cursor:default">OUI</th>
+                    <th style="cursor:default" data-col-key="scope" title="MAC address scope from the first octet: universal (burned-in), locally administered (software-assigned — VMs, containers, MAC-privacy), or multicast">Scope</th>
+                    <th style="cursor:default" data-col-key="oui">OUI</th>
                     <th sort-key="vendor" sort-grid="Model.Grid" sort-target="#devices-table">Vendor</th>
                     <th sort-key="os" sort-grid="Model.Grid" sort-target="#devices-table">OS</th>
                     <th sort-key="status" sort-grid="Model.Grid" sort-target="#devices-table">Status</th>
-                    <th style="cursor:default">Discovery Sources</th>
+                    <th style="cursor:default" data-col-key="discovery-sources">Discovery Sources</th>
                     <th sort-key="last_seen" sort-grid="Model.Grid" sort-target="#devices-table">Last Seen</th>
-                    <th sort-key="last_seen" sort-grid="Model.Grid" sort-target="#devices-table" title="Time since last seen, relative to now">Age</th>
+                    <th sort-key="last_seen" col-key="age" sort-grid="Model.Grid" sort-target="#devices-table" title="Time since last seen, relative to now">Age</th>
                     @foreach (OperatorFactColumns.Column col in Model.OperatorColumns)
                     {
-                        <th style="cursor:default" title="Operator fact: @col.AttributePath">@col.Heading</th>
+                        <th style="cursor:default" data-col-key="op-@col.AttributePath" title="Operator fact: @col.AttributePath">@col.Heading</th>
                     }
                 </tr>
                 </thead>

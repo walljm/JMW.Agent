@@ -20,6 +20,7 @@ public sealed class SortableHeaderTagHelper : TagHelper
     private const string SortKeyAttribute = "sort-key";
     private const string GridAttribute = "sort-grid";
     private const string TargetAttribute = "sort-target";
+    private const string ColKeyAttribute = "col-key";
 
     [HtmlAttributeName(SortKeyAttribute)]
     public string SortKey { get; set; } = "";
@@ -30,11 +31,28 @@ public sealed class SortableHeaderTagHelper : TagHelper
     [HtmlAttributeName(TargetAttribute)]
     public string HtmxTarget { get; set; } = "";
 
+    /// <summary>
+    /// Optional override for the reorder/resize column identity. Defaults to <see cref="SortKey" />;
+    /// set it when two columns share one sort key (e.g. "Last Seen" and "Age" both sorting by
+    /// <c>last_seen</c>) so each still gets a unique <c>data-col-key</c>.
+    /// </summary>
+    [HtmlAttributeName(ColKeyAttribute)]
+    public string? ColKey { get; set; }
+
     public override void Process(TagHelperContext context, TagHelperOutput output)
     {
         output.Attributes.RemoveAll(SortKeyAttribute);
         output.Attributes.RemoveAll(GridAttribute);
         output.Attributes.RemoveAll(TargetAttribute);
+        output.Attributes.RemoveAll(ColKeyAttribute);
+
+        // Stable per-column identity for column-reorder.js / column-resize.js, emitted for every
+        // header regardless of sortability so a saved order/width stays attached to its column.
+        string colKey = !string.IsNullOrEmpty(ColKey) ? ColKey : SortKey;
+        if (!string.IsNullOrEmpty(colKey))
+        {
+            output.Attributes.SetAttribute("data-col-key", colKey);
+        }
 
         if (Grid is null || !Grid.IsSortable(SortKey))
         {

@@ -21,6 +21,7 @@ public static class StorageApi
     private static Task<IResult> ListDisks(
         NpgsqlDataSource db,
         string? after,
+        string? q,
         int limit = DefaultLimit,
         CancellationToken ct = default
     ) =>
@@ -29,12 +30,13 @@ public static class StorageApi
             limit,
             MaxLimit,
             cursorArity: 2,
-            fetch: (parts, lim) => QueryDisksAsync(db, parts?[0], parts?[1], lim, ct)
+            fetch: (parts, lim) => QueryDisksAsync(db, q, parts?[0], parts?[1], lim, ct)
         );
 
     private static Task<IResult> ListFilesystems(
         NpgsqlDataSource db,
         string? after,
+        string? q,
         int limit = DefaultLimit,
         CancellationToken ct = default
     ) =>
@@ -43,11 +45,12 @@ public static class StorageApi
             limit,
             MaxLimit,
             cursorArity: 2,
-            fetch: (parts, lim) => QueryFilesystemsAsync(db, parts?[0], parts?[1], lim, ct)
+            fetch: (parts, lim) => QueryFilesystemsAsync(db, q, parts?[0], parts?[1], lim, ct)
         );
 
     public static async Task<(List<DiskListItem> Items, string? NextCursor)> QueryDisksAsync(
         NpgsqlDataSource db,
+        string? search,
         string? afterDevice,
         string? afterDisk,
         int limit,
@@ -59,7 +62,7 @@ public static class StorageApi
         List<(string Device, string? Hostname, string Disk, string? Name, string? Model, string? Type, string?
             SmartHealth, double? SmartTempC, double? SmartWearPct, long? SmartPowerOnHours, long? SizeBytes, string?
             FriendlyName)> rows =
-            await conn.ListStorageDisksAsync(afterDevice, afterDisk, limit + 1, ct)
+            await conn.ListStorageDisksAsync(NullIfBlank(search), afterDevice, afterDisk, limit + 1, ct)
                 .ToListAsync(ct);
 
         string? nextCursor = KeysetPage.NextCursor(rows, limit, r => [r.Device, r.Disk]);
@@ -86,6 +89,7 @@ public static class StorageApi
 
     public static async Task<(List<FilesystemListItem> Items, string? NextCursor)> QueryFilesystemsAsync(
         NpgsqlDataSource db,
+        string? search,
         string? afterDevice,
         string? afterFilesystem,
         int limit,
@@ -96,7 +100,7 @@ public static class StorageApi
 
         List<(string Device, string? Hostname, string Filesystem, string? FsType, long? TotalBytes, long? UsedBytes,
             long? FreeBytes, double? UsedPct, string? FriendlyName)> rows = await conn
-            .ListStorageFilesystemsAsync(afterDevice, afterFilesystem, limit + 1, ct)
+            .ListStorageFilesystemsAsync(NullIfBlank(search), afterDevice, afterFilesystem, limit + 1, ct)
             .ToListAsync(ct);
 
         string? nextCursor = KeysetPage.NextCursor(rows, limit, r => [r.Device, r.Filesystem]);
@@ -117,6 +121,9 @@ public static class StorageApi
 
         return (items, nextCursor);
     }
+
+    private static string? NullIfBlank(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
 
 public sealed record DiskListItem(

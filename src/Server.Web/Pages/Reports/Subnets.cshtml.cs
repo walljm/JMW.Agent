@@ -48,9 +48,6 @@ public sealed class SubnetsModel : PageModel
     public string? LoadError { get; private set; }
 
     [BindProperty(SupportsGet = true)]
-    public string? Q { get; set; }
-
-    [BindProperty(SupportsGet = true)]
     public string? Tab { get; set; }
 
     /// <summary>Normalizes the bound `?tab=` query value; unrecognized values default to "topology".</summary>
@@ -61,13 +58,12 @@ public sealed class SubnetsModel : PageModel
         _ => "topology",
     };
 
-    public string ClearHref => ActiveTab == "topology" ? "/subnets" : $"/subnets?tab={ActiveTab}";
-
     public async Task<IActionResult> OnGetAsync(CancellationToken ct)
     {
         try
         {
-            Subnets = await SubnetsApi.QueryAsync(_db, Q, ct);
+            // The subnet list is filtered client-side (client-grid.js) — always load the full set.
+            Subnets = await SubnetsApi.QueryAsync(_db, null, ct);
 
             SubnetGraph l3Graph = await SubnetsApi.GetGraphAsync(_db, ct);
             L3GraphJson = JsonSerializer.Serialize(

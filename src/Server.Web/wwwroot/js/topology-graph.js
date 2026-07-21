@@ -1,9 +1,20 @@
-// Shared D3 force-directed graph renderer for the Subnets page's Topology (L3) and
-// Physical/L2 tabs — see docs/plans/d3-l2-l3.md decision #2 (one renderer, two data shapes).
+// Shared D3 graph renderer for the Subnets page's Topology (L3) and Physical/L2 tabs —
+// see docs/plans/d3-l2-l3.md decision #2 (one renderer, two data shapes).
 // Vendors d3.v7.min.js locally (loaded before this script); no CDN, no build step.
 //
+// Two layout modes (per container):
+//   'force' — d3-force directed graph (default; good for exploring clusters).
+//   'hier'  — top-down layered/BFS tree, the conventional network-engineering view.
+//             Nodes are assigned to layers by hop-distance from one or more "top" (root)
+//             nodes; within a layer they're ordered by a barycenter sweep to reduce edge
+//             crossings. Roots default to the highest network tier by kind (L3) or the
+//             highest-degree node (L2), and can be overridden by shift/⌘/ctrl-clicking nodes.
+//
 // Usage:
-//   renderTopologyGraph('topology-graph', { nodes: [{id, label, kind}], edges: [{fromId, toId, fromPort, toPort, via}] });
+//   renderTopologyGraph('topology-graph', { nodes:[{id,label,kind}], edges:[{fromId,toId,fromPort,toPort,via}] },
+//       { layout:'force'|'hier', roots:[id,…], onStateChange: ({layout,roots}) => … });
+//   setTopologyLayout('topology-graph', 'hier');   // switch mode, redraw, fire onStateChange
+//   resetTopologyRoots('topology-graph');          // clear manual roots, fall back to auto
 //
 // Node kinds get a color/shape via KIND_STYLE below; unrecognized kinds fall back to a
 // neutral circle so a future node kind never renders invisibly. Each kind also gets a small
@@ -19,6 +30,12 @@
         unknown: { shape: 'circle', varName: '--text-faint' },
     };
     const DEFAULT_STYLE = { shape: 'circle', varName: '--text-dim' };
+
+    // Network-tier ordering for auto-root selection on the L3 graph: lower = higher tier
+    // (closer to the internet edge), so auto-roots are the lowest-rank kind present. The L2
+    // graph carries none of these kinds, so it falls back to highest-degree (see chooseAutoRoots).
+    const KIND_RANK = { internet: 0, router: 1, subnet: 2, device: 2, vpn: 3, unknown: 4 };
+    const L3_KINDS = new Set(['internet', 'router', 'subnet', 'vpn']);
 
     // Icons on a 24×24 grid (Lucide viewBox), stroke line-art, drawn centered above each node.
     // network / router / server / globe / shield — themeable via stroke color.
@@ -38,11 +55,16 @@
         return KIND_STYLE[kind] || DEFAULT_STYLE;
     }
 
-    // Derive the drawing height from the space left below the container in the viewport,
-    // so the graph fills the window instead of a fixed band. Clamped to a sane minimum.
+    // Derive the drawing height from the space left below the container in the viewport, so the
+    // graph fills the window instead of a fixed band. Reserve the padding that sits below the graph
+    // — the card's bottom padding and the scrolling .main's bottom padding — so the SVG doesn't push
+    // its scroll container a few pixels past the viewport and leave a faint scrollbar. Clamped to a
+    // sane minimum.
     function measuredHeight(container) {
         const top = container.getBoundingClientRect().top;
-        const avail = window.innerHeight - top - 24;
+        const padBottom = (el) => (el ? parseFloat(getComputedStyle(el).paddingBottom) || 0 : 0);
+        const reserve = padBottom(container.closest('.card')) + padBottom(container.closest('.main')) + 8;
+        const avail = window.innerHeight - top - reserve;
         return Math.max(480, Math.floor(avail));
     }
 
@@ -91,18 +113,222 @@
         }
     }
 
-    window.renderTopologyGraph = function (containerId, graph) {
+    // Notify the host page that the interactive state (layout mode / chosen roots) changed,
+    // so it can persist it (e.g. to the URL) and sync its toolbar controls.
+    function fireState(container) {
+        if (typeof container.__topoOnState === 'function') {
+            container.__topoOnState({
+                layout: container.__topoLayout === 'hier' ? 'hier' : 'force',
+                roots: Array.from(container.__topoRoots || []),
+            });
+        }
+    }
+
+    window.renderTopologyGraph = function (containerId, graph, options) {
         const container = document.getElementById(containerId);
         if (!container) {
             return;
         }
+        options = options || {};
 
-        // Stash the data so the observer can redraw on resize / tab reveal without the page
-        // re-supplying it, then draw now if the panel is already visible.
+        // Stash everything so the resize observer can redraw on tab reveal / resize without the
+        // page re-supplying it. Options are only applied when present, so an option-less redraw
+        // (e.g. the fullscreen toggle) preserves the current layout, roots, and callback.
         container.__topoGraph = graph;
+        if (options.layout) {
+            container.__topoLayout = options.layout === 'hier' ? 'hier' : 'force';
+        }
+        if (options.roots) {
+            container.__topoRoots = new Set(options.roots);
+        }
+        if (typeof options.onStateChange === 'function') {
+            container.__topoOnState = options.onStateChange;
+        }
+
         setupAutoResize(container);
         drawIfVisible(container);
     };
+
+    window.setTopologyLayout = function (containerId, layout) {
+        const container = document.getElementById(containerId);
+        if (!container) {
+            return;
+        }
+        container.__topoLayout = layout === 'hier' ? 'hier' : 'force';
+        fireState(container);
+        drawIfVisible(container);
+    };
+
+    window.resetTopologyRoots = function (containerId) {
+        const container = document.getElementById(containerId);
+        if (!container) {
+            return;
+        }
+        container.__topoRoots = new Set();
+        fireState(container);
+        drawIfVisible(container);
+    };
+
+    function toggleRoot(container, id) {
+        if (!(container.__topoRoots instanceof Set)) {
+            container.__topoRoots = new Set();
+        }
+        if (container.__topoRoots.has(id)) {
+            container.__topoRoots.delete(id);
+        } else {
+            container.__topoRoots.add(id);
+        }
+        fireState(container);
+        drawIfVisible(container);
+    }
+
+    function linkEndId(end) {
+        return typeof end === 'object' && end !== null ? end.id : end;
+    }
+
+    function rankOf(kind) {
+        return KIND_RANK[kind] !== undefined ? KIND_RANK[kind] : KIND_RANK.unknown;
+    }
+
+    function degreeMap(nodes, links) {
+        const deg = new Map(nodes.map((n) => [n.id, 0]));
+        links.forEach((l) => {
+            const s = linkEndId(l.source);
+            const t = linkEndId(l.target);
+            if (deg.has(s)) deg.set(s, deg.get(s) + 1);
+            if (deg.has(t)) deg.set(t, deg.get(t) + 1);
+        });
+        return deg;
+    }
+
+    // Pick sensible default roots when the operator hasn't designated any. L3 graphs have real
+    // tier semantics in `kind`, so root at the highest tier present (internet, else router, …).
+    // L2 (and any graph with no L3 kinds) is a flat device mesh — root at the most-connected node.
+    function chooseAutoRoots(nodes, links) {
+        const hasL3 = nodes.some((n) => L3_KINDS.has(n.kind));
+        if (hasL3) {
+            let minRank = Infinity;
+            nodes.forEach((n) => {
+                const r = rankOf(n.kind);
+                if (r < minRank) minRank = r;
+            });
+            const roots = nodes.filter((n) => rankOf(n.kind) === minRank).map((n) => n.id);
+            // Guard against the whole graph being one rank (would give a degenerate single layer).
+            if (roots.length > 0 && roots.length < nodes.length) {
+                return roots;
+            }
+        }
+        const deg = degreeMap(nodes, links);
+        let best = nodes[0].id;
+        let bestDeg = -1;
+        nodes.forEach((n) => {
+            const d = deg.get(n.id) || 0;
+            if (d > bestDeg) {
+                bestDeg = d;
+                best = n.id;
+            }
+        });
+        return [best];
+    }
+
+    // Compute top-down layered positions in place (sets d.x/d.y, pins d.fx/d.fy, tags d.__layer).
+    // Layers = hop-distance from the root set via undirected BFS (robust to how edge direction is
+    // stored, and naturally tolerant of cycles/redundant links). Unreachable nodes drop to a
+    // trailing layer so nothing vanishes. Returns nothing; callers read d.__layer for root styling.
+    function layoutHierarchy(nodes, links, rootSet, width, height) {
+        const nodeById = new Map(nodes.map((n) => [n.id, n]));
+        const adj = new Map(nodes.map((n) => [n.id, []]));
+        links.forEach((l) => {
+            const s = linkEndId(l.source);
+            const t = linkEndId(l.target);
+            if (adj.has(s) && adj.has(t)) {
+                adj.get(s).push(t);
+                adj.get(t).push(s);
+            }
+        });
+
+        let rootIds = Array.from(rootSet || []).filter((id) => nodeById.has(id));
+        if (rootIds.length === 0) {
+            rootIds = chooseAutoRoots(nodes, links);
+        }
+
+        // Multi-source BFS → layer per node.
+        const layerOf = new Map();
+        const queue = [];
+        rootIds.forEach((id) => {
+            if (!layerOf.has(id)) {
+                layerOf.set(id, 0);
+                queue.push(id);
+            }
+        });
+        for (let i = 0; i < queue.length; i++) {
+            const id = queue[i];
+            const depth = layerOf.get(id);
+            adj.get(id).forEach((nb) => {
+                if (!layerOf.has(nb)) {
+                    layerOf.set(nb, depth + 1);
+                    queue.push(nb);
+                }
+            });
+        }
+
+        let maxLayer = 0;
+        layerOf.forEach((v) => {
+            if (v > maxLayer) maxLayer = v;
+        });
+        let hasOrphan = false;
+        nodes.forEach((n) => {
+            if (!layerOf.has(n.id)) {
+                layerOf.set(n.id, maxLayer + 1);
+                hasOrphan = true;
+            }
+        });
+        const layerCount = hasOrphan ? maxLayer + 2 : maxLayer + 1;
+
+        // Group nodes by layer (input order), then one downward barycenter sweep to reduce crossings.
+        const layers = Array.from({ length: layerCount }, () => []);
+        nodes.forEach((n) => {
+            n.__layer = layerOf.get(n.id);
+            layers[n.__layer].push(n);
+        });
+
+        const orderIndex = new Map();
+        layers.forEach((layerNodes, li) => {
+            if (li > 0) {
+                const keyed = layerNodes.map((n, idx) => {
+                    const parents = adj.get(n.id).filter((id) => layerOf.get(id) === li - 1);
+                    let key;
+                    if (parents.length === 0) {
+                        key = idx; // no parent above — keep relative order
+                    } else {
+                        let sum = 0;
+                        parents.forEach((id) => (sum += orderIndex.get(id) || 0));
+                        key = sum / parents.length;
+                    }
+                    return { n, key, idx };
+                });
+                keyed.sort((a, b) => a.key - b.key || a.idx - b.idx);
+                layers[li] = keyed.map((k) => k.n);
+            }
+            layers[li].forEach((n, i) => orderIndex.set(n.id, i));
+        });
+
+        // Assign coordinates. Each layer is centered horizontally; the drawing may exceed the
+        // viewBox for large graphs — zoom/pan covers that.
+        const topMargin = 60;
+        const usable = height - topMargin - 40;
+        const layerGap = layerCount > 1 ? Math.max(90, Math.min(150, usable / (layerCount - 1))) : 0;
+        const nodeSpacingX = 130;
+        layers.forEach((layerNodes, li) => {
+            const spanW = (layerNodes.length - 1) * nodeSpacingX;
+            layerNodes.forEach((n, i) => {
+                n.x = width / 2 - spanW / 2 + i * nodeSpacingX;
+                n.y = topMargin + li * layerGap;
+                n.fx = n.x;
+                n.fy = n.y;
+            });
+        });
+    }
 
     function draw(container, graph) {
         container.innerHTML = '';
@@ -115,6 +341,9 @@
             return;
         }
 
+        const layout = container.__topoLayout === 'hier' ? 'hier' : 'force';
+        const roots = container.__topoRoots instanceof Set ? container.__topoRoots : new Set();
+
         const width = container.clientWidth || 800;
         const height = measuredHeight(container);
         container.__topoWidth = width; // so the resize observer ignores our own height change
@@ -123,7 +352,10 @@
         const nodeById = new Map(nodes.map((n) => [n.id, n]));
         const links = graph.edges
             .filter((e) => nodeById.has(e.fromId) && nodeById.has(e.toId))
-            .map((e) => Object.assign({}, e, { source: e.fromId, target: e.toId }));
+            .map((e) => Object.assign({}, e, {
+                source: nodeById.get(e.fromId),
+                target: nodeById.get(e.toId),
+            }));
 
         const svg = d3.select(container)
             .append('svg')
@@ -143,11 +375,17 @@
         const linkColor = cssVar('--border-strong') || '#888';
         const textColor = cssVar('--text') || '#eee';
 
-        const simulation = d3.forceSimulation(nodes)
-            .force('link', d3.forceLink(links).id((d) => d.id).distance(110))
-            .force('charge', d3.forceManyBody().strength(-280))
-            .force('center', d3.forceCenter(width / 2, height / 2))
-            .force('collide', d3.forceCollide(40));
+        // Force mode runs a simulation; hierarchical mode computes fixed positions once.
+        let simulation = null;
+        if (layout === 'hier') {
+            layoutHierarchy(nodes, links, roots, width, height);
+        } else {
+            simulation = d3.forceSimulation(nodes)
+                .force('link', d3.forceLink(links).id((d) => d.id).distance(110))
+                .force('charge', d3.forceManyBody().strength(-280))
+                .force('center', d3.forceCenter(width / 2, height / 2))
+                .force('collide', d3.forceCollide(40));
+        }
 
         const link = zoomLayer.append('g')
             .attr('class', 'tgraph-edges')
@@ -180,7 +418,8 @@
             .data(nodes)
             .join('g')
             .attr('class', (d) => `tgraph-node kind-${d.kind}`)
-            .call(drag(simulation));
+            .classed('is-root', (d) => (layout === 'hier' ? d.__layer === 0 : roots.has(d.id)))
+            .call(dragBehavior());
 
         node.each(function (d) {
             const g = d3.select(this);
@@ -234,13 +473,14 @@
 
         // Click-to-highlight: dim everything except the clicked node, its neighbors, and
         // the connecting edges. Click the same node again (or the background) to clear.
+        // Modifier-click (shift/⌘/ctrl) instead toggles the node as a hierarchy root.
         let highlighted = null;
 
         function neighborsOf(id) {
             const set = new Set([id]);
             links.forEach((l) => {
-                const s = typeof l.source === 'object' ? l.source.id : l.source;
-                const t = typeof l.target === 'object' ? l.target.id : l.target;
+                const s = linkEndId(l.source);
+                const t = linkEndId(l.target);
                 if (s === id) set.add(t);
                 if (t === id) set.add(s);
             });
@@ -257,14 +497,18 @@
             const connected = neighborsOf(highlighted);
             node.classed('dimmed', (d) => !connected.has(d.id));
             link.classed('dimmed', (l) => {
-                const s = typeof l.source === 'object' ? l.source.id : l.source;
-                const t = typeof l.target === 'object' ? l.target.id : l.target;
+                const s = linkEndId(l.source);
+                const t = linkEndId(l.target);
                 return s !== highlighted && t !== highlighted;
             });
         }
 
         node.on('click', (event, d) => {
             event.stopPropagation();
+            if (event.shiftKey || event.metaKey || event.ctrlKey) {
+                toggleRoot(container, d.id); // triggers a redraw with the new root set
+                return;
+            }
             highlighted = highlighted === d.id ? null : d.id;
             applyHighlight();
         });
@@ -274,7 +518,7 @@
             applyHighlight();
         });
 
-        simulation.on('tick', () => {
+        function positionElements() {
             link
                 .attr('x1', (d) => d.source.x)
                 .attr('y1', (d) => d.source.y)
@@ -286,11 +530,19 @@
             edgeLabel
                 .attr('x', (d) => (d.source.x + d.target.x) / 2)
                 .attr('y', (d) => (d.source.y + d.target.y) / 2);
-        });
+        }
 
-        function drag(sim) {
+        if (simulation) {
+            simulation.on('tick', positionElements);
+        } else {
+            positionElements(); // static layout — one pass
+        }
+
+        // Drag: in force mode, pin then let the simulation settle (double-click releases).
+        // In hierarchical mode there's no simulation, so just move the node and redraw edges.
+        function dragBehavior() {
             function dragstarted(event, d) {
-                if (!event.active) sim.alphaTarget(0.3).restart();
+                if (simulation && !event.active) simulation.alphaTarget(0.3).restart();
                 d.fx = d.x;
                 d.fy = d.y;
             }
@@ -298,10 +550,15 @@
             function dragged(event, d) {
                 d.fx = event.x;
                 d.fy = event.y;
+                if (!simulation) {
+                    d.x = event.x;
+                    d.y = event.y;
+                    positionElements();
+                }
             }
 
             function dragended(event, d) {
-                if (!event.active) sim.alphaTarget(0);
+                if (simulation && !event.active) simulation.alphaTarget(0);
                 // Sticky: leave fx/fy set so a positioned node stays put. Double-click to release.
             }
 
@@ -313,6 +570,9 @@
 
         node.on('dblclick', (event, d) => {
             event.stopPropagation();
+            if (!simulation) {
+                return; // fixed layout — nothing to release
+            }
             d.fx = null;
             d.fy = null;
             simulation.alphaTarget(0.3).restart();

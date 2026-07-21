@@ -138,12 +138,12 @@
                     {
                         <h3 class="section-title" style="margin-top:var(--space-5)">Provisioners</h3>
                         <div class="detail-table-scroll">
-                            <table class="data">
+                            <table class="data" aria-label="Provisioners" data-client-grid>
                                 <thead>
                                 <tr>
-                                    <th>Name</th>
-                                    <th>Type</th>
-                                    <th>Default Duration</th>
+                                    <th data-col-key="name">Name</th>
+                                    <th data-col-key="type">Type</th>
+                                    <th data-col-key="default-duration">Default Duration</th>
                                 </tr>
                                 </thead>
                                 <tbody>
@@ -180,11 +180,11 @@
                     else
                     {
                         <div class="detail-table-scroll">
-                            <table class="data">
+                            <table class="data" aria-label="DNS zones" data-client-grid>
                                 <thead>
                                 <tr>
-                                    <th>Zone</th>
-                                    <th>Type</th>
+                                    <th data-col-key="zone">Zone</th>
+                                    <th data-col-key="type">Type</th>
                                 </tr>
                                 </thead>
                                 <tbody>
@@ -204,14 +204,14 @@
                     {
                         <h3 class="section-title" style="margin-top:var(--space-5)">Records (@Model.Records.Count)</h3>
                         <div class="detail-table-scroll">
-                            <table class="data">
+                            <table class="data" aria-label="DNS records" data-client-grid>
                                 <thead>
                                 <tr>
-                                    <th>Zone</th>
-                                    <th>Record</th>
-                                    <th>Type</th>
-                                    <th>Value</th>
-                                    <th>TTL</th>
+                                    <th data-col-key="zone">Zone</th>
+                                    <th data-col-key="record">Record</th>
+                                    <th data-col-key="type">Type</th>
+                                    <th data-col-key="value">Value</th>
+                                    <th data-col-key="ttl">TTL</th>
                                 </tr>
                                 </thead>
                                 <tbody>
@@ -233,14 +233,14 @@
 
                 <div class="tabpanel" role="tabpanel" data-panel="dhcp" hidden>
                     <div class="detail-table-scroll">
-                        <table class="data">
+                        <table class="data" aria-label="DHCP scopes" data-client-grid>
                             <thead>
                             <tr>
-                                <th>Scope</th>
-                                <th>Enabled</th>
-                                <th>Range</th>
-                                <th>Subnet Mask</th>
-                                <th>Gateway</th>
+                                <th data-col-key="scope">Scope</th>
+                                <th data-col-key="enabled">Enabled</th>
+                                <th data-col-key="range">Range</th>
+                                <th data-col-key="subnet-mask">Subnet Mask</th>
+                                <th data-col-key="gateway">Gateway</th>
                             </tr>
                             </thead>
                             <tbody>
@@ -263,12 +263,12 @@
                 {
                     <div class="tabpanel" role="tabpanel" data-panel="@ServiceDetailModel.FactViewSectionId(view.Title)" hidden>
                         <div class="detail-table-scroll">
-                            <table class="data">
+                            <table class="data" aria-label="@view.Title" data-client-grid>
                                 <thead>
                                 <tr>
                                     @foreach (string header in view.Headers)
                                     {
-                                        <th>@header</th>
+                                        <th data-col-key="@header">@header</th>
                                     }
                                 </tr>
                                 </thead>
@@ -290,12 +290,12 @@
 
                 <div class="tabpanel" role="tabpanel" data-panel="allfacts" hidden>
                     <div class="detail-table-scroll">
-                        <table class="data">
+                        <table class="data" aria-label="Service facts" data-client-grid>
                             <thead>
                             <tr>
-                                <th>Attribute</th>
-                                <th>Key</th>
-                                <th>Value</th>
+                                <th data-col-key="attribute">Attribute</th>
+                                <th data-col-key="key">Key</th>
+                                <th data-col-key="value">Value</th>
                             </tr>
                             </thead>
                             <tbody>
@@ -413,40 +413,8 @@
             switchTab(TABS.indexOf(tab) >= 0 ? tab : fallback);
         });
 
-        document.querySelectorAll('.tabpanel table.data').forEach(function (table) {
-            var headers = table.tHead ? Array.prototype.slice.call(table.tHead.rows[0].cells) : [];
-            headers.forEach(function (th, col) {
-                th.addEventListener('click', function () {
-                    var ascending = th.getAttribute('aria-sort') !== 'ascending';
-                    headers.forEach(function (h) {
-                        h.removeAttribute('aria-sort');
-                    });
-                    th.setAttribute('aria-sort', ascending ? 'ascending' : 'descending');
-
-                    var body = table.tBodies[0];
-                    var rows = Array.prototype.slice.call(body.rows);
-                    var numeric = /^-?\d+(\.\d+)?%?$/;
-                    rows.sort(function (a, b) {
-                        var x = (a.cells[col] ? a.cells[col].textContent : '').trim();
-                        var y = (b.cells[col] ? b.cells[col].textContent : '').trim();
-                        var xEmpty = x === '' || x === '—';
-                        var yEmpty = y === '' || y === '—';
-                        if (xEmpty || yEmpty) {
-                            return xEmpty === yEmpty ? 0 : (xEmpty ? 1 : -1);
-                        }
-                        var cmp;
-                        if (numeric.test(x) && numeric.test(y)) {
-                            cmp = parseFloat(x) - parseFloat(y);
-                        } else {
-                            cmp = x.localeCompare(y, undefined, {numeric: true, sensitivity: 'base'});
-                        }
-                        return ascending ? cmp : -cmp;
-                    });
-                    rows.forEach(function (r) {
-                        body.appendChild(r);
-                    });
-                });
-            });
-        });
+        // Client-side column sorting + search for these tables is provided by client-grid.js
+        // (they carry data-client-grid), which also coexists with column-reorder.js. No inline
+        // sort handler here — a second one would double-toggle the sort on each header click.
     </script>
 }

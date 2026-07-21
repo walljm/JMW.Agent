@@ -2427,6 +2427,14 @@ table.data th[aria-sort="descending"]::after {
     font-weight: var(--fw-med);
 }
 
+/* Designated "top" (root) nodes in the hierarchical layout get a dashed accent outline. */
+.tgraph-node.is-root > rect,
+.tgraph-node.is-root > circle {
+    stroke: var(--accent);
+    stroke-width: 2.5px;
+    stroke-dasharray: 4 2;
+}
+
 /* ===== Combo box (typeahead + pick list) — operator-facts path/key entry ===== */
 .combo { position: relative; }
 
@@ -2467,4 +2475,114 @@ table.data th[aria-sort="descending"]::after {
     padding: var(--space-3);
     font-size: var(--fs-sm);
     color: var(--text-dim);
+}
+
+/* ===== Column reorder (column-reorder.js) ===== */
+/* Drag a keyed header to reorder columns; anchor columns (no data-col-key) and the resize handle's
+   right edge are excluded. */
+.data.cols-reorderable thead th[data-col-key] {
+    cursor: grab;
+}
+
+.data.cols-reorderable thead th.col-dragging {
+    cursor: grabbing;
+    opacity: 0.55;
+}
+
+/* Vertical insertion marker showing where a dragged column will land. Positioned by the script
+   inside the scroll wrapper (which it makes position:relative when needed). */
+.col-reorder-indicator {
+    position: absolute;
+    width: 2px;
+    background: var(--accent);
+    pointer-events: none;
+    z-index: 3;
+}
+
+/* ===== Client-side grid (client-grid.js): search + sort for non-paginated tables ===== */
+.client-grid-toolbar {
+    display: flex;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+}
+
+.client-grid-search {
+    max-width: 320px;
+}
+
+tr.cg-hidden {
+    display: none;
+}
+
+/* Client-sortable headers reuse the server sort arrows (thead th[aria-sort]::after). */
+.data th.cg-sortable {
+    cursor: pointer;
+}
+
+/* ===== Topology graph fullscreen (Subnets page) ===== */
+.graph-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+}
+
+/* Segmented Force/Hierarchical layout switch — pushed to the left; fullscreen stays right. */
+.graph-layout {
+    display: inline-flex;
+    margin-right: auto;
+}
+
+.graph-layout .btn {
+    border-radius: 0;
+}
+
+.graph-layout .btn:first-child {
+    border-top-left-radius: var(--radius-md);
+    border-bottom-left-radius: var(--radius-md);
+}
+
+.graph-layout .btn:last-child {
+    border-top-right-radius: var(--radius-md);
+    border-bottom-right-radius: var(--radius-md);
+}
+
+.graph-layout .btn:not(:first-child) {
+    border-left: none;
+}
+
+.graph-layout .btn.active {
+    background: var(--accent);
+    color: var(--on-accent);
+    border-color: var(--accent);
+}
+
+.graph-hint {
+    font-size: var(--fs-xs);
+    color: var(--text-dim);
+}
+
+/* The graph card fills the viewport when fullscreen; the SVG re-measures its height on toggle. */
+.graph-card.tgraph-fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 300;
+    margin: 0;
+    border-radius: 0;
+    overflow: auto;
+    padding: var(--space-4);
+}
+
+/* Floating exit control, only shown while fullscreen. */
+.graph-fullscreen-exit {
+    display: none;
+}
+
+.graph-card.tgraph-fullscreen .graph-fullscreen-exit {
+    display: inline-flex;
+    position: fixed;
+    top: var(--space-4);
+    right: var(--space-4);
+    z-index: 301;
 }

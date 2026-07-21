@@ -91,15 +91,15 @@
         else
         {
             <div class="grid-scroll">
-                <table class="data" aria-label="ARP neighbors">
+                <table class="data" aria-label="ARP neighbors" data-client-grid>
                     <thead>
                     <tr>
-                        <th>Observer</th>
-                        <th>IP</th>
-                        <th>MAC</th>
-                        <th>Interface</th>
-                        <th>State</th>
-                        <th>Resolved Device</th>
+                        <th data-col-key="observer">Observer</th>
+                        <th data-col-key="ip">IP</th>
+                        <th data-col-key="mac">MAC</th>
+                        <th data-col-key="interface">Interface</th>
+                        <th data-col-key="state">State</th>
+                        <th data-col-key="resolved-device">Resolved Device</th>
                     </tr>
                     </thead>
                     <tbody>
@@ -138,12 +138,12 @@
         else
         {
             <div class="grid-scroll">
-                <table class="data" aria-label="Attached interfaces">
+                <table class="data" aria-label="Attached interfaces" data-client-grid>
                     <thead>
                     <tr>
-                        <th>Device</th>
-                        <th>Interface</th>
-                        <th>IP</th>
+                        <th data-col-key="device">Device</th>
+                        <th data-col-key="interface">Interface</th>
+                        <th data-col-key="ip">IP</th>
                     </tr>
                     </thead>
                     <tbody>

@@ -2,14 +2,16 @@
 // across browsers/devices — not localStorage). A table stays in its natural auto layout until the
 // user actually resizes it (or has saved widths), so untouched tables look exactly as before.
 //
-// Width state is stored as { columnIndex: pixels } under the preference key "cols:<table-slug>",
-// where the slug derives from the table's aria-label (or id). Saved widths are fetched once per
-// key and cached, so htmx panel/grid swaps re-apply them without re-fetching.
+// Width state is stored as { colKey: pixels } under the preference key "cols:<table-slug>", where
+// the slug derives from the table's aria-label (or id) and colKey is the header's data-col-key
+// (falling back to its column index for tables without keys). Keying by data-col-key keeps a saved
+// width attached to its column when column-reorder.js moves the column. Saved widths are fetched
+// once per key and cached, so htmx panel/grid swaps re-apply them without re-fetching.
 (function () {
     var meta = document.querySelector('meta[name="csrf-token"]');
     var CSRF = meta ? meta.content : '';
 
-    var cache = {};   // key -> { index: px }
+    var cache = {};   // key -> { colKey: px }
     var pending = {}; // key -> debounce timer
 
     function tableKey(table) {
@@ -22,6 +24,18 @@
         return table.tHead && table.tHead.rows.length > 0 ? table.tHead.rows[0].cells : [];
     }
 
+    // Stable identity for a header's width: its data-col-key, or its index for unkeyed tables.
+    function colKey(th, index) {
+        return th.getAttribute('data-col-key') || String(index);
+    }
+
+    function widthFor(widths, th, index) {
+        var w = widths[colKey(th, index)];
+        // Legacy prefs were keyed purely by index — fall back so saved widths survive the format
+        // change (a subsequent resize rewrites them under the col-key).
+        return w != null ? w : widths[String(index)];
+    }
+
     function applySaved(table, widths) {
         if (!widths) {
             return;
@@ -30,8 +44,9 @@
         var ths = headerCells(table);
         var applied = false;
         for (var i = 0; i < ths.length; i++) {
-            if (widths[i] != null) {
-                ths[i].style.width = widths[i] + 'px';
+            var w = widthFor(widths, ths[i], i);
+            if (w != null) {
+                ths[i].style.width = w + 'px';
                 applied = true;
             }
         }
@@ -48,7 +63,7 @@
         var ths = headerCells(table);
         var widths = {};
         for (var i = 0; i < ths.length; i++) {
-            widths[i] = ths[i].offsetWidth;
+            widths[colKey(ths[i], i)] = ths[i].offsetWidth;
         }
 
         return widths;
@@ -102,7 +117,7 @@
             // width actually takes effect (auto layout treats width as a hint only).
             var frozen = snapshot(table);
             for (var j = 0; j < ths.length; j++) {
-                ths[j].style.width = frozen[j] + 'px';
+                ths[j].style.width = frozen[colKey(ths[j], j)] + 'px';
             }
 
             table.style.tableLayout = 'fixed';
@@ -110,7 +125,7 @@
             document.body.style.userSelect = 'none';
 
             var startX = e.pageX;
-            var startW = frozen[index];
+            var startW = frozen[colKey(th, index)];
 
             function onMove(ev) {
                 th.style.width = Math.max(40, startW + (ev.pageX - startX)) + 'px';

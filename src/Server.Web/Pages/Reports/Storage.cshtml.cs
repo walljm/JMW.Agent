@@ -35,6 +35,9 @@ public sealed class StorageModel : PageModel
     public string? AfterFs { get; set; }
 
     [BindProperty(SupportsGet = true)]
+    public string? Q { get; set; }
+
+    [BindProperty(SupportsGet = true)]
     public string? Tab { get; set; }
 
     /// <summary>Normalizes the bound `?tab=` query value; anything but "filesystems" is "disks".</summary>
@@ -64,6 +67,7 @@ public sealed class StorageModel : PageModel
         {
             (IReadOnlyList<DiskListItem> disks, string? disksNext) = await StorageApi.QueryDisksAsync(
                 _db,
+                Q,
                 afterDiskDevice,
                 afterDiskKey,
                 StorageApi.DefaultLimit,
@@ -82,6 +86,7 @@ public sealed class StorageModel : PageModel
         {
             (IReadOnlyList<FilesystemListItem> fs, string? fsNext) = await StorageApi.QueryFilesystemsAsync(
                 _db,
+                Q,
                 afterFsDevice,
                 afterFsKey,
                 StorageApi.DefaultLimit,

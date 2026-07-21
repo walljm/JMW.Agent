@@ -35,6 +35,7 @@
     // pagination reload lands back on the section being paged.
     string FsParam() => string.IsNullOrEmpty(Model.AfterFs) ? "" : "afterFs=" + Uri.EscapeDataString(Model.AfterFs);
     string DiskParam() => string.IsNullOrEmpty(Model.AfterDisk) ? "" : "afterDisk=" + Uri.EscapeDataString(Model.AfterDisk);
+    string QParam() => string.IsNullOrEmpty(Model.Q) ? "" : "q=" + Uri.EscapeDataString(Model.Q);
 
     // Build "/storage?..." from a list of "k=v" parts, dropping empties.
     static string StorageUrl(params string[] parts)
@@ -62,6 +63,17 @@
         </button>
     </div>
 
+    <form class="toolbar" method="get" action="/storage">
+        <input type="hidden" name="tab" value="@Model.ActiveTab"/>
+        <input class="input" type="search" name="q" value="@Model.Q"
+               aria-label="Search storage" placeholder="Search device, host, model, mount…" style="flex:1"/>
+        <button class="btn" type="submit">Search</button>
+        @if (!string.IsNullOrEmpty(Model.Q))
+        {
+            <a class="btn" href="/storage?tab=@Model.ActiveTab">Clear</a>
+        }
+    </form>
+
     <div class="tabpanel" id="tab-disks" role="tabpanel" aria-labelledby="tab-btn-disks" @(Model.ActiveTab == "disks" ? "" : "hidden")>
         <partial name="_SectionError" model="Model.DisksError"/>
         @if (Model.DisksError is null && Model.Disks.Count == 0)
@@ -74,16 +86,16 @@
                 <table class="data" aria-label="Disks">
                     <thead>
                     <tr>
-                        <th>Friendly Name</th>
-                        <th>Hostname</th>
-                        <th>Disk</th>
-                        <th>Model</th>
-                        <th>Type</th>
-                        <th>Size</th>
-                        <th>SMART</th>
-                        <th>Temp</th>
-                        <th>Wear %</th>
-                        <th>Power-On Hours</th>
+                        <th data-col-key="friendly-name">Friendly Name</th>
+                        <th data-col-key="hostname">Hostname</th>
+                        <th data-col-key="disk">Disk</th>
+                        <th data-col-key="model">Model</th>
+                        <th data-col-key="type">Type</th>
+                        <th data-col-key="size">Size</th>
+                        <th data-col-key="smart">SMART</th>
+                        <th data-col-key="temp">Temp</th>
+                        <th data-col-key="wear">Wear %</th>
+                        <th data-col-key="power-on-hours">Power-On Hours</th>
                     </tr>
                     </thead>
                     <tbody>
@@ -106,8 +118,8 @@
                 </table>
             </div>
             <partial name="_Pagination" model="@(new PaginationLinks(
-                                                      string.IsNullOrEmpty(Model.AfterDisk) ? null : StorageUrl(FsParam(), "tab=disks"),
-                                                      string.IsNullOrEmpty(Model.DisksNextCursor) ? null : StorageUrl("afterDisk=" + Uri.EscapeDataString(Model.DisksNextCursor), FsParam(), "tab=disks")
+                                                      string.IsNullOrEmpty(Model.AfterDisk) ? null : StorageUrl(FsParam(), QParam(), "tab=disks"),
+                                                      string.IsNullOrEmpty(Model.DisksNextCursor) ? null : StorageUrl("afterDisk=" + Uri.EscapeDataString(Model.DisksNextCursor), FsParam(), QParam(), "tab=disks")
                                                   ))"/>
         }
     </div>
@@ -124,14 +136,14 @@
                 <table class="data" aria-label="Filesystems">
                     <thead>
                     <tr>
-                        <th>Friendly Name</th>
-                        <th>Hostname</th>
-                        <th>Mount</th>
-                        <th>Type</th>
-                        <th>Total</th>
-                        <th>Used</th>
-                        <th>Free</th>
-                        <th>Used %</th>
+                        <th data-col-key="friendly-name">Friendly Name</th>
+                        <th data-col-key="hostname">Hostname</th>
+                        <th data-col-key="mount">Mount</th>
+                        <th data-col-key="type">Type</th>
+                        <th data-col-key="total">Total</th>
+                        <th data-col-key="used">Used</th>
+                        <th data-col-key="free">Free</th>
+                        <th data-col-key="used-pct">Used %</th>
                     </tr>
                     </thead>
                     <tbody>
@@ -163,8 +175,8 @@
                 </table>
             </div>
             <partial name="_Pagination" model="@(new PaginationLinks(
-                                                      string.IsNullOrEmpty(Model.AfterFs) ? null : StorageUrl(DiskParam(), "tab=filesystems"),
-                                                      string.IsNullOrEmpty(Model.FilesystemsNextCursor) ? null : StorageUrl("afterFs=" + Uri.EscapeDataString(Model.FilesystemsNextCursor), DiskParam(), "tab=filesystems")
+                                                      string.IsNullOrEmpty(Model.AfterFs) ? null : StorageUrl(DiskParam(), QParam(), "tab=filesystems"),
+                                                      string.IsNullOrEmpty(Model.FilesystemsNextCursor) ? null : StorageUrl("afterFs=" + Uri.EscapeDataString(Model.FilesystemsNextCursor), DiskParam(), QParam(), "tab=filesystems")
                                                   ))"/>
         }
     </div>

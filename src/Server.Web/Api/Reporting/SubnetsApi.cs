@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 
 using JMW.Discovery.Server.Queries;
 
@@ -385,6 +386,32 @@ public static class SubnetsApi
         return true;
     }
 
+    /// <summary>
+    /// True for per-host, non-routable ranges that must never render as a shared subnet: loopback
+    /// (IPv4 127.0.0.0/8, IPv6 ::1) and link-local (IPv4 169.254.0.0/16, IPv6 fe80::/10).
+    /// </summary>
+    private static bool IsNonRoutableLocal(IPNetwork network)
+    {
+        IPAddress a = network.BaseAddress;
+        if (IPAddress.IsLoopback(a))
+        {
+            return true;
+        }
+
+        byte[] b = a.GetAddressBytes();
+        if (a.AddressFamily == AddressFamily.InterNetwork)
+        {
+            return b[0] == 169 && b[1] == 254; // 169.254.0.0/16
+        }
+
+        if (a.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            return b[0] == 0xfe && (b[1] & 0xc0) == 0x80; // fe80::/10
+        }
+
+        return false;
+    }
+
     private static async Task<List<SubnetAggregate>> BuildAggregatesAsync(NpgsqlConnection conn, CancellationToken ct)
     {
         Dictionary<string, SubnetAggregate> subnets = new(StringComparer.Ordinal);
@@ -533,7 +560,12 @@ public static class SubnetsApi
             return [];
         }
 
-        List<SubnetAggregate> all = subnets.Values.ToList();
+        // Drop per-host non-routable ranges: loopback (127.0.0.0/8, ::1) and link-local
+        // (169.254.0.0/16, fe80::/10). Every device has its own, so they are never a shared subnet —
+        // merging them into one node produced spurious "lo" edges fanning out to every host.
+        List<SubnetAggregate> all = subnets.Values
+            .Where(a => !IsNonRoutableLocal(a.Network))
+            .ToList();
         await foreach (SubnetHostIp row in conn.ListSubnetHostIpsAsync(ct))
         {
             if (row.Ip is null || !IPAddress.TryParse(row.Ip, out IPAddress? addr))
