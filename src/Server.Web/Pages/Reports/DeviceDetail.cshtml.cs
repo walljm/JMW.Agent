@@ -451,6 +451,7 @@ public sealed class DeviceDetailModel : PageModel
         // a near-duplicate tab; its one bit of unique info (fact freshness) moved to the OS row.
         (string Id, string Label, FactViewGroup Group, bool Show, int? Count)[] builtins =
         [
+            ("summary", "Summary", FactViewGroup.Summary, true, null),
             ("history", "History", FactViewGroup.History, true, History.Data.Count),
             ("hardware", "Hardware", FactViewGroup.Hardware, HardwareFacts.Data is not null, null),
             ("components", "Components", FactViewGroup.Hardware, Components.Data.Count > 0, Components.Data.Count),
@@ -496,10 +497,8 @@ public sealed class DeviceDetailModel : PageModel
         NavGroups = groups;
 
         // An open incident is the most judgment-relevant thing on the page, so it wins the
-        // landing slot outright. Otherwise fall back to management status, then the first
-        // populated section.
-        string preferred = OpenIncidentCount > 0 ? "history"
-            : ManagementStatus == "managed" ? "hardware" : "sources";
+        // landing slot outright. Otherwise the new Summary dashboard is the landing page.
+        string preferred = OpenIncidentCount > 0 ? "history" : "summary";
         DefaultSection = flatIds.Contains(preferred) ? preferred
             : flatIds.Count > 0 ? flatIds[0]
             : "allfacts";

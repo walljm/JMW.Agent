@@ -1,0 +1,43 @@
+@using JMW.Discovery.Server.Pages.Reports
+@using JMW.Discovery.Server.UI
+@model IReadOnlyList<HistoryRow>
+@* Shared by DeviceDetail's History tab (full list) and its Summary tab's Recent Activity
+   preview (a short Take(N)) — one timeline rendering, two callers. *@
+@if (Model.Count == 0)
+{
+    <div class="empty">No history recorded for this device yet.</div>
+}
+else
+{
+    <div class="tl">
+        @foreach (HistoryRow h in Model)
+        {
+            string dotClass = h.Kind switch { "open" => "crit", "resolved" => "ok", _ => "info" };
+            string label = IncidentDisplay.Label(h.Kind, h.TypeName);
+            <div class="tl-item">
+                <div class="tl-when">@ViewFormat.RelativeTime(h.At.UtcDateTime)</div>
+                <div class="tl-rail">
+                    <span class="tl-dot @dotClass"></span>
+                    <span class="tl-line"></span>
+                </div>
+                <div class="tl-body">
+                    <div class="tl-title">
+                        @label
+                        @if (h.Kind != "event")
+                        {
+                            <span class="text-dim"> — @h.Kind</span>
+                        }
+                        @if (h.Duration is { } d)
+                        {
+                            <span class="act-dur">(@ViewFormat.Duration((long)d.TotalSeconds))</span>
+                        }
+                    </div>
+                    @if (h.Detail is not null)
+                    {
+                        <div class="tl-sub">@h.Detail</div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}

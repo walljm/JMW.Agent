@@ -17,99 +17,31 @@
 }
 <main class="main data-grid-page">
     <div class="page-head">
-        <h1><a href="@Model.BreadcrumbHref" style="color:var(--text-dim)">@Model.BreadcrumbLabel</a> / @displayName</h1>
-        @if (User.IsInRole("admin"))
-        {
-            <button class="btn btn-sm" onclick="openMergeDevice()">Merge into…</button>
-            <button class="btn btn-sm btn-danger" onclick="openDeleteDevice()">Delete…</button>
-        }
-    </div>
-
-    <div class="identity">
-        <div>
-            <div class="title">
-                @displayName
-                @if (Model.ManagementStatus == "managed")
-                {
-                    <span class="badge-managed">managed</span>
-                }
-                else
-                {
-                    <span class="badge-discovered">discovered</span>
-                }
-                @if (Model.OpenIncidentCount > 0)
-                {
-                    <a class="status crit" href="#" onclick="switchTab('history'); return false;"
-                       title="Jump to History">
-                        @Model.OpenIncidentCount open incident@(Model.OpenIncidentCount == 1 ? "" : "s")
-                    </a>
-                }
-            </div>
-            <dl class="kv" style="margin-top:var(--space-3)">
-                <dt>UUID</dt>
-                <dd class="mono">@Model.DeviceId</dd>
-                <dt>Vendor / Kind</dt>
-                <dd>
-                    @(Model.Vendor ?? "—")@(string.IsNullOrEmpty(Model.Kind) ? "" : " · " + Model.Kind)
-                    @if (!string.IsNullOrEmpty(Model.Vendor) && !string.IsNullOrEmpty(Model.VendorSourceName))
-                    {
-                        <span class="text-dim"> (via @Model.VendorSourceName)</span>
-                    }
-                </dd>
-                <dt>IP Address</dt>
-                <dd class="mono">@(string.IsNullOrEmpty(Model.LastSeenIp) ? "—" : Model.LastSeenIp)</dd>
-                <dt>OS</dt>
-                <dd>
-                    @(Model.OsDistro ?? Model.OsFamily ?? "—")
-                    @if (Model.SystemFacts.Error is null && Model.SystemFacts.Data is { } sf)
-                    {
-                        <span class="text-dim" title="@ViewFormat.IsoUtc(sf.UpdatedAt)"> · updated @ViewFormat.RelativeTime(sf.UpdatedAt)</span>
-                    }
-                </dd>
-                <dt>Last Seen</dt>
-                <dd>
-                    @if (Model.LastSeen.HasValue)
-                    {
-                        <time data-utc="@ViewFormat.IsoUtc(Model.LastSeen.Value)">@Model.LastSeen.Value.ToString("yyyy-MM-dd HH:mm") UTC</time>
-                        @if (Model.LastSeen.Value < DateTime.UtcNow.AddDays(-DashboardModel.NotSeenDays))
-                        {
-                            <span class="status warn" style="margin-left:var(--space-2)">stale</span>
-                        }
-                    }
-                    else
-                    {
-                        @:—
-                    }
-                </dd>
-            </dl>
+        <h1>
+            <a href="@Model.BreadcrumbHref" style="color:var(--text-dim)">@Model.BreadcrumbLabel</a> / @displayName
+            @if (Model.ManagementStatus == "managed")
+            {
+                <span class="badge-managed">managed</span>
+            }
+            else
+            {
+                <span class="badge-discovered">discovered</span>
+            }
+        </h1>
+        <div style="display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap">
+            @if (Model.OpenIncidentCount > 0)
+            {
+                <a class="status crit" href="#" onclick="switchTab('history'); return false;"
+                   title="Jump to History">
+                    @Model.OpenIncidentCount open incident@(Model.OpenIncidentCount == 1 ? "" : "s")
+                </a>
+            }
+            @if (User.IsInRole("admin"))
+            {
+                <button class="btn btn-sm" onclick="openMergeDevice()">Merge into…</button>
+                <button class="btn btn-sm btn-danger" onclick="openDeleteDevice()">Delete…</button>
+            }
         </div>
-        @{
-            (string Tab, string Label, int Count)[] atGlance =
-            [
-                (DeviceDetailModel.FactViewSectionId("Interfaces"), "Interfaces", Model.FactViewCount("Interfaces")),
-                (DeviceDetailModel.FactViewSectionId("Listening Ports"), "Open Ports", Model.FactViewCount("Listening Ports")),
-                (DeviceDetailModel.FactViewSectionId("Disks"), "Disks", Model.FactViewCount("Disks")),
-                (DeviceDetailModel.FactViewSectionId("Containers"), "Containers", Model.FactViewCount("Containers")),
-                ("services", "Services", Model.Services.Data.Count),
-            ];
-        }
-        @if (atGlance.Any(s => s.Count > 0))
-        {
-            <div class="identity-stats stat-row">
-                @foreach ((string tab, string label, int count) in atGlance)
-                {
-                    @if (count > 0)
-                    {
-                        <div class="stat">
-                            <a class="stat-head" href="#" onclick="switchTab('@tab'); return false;">
-                                <div class="label">@label</div>
-                                <div class="value">@count</div>
-                            </a>
-                        </div>
-                    }
-                }
-            </div>
-        }
     </div>
 
     @* Sections are grouped in a vertical nav; only sections with data are rendered (built in
@@ -150,48 +82,167 @@
         </nav>
         <div class="section-panels">
 
+            <div class="tabpanel" role="tabpanel" data-panel="summary" hidden>
+                <div class="identity">
+                    <div>
+                        <div class="title">@displayName</div>
+                        <dl class="kv" style="margin-top:var(--space-3)">
+                            <dt>UUID</dt>
+                            <dd class="mono">@Model.DeviceId</dd>
+                            <dt>Vendor / Kind</dt>
+                            <dd>
+                                @(Model.Vendor ?? "—")@(string.IsNullOrEmpty(Model.Kind) ? "" : " · " + Model.Kind)
+                                @if (!string.IsNullOrEmpty(Model.Vendor) && !string.IsNullOrEmpty(Model.VendorSourceName))
+                                {
+                                    <span class="text-dim"> (via @Model.VendorSourceName)</span>
+                                }
+                            </dd>
+                            <dt>IP Address</dt>
+                            <dd class="mono">@(string.IsNullOrEmpty(Model.LastSeenIp) ? "—" : Model.LastSeenIp)</dd>
+                            <dt>OS</dt>
+                            <dd>
+                                @(Model.OsDistro ?? Model.OsFamily ?? "—")
+                                @if (Model.SystemFacts.Error is null && Model.SystemFacts.Data is { } sf)
+                                {
+                                    <span class="text-dim" title="@ViewFormat.IsoUtc(sf.UpdatedAt)"> · updated @ViewFormat.RelativeTime(sf.UpdatedAt)</span>
+                                }
+                            </dd>
+                            <dt>Last Seen</dt>
+                            <dd>
+                                @if (Model.LastSeen.HasValue)
+                                {
+                                    <time data-utc="@ViewFormat.IsoUtc(Model.LastSeen.Value)">@Model.LastSeen.Value.ToString("yyyy-MM-dd HH:mm") UTC</time>
+                                    @if (Model.LastSeen.Value < DateTime.UtcNow.AddDays(-DashboardModel.NotSeenDays))
+                                    {
+                                        <span class="status warn" style="margin-left:var(--space-2)">stale</span>
+                                    }
+                                }
+                                else
+                                {
+                                    @:—
+                                }
+                            </dd>
+                        </dl>
+                    </div>
+                    @{
+                        (string Tab, string Label, int Count)[] atGlance =
+                        [
+                            (DeviceDetailModel.FactViewSectionId("Interfaces"), "Interfaces", Model.FactViewCount("Interfaces")),
+                            (DeviceDetailModel.FactViewSectionId("Listening Ports"), "Open Ports", Model.FactViewCount("Listening Ports")),
+                            (DeviceDetailModel.FactViewSectionId("Disks"), "Disks", Model.FactViewCount("Disks")),
+                            (DeviceDetailModel.FactViewSectionId("Containers"), "Containers", Model.FactViewCount("Containers")),
+                            ("services", "Services", Model.Services.Data.Count),
+                        ];
+                    }
+                    @if (atGlance.Any(s => s.Count > 0))
+                    {
+                        <div class="identity-stats stat-row">
+                            @foreach ((string tab, string label, int count) in atGlance)
+                            {
+                                @if (count > 0)
+                                {
+                                    <div class="stat">
+                                        <a class="stat-head" href="#" onclick="switchTab('@tab'); return false;">
+                                            <div class="label">@label</div>
+                                            <div class="value">@count</div>
+                                        </a>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+
+                <div style="margin-top:var(--space-5)">
+                    <div class="tabpanel-heading">Collection Health</div>
+                    @{
+                        List<IGrouping<string, DeviceFingerprint>> bySource = Model.Sources.Data
+                            .Where(f => !string.IsNullOrEmpty(f.Source))
+                            .GroupBy(f => f.Source!, StringComparer.Ordinal)
+                            .OrderByDescending(g => g.Max(f => f.LastSeen))
+                            .ToList();
+                    }
+                    <dl class="kv">
+                        <dt>Facts last updated</dt>
+                        <dd>
+                            @if (Model.SystemFacts.Error is null && Model.SystemFacts.Data is { } shf)
+                            {
+                                <span title="@ViewFormat.IsoUtc(shf.UpdatedAt)">@ViewFormat.RelativeTime(shf.UpdatedAt)</span>
+                            }
+                            else
+                            {
+                                @:—
+                            }
+                        </dd>
+                        <dt>Last seen (any source)</dt>
+                        <dd>
+                            @if (Model.LastSeen.HasValue)
+                            {
+                                <span title="@ViewFormat.IsoUtc(Model.LastSeen.Value)">@ViewFormat.RelativeTime(Model.LastSeen.Value)</span>
+                                @if (Model.LastSeen.Value < DateTime.UtcNow.AddDays(-DashboardModel.NotSeenDays))
+                                {
+                                    <span class="status warn" style="margin-left:var(--space-2)">stale</span>
+                                }
+                            }
+                            else
+                            {
+                                @:—
+                            }
+                        </dd>
+                    </dl>
+                    @if (bySource.Count == 0)
+                    {
+                        <div class="empty">No discovery sources recorded for this device.</div>
+                    }
+                    else
+                    {
+                        <div class="detail-table-scroll" style="margin-top:var(--space-3)">
+                            <table class="data" aria-label="Reporting sources" data-client-grid>
+                                <thead>
+                                <tr>
+                                    <th data-col-key="source">Source</th>
+                                    <th data-col-key="fingerprints">Fingerprints</th>
+                                    <th data-col-key="last-seen">Last Seen</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @foreach (IGrouping<string, DeviceFingerprint> g in bySource)
+                                {
+                                    DateTime last = g.Max(f => f.LastSeen);
+                                    <tr>
+                                        <td>@g.Key</td>
+                                        <td>@g.Count()</td>
+                                        <td><time data-utc="@ViewFormat.IsoUtc(last)">@ViewFormat.RelativeTime(last)</time></td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+
+                <div style="margin-top:var(--space-5)">
+                    <div class="tabpanel-heading">
+                        Recent Activity
+                        @if (Model.History.Data.Count > 5)
+                        {
+                            <a href="#" onclick="switchTab('history'); return false;"
+                               style="float:right;font-size:var(--fs-sm);font-weight:var(--fw-normal)">View all →</a>
+                        }
+                    </div>
+                    <partial name="_SectionError" model="Model.History.Error"/>
+                    @if (Model.History.Error is null)
+                    {
+                        <partial name="_HistoryTimeline" model="Model.History.Data.Take(5).ToList()"/>
+                    }
+                </div>
+            </div>
+
             <div class="tabpanel" role="tabpanel" data-panel="history" hidden>
                 <partial name="_SectionError" model="Model.History.Error"/>
                 @if (Model.History.Error is null)
                 {
-                    @if (Model.History.Data.Count == 0)
-                    {
-                        <div class="empty">No history recorded for this device yet.</div>
-                    }
-                    else
-                    {
-                        <div class="tl">
-                            @foreach (HistoryRow h in Model.History.Data)
-                            {
-                                string dotClass = h.Kind switch { "open" => "crit", "resolved" => "ok", _ => "info" };
-                                string label = IncidentDisplay.Label(h.Kind, h.TypeName);
-                                <div class="tl-item">
-                                    <div class="tl-when">@ViewFormat.RelativeTime(h.At.UtcDateTime)</div>
-                                    <div class="tl-rail">
-                                        <span class="tl-dot @dotClass"></span>
-                                        <span class="tl-line"></span>
-                                    </div>
-                                    <div class="tl-body">
-                                        <div class="tl-title">
-                                            @label
-                                            @if (h.Kind != "event")
-                                            {
-                                                <span class="text-dim"> — @h.Kind</span>
-                                            }
-                                            @if (h.Duration is { } d)
-                                            {
-                                                <span class="act-dur">(@ViewFormat.Duration((long)d.TotalSeconds))</span>
-                                            }
-                                        </div>
-                                        @if (h.Detail is not null)
-                                        {
-                                            <div class="tl-sub">@h.Detail</div>
-                                        }
-                                    </div>
-                                </div>
-                            }
-                        </div>
-                    }
+                    <partial name="_HistoryTimeline" model="Model.History.Data"/>
                 }
             </div>
 

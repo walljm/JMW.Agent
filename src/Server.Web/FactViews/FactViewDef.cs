@@ -122,6 +122,12 @@ public enum FactViewKind
 /// </summary>
 public enum FactViewGroup
 {
+    /// <summary>Device Detail's landing dashboard (identity, at-a-glance counts, collection
+    /// health, recent activity) — not a fact-view-library section, but placed first in this enum
+    /// so it's the default tab and DeviceDetailModel's nav builder can group it alongside
+    /// everything else.</summary>
+    Summary,
+
     /// <summary>Device Detail's incident+event timeline (see IncidentQueries.ListEntityHistoryAsync)
     /// — not a fact-view-library section, but placed in this enum so DeviceDetailModel's nav
     /// builder can group it alongside everything else.</summary>
