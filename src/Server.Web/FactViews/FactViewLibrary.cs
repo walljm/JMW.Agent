@@ -74,6 +74,23 @@ public static class FactViewLibrary
             FactViewGroup.Hardware
         ),
 
+        // FV-21 hardware inventory components (dmidecode / lshw / SNMP entPhysical). The raw
+        // per-component Details JSON has no typed projection column — surfaced here alongside
+        // the identifying fields, keyed by the stable component handle.
+        new(
+            "Hardware Components",
+            [
+                FactViewColumn.Key("Component"),
+                FactViewColumn.Fact("Class", FactPaths.HwComponentClass),
+                FactViewColumn.Fact("Vendor", FactPaths.HwComponentVendor),
+                FactViewColumn.Fact("Model", FactPaths.HwComponentModel),
+                FactViewColumn.Fact("Serial", FactPaths.HwComponentSerial),
+                FactViewColumn.Fact("Details", FactPaths.HwComponentDetails),
+            ],
+            Kind: FactViewKind.List,
+            Group: FactViewGroup.Hardware
+        ),
+        
         // FV-14 hardware extras (board / BIOS / arch / install date — no projection)
         new(
             "Hardware Details",
@@ -108,22 +125,6 @@ public static class FactViewLibrary
             FactViewGroup.Hardware
         ),
 
-        // FV-21 hardware inventory components (dmidecode / lshw / SNMP entPhysical). The raw
-        // per-component Details JSON has no typed projection column — surfaced here alongside
-        // the identifying fields, keyed by the stable component handle.
-        new(
-            "Hardware Components",
-            [
-                FactViewColumn.Key("Component"),
-                FactViewColumn.Fact("Class", FactPaths.HwComponentClass),
-                FactViewColumn.Fact("Vendor", FactPaths.HwComponentVendor),
-                FactViewColumn.Fact("Model", FactPaths.HwComponentModel),
-                FactViewColumn.Fact("Serial", FactPaths.HwComponentSerial),
-                FactViewColumn.Fact("Details", FactPaths.HwComponentDetails),
-            ],
-            Kind: FactViewKind.List,
-            Group: FactViewGroup.Hardware
-        ),
 
         // ---- Storage ----
         // The device page's Filesystems table, served entirely from facts (no proj_filesystems
