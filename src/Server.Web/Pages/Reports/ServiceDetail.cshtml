@@ -273,12 +273,19 @@
                                 </tr>
                                 </thead>
                                 <tbody>
-                                @foreach (IReadOnlyList<string?> row in view.Rows)
+                                @foreach (IReadOnlyList<FactCell> row in view.Rows)
                                 {
                                     <tr>
-                                        @foreach (string? cell in row)
+                                        @foreach (FactCell cell in row)
                                         {
-                                            <td>@(cell ?? "—")</td>
+                                            @if (cell.SortValue is not null)
+                                            {
+                                                <td data-sort="@cell.SortValue">@(cell.Display ?? "—")</td>
+                                            }
+                                            else
+                                            {
+                                                <td>@(cell.Display ?? "—")</td>
+                                            }
                                         }
                                     </tr>
                                 }

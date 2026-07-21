@@ -113,20 +113,6 @@ public sealed class ServiceDetailModel : PageModel
         return Page();
     }
 
-    // Group display order + labels for the section nav — same order as Device Detail.
-    private static readonly (FactViewGroup Group, string Label)[] GroupOrder =
-    [
-        (FactViewGroup.History, "History"),
-        (FactViewGroup.Hardware, "Hardware"),
-        (FactViewGroup.Storage, "Storage"),
-        (FactViewGroup.Network, "Network"),
-        (FactViewGroup.Software, "Software"),
-        (FactViewGroup.Security, "Security"),
-        (FactViewGroup.Protocols, "Protocols"),
-        (FactViewGroup.Discovery, "Discovery"),
-        (FactViewGroup.Custom, "Custom"),
-    ];
-
     /// <summary>
     /// Assembles the grouped left-nav from the curated built-in sections (CA/DNS/DHCP) and the
     /// rendered fact views, keeping only sections that have data — mirrors DeviceDetailModel.BuildNav.
@@ -145,10 +131,11 @@ public sealed class ServiceDetailModel : PageModel
             ("allfacts", "All Facts", FactViewGroup.Discovery, AllFacts.Count > 0, AllFacts.Count),
         ];
 
-        List<DeviceSectionGroup> groups = new(GroupOrder.Length);
+        List<DeviceSectionGroup> groups = new(FactViewGroups.Ordered.Count);
         List<string> flatIds = [];
-        foreach ((FactViewGroup group, string label) in GroupOrder)
+        foreach (FactViewGroup group in FactViewGroups.Ordered)
         {
+            string label = group.DisplayName();
             List<DeviceSectionItem> items = [];
             foreach ((string id, string itemLabel, FactViewGroup g, bool show, int? count) in builtins)
             {

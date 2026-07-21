@@ -1,4 +1,5 @@
 using JMW.Discovery.Core.Analysis;
+using JMW.Discovery.Server.UI;
 
 namespace JMW.Discovery.Server.FactViews;
 
@@ -9,12 +10,17 @@ namespace JMW.Discovery.Server.FactViews;
 /// fitness test treats a path consumed by a view here as having a home, so a view is the
 /// low-cost alternative to a projection for data that never needs a cross-device query.
 /// Every view declares a <see cref="FactViewGroup" /> so the device-detail section nav can file
-/// it under the right group.
+/// it under the right group. Views are declared clustered by <see cref="FactViewGroup" /> in the
+/// enum's declared order (matching the section nav), with a header comment per group — keep a new
+/// view inside its group's cluster so the source mirrors what an operator sees. Order across
+/// groups is cosmetic (the nav groups by the <c>Group</c> property); order within a group is the
+/// display order of that section's views.
 /// </summary>
 public static class FactViewLibrary
 {
     public static readonly IReadOnlyList<FactViewDef> All =
     [
+        // ---- Hardware ----
         new(
             "Thermal",
             [
@@ -23,103 +29,6 @@ public static class FactViewLibrary
             ],
             Kind: FactViewKind.List,
             Group: FactViewGroup.Hardware
-        ),
-
-        new(
-            "Pending Updates",
-            [
-                FactViewColumn.Fact("Package", FactPaths.UpdatePendingName),
-                FactViewColumn.Fact("New Version", FactPaths.UpdatePendingNewVersion),
-                FactViewColumn.Fact("Source", FactPaths.UpdatePendingSource),
-                FactViewColumn.Fact("Security", FactPaths.UpdatePendingSecurity),
-            ],
-            Kind: FactViewKind.List,
-            Group: FactViewGroup.Software
-        ),
-
-        new(
-            "Processes",
-            [
-                FactViewColumn.Key("PID"),
-                FactViewColumn.Fact("Name", FactPaths.ProcessName),
-                FactViewColumn.Fact("CPU (s)", FactPaths.ProcessCpuTimeSecs),
-                FactViewColumn.Fact("Memory (bytes)", FactPaths.ProcessMemBytes),
-            ],
-            Kind: FactViewKind.List,
-            Group: FactViewGroup.Software
-        ),
-
-        new(
-            "Routes",
-            [
-                FactViewColumn.Key("Destination"),
-                FactViewColumn.Fact("Family", FactPaths.RouteFamily),
-                FactViewColumn.Fact("Gateway", FactPaths.RouteGateway),
-                FactViewColumn.Fact("Interface", FactPaths.RouteInterface),
-                FactViewColumn.Fact("Metric", FactPaths.RouteMetric),
-                FactViewColumn.Fact("Proto", FactPaths.RouteProto),
-                FactViewColumn.Fact("Source", FactPaths.RouteSource),
-                FactViewColumn.Fact("Scope", FactPaths.RouteScope),
-            ],
-            Kind: FactViewKind.List,
-            Group: FactViewGroup.Network
-        ),
-
-        new(
-            "Users",
-            [
-                FactViewColumn.Fact("Username", FactPaths.LocalUserUsername),
-                FactViewColumn.Fact("UID", FactPaths.LocalUserUid),
-                FactViewColumn.Fact("GID", FactPaths.LocalUserGid),
-                FactViewColumn.Fact("Home", FactPaths.LocalUserHome),
-                FactViewColumn.Fact("Shell", FactPaths.LocalUserShell),
-                FactViewColumn.Fact("Admin", FactPaths.LocalUserIsAdmin),
-                FactViewColumn.Fact("Disabled", FactPaths.LocalUserDisabled),
-            ],
-            Kind: FactViewKind.List,
-            Group: FactViewGroup.Security
-        ),
-
-        new(
-            "Active Sessions",
-            [
-                FactViewColumn.Fact("User", FactPaths.SessionUser),
-                FactViewColumn.Fact("TTY", FactPaths.SessionTty),
-                FactViewColumn.Fact("Login", FactPaths.SessionLoginAt),
-                FactViewColumn.Fact("From", FactPaths.SessionHost),
-            ],
-            Kind: FactViewKind.List,
-            Group: FactViewGroup.Security
-        ),
-
-        new(
-            "System Services",
-            [
-                FactViewColumn.Fact("Unit", FactPaths.ServiceName),
-                FactViewColumn.Fact("Display Name", FactPaths.ServiceDisplayName),
-                FactViewColumn.Fact("Active", FactPaths.ServiceActiveState),
-                FactViewColumn.Fact("Sub-state", FactPaths.ServiceSubState),
-                FactViewColumn.Fact("Exit Code", FactPaths.ServiceExitCode),
-            ],
-            Kind: FactViewKind.List,
-            Group: FactViewGroup.Software
-        ),
-
-        // Moved off proj_systems (migration 0060): single-device display only, no cross-device
-        // query need (hostname/os_family/os_distro stay projected for that).
-        new(
-            "OS Details",
-            [
-                FactViewColumn.Fact("Version", FactPaths.SystemOsVersion),
-                FactViewColumn.Fact("Build", FactPaths.SystemOsBuild),
-                FactViewColumn.Fact("Kernel", FactPaths.SystemKernel),
-                FactViewColumn.Fact("Kernel arch", FactPaths.SystemKernelArch),
-                FactViewColumn.Fact("Timezone", FactPaths.SystemTimezone),
-                FactViewColumn.Fact("Boot time", FactPaths.SystemBootTime),
-                FactViewColumn.Fact("Uptime (s)", FactPaths.SystemUptimeSeconds),
-            ],
-            FactViewKind.Properties,
-            FactViewGroup.Software
         ),
 
         // Live performance metrics — moved off proj_systems (migration 0060): rewritten on
@@ -165,236 +74,11 @@ public static class FactViewLibrary
             FactViewGroup.Hardware
         ),
 
-        new(
-            "Certificates",
-            [
-                FactViewColumn.Fact("Subject", FactPaths.CertSubjectDn),
-                FactViewColumn.Fact("Issuer", FactPaths.CertIssuerDn),
-                FactViewColumn.Fact("Not Before", FactPaths.CertNotBefore),
-                FactViewColumn.Fact("Not After", FactPaths.CertNotAfter),
-                FactViewColumn.Fact("Path", FactPaths.CertPath),
-                FactViewColumn.Fact("CA", FactPaths.CertIsCA),
-                FactViewColumn.Fact("SANs", FactPaths.CertSANs),
-                FactViewColumn.Fact("Serial", FactPaths.CertSerial),
-                FactViewColumn.Fact("Signature Algorithm", FactPaths.CertSigAlgo),
-                FactViewColumn.Fact("Key Size", FactPaths.CertKeySize),
-                FactViewColumn.Fact("Key Usage", FactPaths.CertKeyUsage),
-                FactViewColumn.Fact("EKU", FactPaths.CertEku),
-            ],
-            Kind: FactViewKind.List,
-            Group: FactViewGroup.Security
-        ),
-
-        new(
-            "Trusted CAs",
-            [
-                FactViewColumn.Fact("CA URL", FactPaths.TrustedCaCaUrl),
-                FactViewColumn.Fact("Root Path", FactPaths.TrustedCaRootPath),
-            ],
-            Kind: FactViewKind.List,
-            Group: FactViewGroup.Security
-        ),
-
-        new(
-            "Software Updates",
-            [
-                FactViewColumn.Fact("Manager", FactPaths.UpdateManager),
-                FactViewColumn.Fact("Pending", FactPaths.UpdatePendingCount),
-                FactViewColumn.Fact("Security", FactPaths.UpdateSecurityCount),
-                FactViewColumn.Fact("Reboot required", FactPaths.UpdateRebootRequired),
-            ],
-            FactViewKind.Properties,
-            FactViewGroup.Software
-        ),
-
-        new(
-            "Packages",
-            [
-                FactViewColumn.Key("Package"),
-                FactViewColumn.Fact("Version", FactPaths.PackageVersion),
-                FactViewColumn.Fact("Manager", FactPaths.PackageManager),
-            ],
-            Kind: FactViewKind.List,
-            Group: FactViewGroup.Software
-        ),
-
-        new(
-            "Reboots",
-            [
-                FactViewColumn.Fact("Last boot", FactPaths.RebootsLastBoot),
-                FactViewColumn.Fact("Reboots (30d)", FactPaths.RebootsCount30d),
-            ],
-            FactViewKind.Properties,
-            FactViewGroup.Software
-        ),
-
-        new(
-            "Reboot History",
-            [
-                FactViewColumn.Key("#"),
-                FactViewColumn.Fact("Boot time", FactPaths.RebootBootTime),
-            ],
-            Kind: FactViewKind.List,
-            Group: FactViewGroup.Software
-        ),
-
-        new(
-            "Security",
-            [
-                FactViewColumn.Fact("Firewall", FactPaths.SecurityFirewallEnabled),
-                FactViewColumn.Fact("Firewall provider", FactPaths.SecurityFirewallProvider),
-                FactViewColumn.Fact("Antivirus", FactPaths.SecurityAvName),
-                FactViewColumn.Fact("AV enabled", FactPaths.SecurityAvEnabled),
-                FactViewColumn.Fact("AV up to date", FactPaths.SecurityAvUpToDate),
-                FactViewColumn.Fact("Secure Boot", FactPaths.SecuritySecureBoot),
-                FactViewColumn.Fact("TPM present", FactPaths.SecurityTpmPresent),
-                FactViewColumn.Fact("TPM version", FactPaths.SecurityTpmVersion),
-                FactViewColumn.Fact("SELinux", FactPaths.SecuritySeLinuxMode),
-                FactViewColumn.Fact("AppArmor", FactPaths.SecurityAppArmor),
-                FactViewColumn.Fact("SIP (macOS)", FactPaths.SecuritySip),
-                FactViewColumn.Fact("Gatekeeper (macOS)", FactPaths.SecurityGatekeeper),
-                FactViewColumn.Fact("Defender enabled", FactPaths.SecurityDefenderEnabled),
-                FactViewColumn.Fact("Defender real-time", FactPaths.SecurityDefenderRealtimeProtected),
-                FactViewColumn.Fact("Defender sig age (days)", FactPaths.SecurityDefenderSignatureAgeDays),
-                FactViewColumn.Fact("Defender sig version", FactPaths.SecurityDefenderSignatureVersion),
-            ],
-            FactViewKind.Properties,
-            FactViewGroup.Security
-        ),
-
-        // Granular SMART counters moved off proj_disks (migration 0061): the headline fields
-        // (health/temp/wear/power-on-hours) stay projected for the Storage report; these 9 are
-        // display-only, read by nothing before the move.
-        new(
-            "Disk SMART Details",
-            [
-                FactViewColumn.Key("Disk"),
-                FactViewColumn.Fact("Power cycles", FactPaths.DiskSmartPowerCycles),
-                FactViewColumn.Fact("Reallocated sectors", FactPaths.DiskSmartReallocSectors),
-                FactViewColumn.Fact("Uncorrectable errors", FactPaths.DiskSmartUncorrErrors),
-                FactViewColumn.Fact("Pending sectors", FactPaths.DiskSmartPendingSectors),
-                FactViewColumn.Fact("CRC errors", FactPaths.DiskSmartCrcErrors),
-                FactViewColumn.Fact("Percentage used (NVMe)", FactPaths.DiskSmartPercentageUsed),
-                FactViewColumn.Fact("Available spare % (NVMe)", FactPaths.DiskSmartAvailableSparePct),
-                FactViewColumn.Fact("Data read (GB)", FactPaths.DiskSmartDataReadGB),
-                FactViewColumn.Fact("Data written (GB)", FactPaths.DiskSmartDataWrittenGB),
-            ],
-            Kind: FactViewKind.List,
-            Group: FactViewGroup.Storage
-        ),
-
-        new(
-            "Encrypted Volumes",
-            [
-                FactViewColumn.Fact("Device", FactPaths.SecurityEncryptedVolumeDevice),
-                FactViewColumn.Fact("Mountpoint", FactPaths.SecurityEncryptedVolumeMountpoint),
-                FactViewColumn.Fact("Type", FactPaths.SecurityEncryptedVolumeType),
-                FactViewColumn.Fact("Status", FactPaths.SecurityEncryptedVolumeStatus),
-            ],
-            Kind: FactViewKind.List,
-            Group: FactViewGroup.Security
-        ),
-
-        new(
-            "SNMP",
-            [
-                FactViewColumn.Fact("System name", FactPaths.SnmpSysName),
-                FactViewColumn.Fact("Description", FactPaths.SnmpSysDescr),
-                FactViewColumn.Fact("Location", FactPaths.SnmpSysLocation),
-                FactViewColumn.Fact("Contact", FactPaths.SnmpSysContact),
-                FactViewColumn.Fact("Object ID", FactPaths.SnmpSysObjectID),
-                FactViewColumn.Fact("Engine ID", FactPaths.SnmpEngineId),
-            ],
-            FactViewKind.Properties,
-            FactViewGroup.Protocols
-        ),
-
-        // proj_bacnet_device / proj_modbus_device dropped (unification pass, migration 0062):
-        // vendor_name feeds DeviceVendorDerivation instead (proj_devices.vendor); everything
-        // else here was already single-device display only, no cross-device query need.
-        new(
-            "BACnet Details",
-            [
-                FactViewColumn.Fact("Device instance", FactPaths.BacnetDeviceInstance),
-                FactViewColumn.Fact("Vendor", FactPaths.BacnetVendorName),
-                FactViewColumn.Fact("Vendor ID", FactPaths.BacnetVendorId),
-                FactViewColumn.Fact("Model", FactPaths.BacnetModelName),
-                FactViewColumn.Fact("Object name", FactPaths.BacnetObjectName),
-                FactViewColumn.Fact("Firmware revision", FactPaths.BacnetFirmwareRevision),
-                FactViewColumn.Fact("App software version", FactPaths.BacnetApplicationSoftwareVersion),
-                FactViewColumn.Fact("Description", FactPaths.BacnetDescription),
-                FactViewColumn.Fact("Location", FactPaths.BacnetLocation),
-                FactViewColumn.Fact("System status", FactPaths.BacnetSystemStatus),
-                FactViewColumn.Fact("Serial number", FactPaths.BacnetSerialNumber),
-            ],
-            FactViewKind.Properties,
-            FactViewGroup.Protocols
-        ),
-
-        new(
-            "Modbus Details",
-            [
-                FactViewColumn.Fact("Vendor", FactPaths.ModbusVendorName),
-                FactViewColumn.Fact("Product code", FactPaths.ModbusProductCode),
-                FactViewColumn.Fact("Revision", FactPaths.ModbusRevision),
-            ],
-            FactViewKind.Properties,
-            FactViewGroup.Protocols
-        ),
-
-        new(
-            "Modbus Holding Registers",
-            [
-                FactViewColumn.Key("Register"),
-                FactViewColumn.Fact("Value", FactPaths.ModbusHoldingRegister)
-            ],
-            Kind: FactViewKind.List,
-            Group: FactViewGroup.Protocols
-        ),
-
-        new(
-            "Modbus Input Registers",
-            [
-                FactViewColumn.Key("Register"),
-                FactViewColumn.Fact("Value", FactPaths.ModbusInputRegister)
-            ],
-            Kind: FactViewKind.List,
-            Group: FactViewGroup.Protocols
-        ),
-
-        // FactPaths.DeviceVendor (Google Wifi's raw "Device[].Vendor" assertion) is now an input
-        // to DeviceVendorDerivation rather than separately projected — kept inspectable here.
-        // Discovery-sourced, not software state, alongside its sibling "Discovered: Identity".
-        new(
-            "Device Identity (Raw)",
-            [FactViewColumn.Fact("Vendor (raw)", FactPaths.DeviceVendor)],
-            FactViewKind.Properties,
-            FactViewGroup.Discovery
-        ),
-
-        new(
-            "Docker",
-            [
-                FactViewColumn.Fact("Version", FactPaths.DockerVersion),
-                FactViewColumn.Fact("API version", FactPaths.DockerApiVersion),
-                FactViewColumn.Fact("Storage driver", FactPaths.DockerStorageDriver),
-                FactViewColumn.Fact("Containers running", FactPaths.DockerContainersRunning),
-                FactViewColumn.Fact("Containers paused", FactPaths.DockerContainersPaused),
-                FactViewColumn.Fact("Containers stopped", FactPaths.DockerContainersStopped),
-                FactViewColumn.Fact("Images", FactPaths.DockerImages),
-                FactViewColumn.Fact("OS", FactPaths.DockerOS),
-                FactViewColumn.Fact("Kernel", FactPaths.DockerKernel),
-                FactViewColumn.Fact("Memory (bytes)", FactPaths.DockerMemBytes),
-                FactViewColumn.Fact("CPUs", FactPaths.DockerCpuCount),
-            ],
-            FactViewKind.Properties,
-            FactViewGroup.Software
-        ),
-
         // FV-14 hardware extras (board / BIOS / arch / install date — no projection)
         new(
             "Hardware Details",
             [
+                FactViewColumn.Fact("Device Vendor (raw)", FactPaths.DeviceVendor),
                 FactViewColumn.Fact("Board vendor", FactPaths.HwBoardVendor),
                 FactViewColumn.Fact("Board model", FactPaths.HwBoardModel),
                 FactViewColumn.Fact("BIOS vendor", FactPaths.HwBiosVendor),
@@ -410,19 +94,6 @@ public static class FactViewLibrary
             FactViewGroup.Hardware
         ),
 
-        // FV-13 resolver config (no projection)
-        new(
-            "DNS Servers",
-            [FactViewColumn.Key("#"), FactViewColumn.Fact("Server", FactPaths.NetworkDnsServer)],
-            FactViewKind.List,
-            Group: FactViewGroup.Network
-        ),
-        new(
-            "DNS Search Domains",
-            [FactViewColumn.Key("#"), FactViewColumn.Fact("Domain", FactPaths.NetworkDnsSearch)],
-            Kind: FactViewKind.List,
-            Group: FactViewGroup.Network
-        ),
         // FV-15 agentless SSH-probed host facts (no projection). Same kind of data as
         // "Resource Usage" (CPU/memory stats), just from an SSH probe instead of the full
         // agent — grouped with it under Hardware rather than Software for consistency.
@@ -436,6 +107,44 @@ public static class FactViewLibrary
             FactViewKind.Properties,
             FactViewGroup.Hardware
         ),
+
+        // FV-21 hardware inventory components (dmidecode / lshw / SNMP entPhysical). The raw
+        // per-component Details JSON has no typed projection column — surfaced here alongside
+        // the identifying fields, keyed by the stable component handle.
+        new(
+            "Hardware Components",
+            [
+                FactViewColumn.Key("Component"),
+                FactViewColumn.Fact("Class", FactPaths.HwComponentClass),
+                FactViewColumn.Fact("Vendor", FactPaths.HwComponentVendor),
+                FactViewColumn.Fact("Model", FactPaths.HwComponentModel),
+                FactViewColumn.Fact("Serial", FactPaths.HwComponentSerial),
+                FactViewColumn.Fact("Details", FactPaths.HwComponentDetails),
+            ],
+            Kind: FactViewKind.List,
+            Group: FactViewGroup.Hardware
+        ),
+
+        // ---- Storage ----
+        // The device page's Filesystems table, served entirely from facts (no proj_filesystems
+        // read). Backed by the full agent's typed byte counts — distinct from the SSH-probed
+        // df-string facts below, which cover devices with only an SSH probe, no full agent.
+        // Used % is FactPaths.Derived.FsUsedPercent (UsedPercentDerivation), the same derived
+        // fact proj_filesystems.used_pct already carries — not re-derived here.
+        new(
+            "Filesystems",
+            [
+                FactViewColumn.Key("Filesystem"),
+                FactViewColumn.Fact("Type", FactPaths.FsType),
+                FactViewColumn.Fact("Total", FactPaths.FsTotalBytes, FactViewFormat.Bytes),
+                FactViewColumn.Fact("Used", FactPaths.FsUsedBytes, FactViewFormat.Bytes),
+                FactViewColumn.Fact("Free", FactPaths.FsFreeBytes, FactViewFormat.Bytes),
+                FactViewColumn.Fact("Used %", FactPaths.Derived.FsUsedPercent, FactViewFormat.Percent),
+            ],
+            Kind: FactViewKind.List,
+            Group: FactViewGroup.Storage
+        ),
+
         new(
             "SSH-Probed Filesystems",
             [
@@ -448,32 +157,63 @@ public static class FactViewLibrary
             Group: FactViewGroup.Storage
         ),
 
-        // FV-16 detail-only interface metadata that is not on proj_interfaces (dropped mig 0042
-        // or never projected). Keyed by interface, one row per NIC. Absorbs the former standalone
-        // "Interface DNS" and "SSH-Probed Interfaces" views (same Device|Interface dimension key,
-        // one column each) — no reason to make an operator click through three separate
-        // single-purpose tables for facts about the same interface.
+        // The device page's Disks table, served entirely from facts (no proj_disks read). The
+        // headline fields (name/model/size/type/health/temp) render up front; the granular SMART
+        // tail (moved off proj_disks in migration 0061) follows. proj_disks stays for the
+        // cross-device Storage report (ListStorageDisks.sql).
         new(
-            "Interface Details",
+            "Disks",
             [
-                FactViewColumn.Key("Interface"),
-                FactViewColumn.Fact("Alias", FactPaths.InterfaceAlias),
-                FactViewColumn.Fact("Permanent MAC", FactPaths.InterfacePermMAC),
-                FactViewColumn.Fact("Admin status", FactPaths.InterfaceAdminStatus),
-                FactViewColumn.Fact("Oper status", FactPaths.InterfaceOperStatus),
-                FactViewColumn.Fact("Gateway", FactPaths.InterfaceGateway),
-                FactViewColumn.Fact("DHCP Server", FactPaths.InterfaceDhcpServer),
-                FactViewColumn.Fact("Connection type", FactPaths.InterfaceConnectionType),
-                FactViewColumn.Fact("ISP type", FactPaths.InterfaceIspType),
-                FactViewColumn.Fact("VLAN", FactPaths.InterfaceVlanId),
-                FactViewColumn.Fact("Tagged VLANs", FactPaths.InterfaceTaggedVlans),
-                FactViewColumn.Fact("Bridge master", FactPaths.InterfaceBridgeMaster),
-                FactViewColumn.Fact("STP state", FactPaths.InterfaceStpState),
-                FactViewColumn.Fact("STP role", FactPaths.InterfaceStpRole),
-                FactViewColumn.Fact("STP cost", FactPaths.InterfaceStpCost),
-                FactViewColumn.Fact("DNS", FactPaths.InterfaceDns),
-                FactViewColumn.Fact("IP (SSH-probed)", FactPaths.SshInterfaceIP),
+                FactViewColumn.Key("Disk"),
+                FactViewColumn.Fact("Name", FactPaths.DiskName),
+                FactViewColumn.Fact("Model", FactPaths.DiskModel),
+                FactViewColumn.Fact("Size", FactPaths.DiskSizeBytes, FactViewFormat.Bytes),
+                FactViewColumn.Fact("Type", FactPaths.DiskType),
+                FactViewColumn.Fact("SMART", FactPaths.DiskSmartOverallHealth),
+                FactViewColumn.Fact("Temp", FactPaths.DiskSmartTempC, FactViewFormat.Celsius),
+                FactViewColumn.Fact("Serial", FactPaths.DiskSerial),
+                FactViewColumn.Fact("Removable", FactPaths.DiskRemovable),
+                FactViewColumn.Fact("Power cycles", FactPaths.DiskSmartPowerCycles),
+                FactViewColumn.Fact("Reallocated sectors", FactPaths.DiskSmartReallocSectors),
+                FactViewColumn.Fact("Uncorrectable errors", FactPaths.DiskSmartUncorrErrors),
+                FactViewColumn.Fact("Pending sectors", FactPaths.DiskSmartPendingSectors),
+                FactViewColumn.Fact("CRC errors", FactPaths.DiskSmartCrcErrors),
+                FactViewColumn.Fact("Percentage used (NVMe)", FactPaths.DiskSmartPercentageUsed),
+                FactViewColumn.Fact("Available spare % (NVMe)", FactPaths.DiskSmartAvailableSparePct),
+                FactViewColumn.Fact("Data read (GB)", FactPaths.DiskSmartDataReadGB),
+                FactViewColumn.Fact("Data written (GB)", FactPaths.DiskSmartDataWrittenGB),
             ],
+            Kind: FactViewKind.List,
+            Group: FactViewGroup.Storage
+        ),
+
+        // ---- Network ----
+        new(
+            "Routes",
+            [
+                FactViewColumn.Key("Destination"),
+                FactViewColumn.Fact("Family", FactPaths.RouteFamily),
+                FactViewColumn.Fact("Gateway", FactPaths.RouteGateway),
+                FactViewColumn.Fact("Interface", FactPaths.RouteInterface),
+                FactViewColumn.Fact("Metric", FactPaths.RouteMetric),
+                FactViewColumn.Fact("Proto", FactPaths.RouteProto),
+                FactViewColumn.Fact("Source", FactPaths.RouteSource),
+                FactViewColumn.Fact("Scope", FactPaths.RouteScope),
+            ],
+            Kind: FactViewKind.List,
+            Group: FactViewGroup.Network
+        ),
+
+        // FV-13 resolver config (no projection)
+        new(
+            "DNS Servers",
+            [FactViewColumn.Key("#"), FactViewColumn.Fact("Server", FactPaths.NetworkDnsServer)],
+            FactViewKind.List,
+            Group: FactViewGroup.Network
+        ),
+        new(
+            "DNS Search Domains",
+            [FactViewColumn.Key("#"), FactViewColumn.Fact("Domain", FactPaths.NetworkDnsSearch)],
             Kind: FactViewKind.List,
             Group: FactViewGroup.Network
         ),
@@ -543,45 +283,195 @@ public static class FactViewLibrary
             FactViewKind.Properties,
             FactViewGroup.Network
         ),
+
+        // The device page's Ports table, served entirely from facts (no proj_ports read).
         new(
-            "Interface Counters",
+            "Listening Ports",
             [
-                FactViewColumn.Key("Interface"),
-                FactViewColumn.Fact("Rx bytes", FactPaths.InterfaceRxBytes),
-                FactViewColumn.Fact("Tx bytes", FactPaths.InterfaceTxBytes),
-                FactViewColumn.Fact("Rx packets", FactPaths.InterfaceRxPackets),
-                FactViewColumn.Fact("Tx packets", FactPaths.InterfaceTxPackets),
-                FactViewColumn.Fact("Total bytes", FactPaths.Derived.InterfaceTotalBytes),
+                FactViewColumn.Fact("Protocol", FactPaths.PortProtocol),
+                FactViewColumn.Fact("Address", FactPaths.PortAddress),
+                FactViewColumn.Fact("Port", FactPaths.PortNumber),
+                FactViewColumn.Fact("Process", FactPaths.PortProcessName),
+                FactViewColumn.Fact("PID", FactPaths.PortPid),
             ],
             Kind: FactViewKind.List,
             Group: FactViewGroup.Network
         ),
 
-        // FV-17 detail-only disk metadata not on proj_disks.
+        // ---- Software ----
         new(
-            "Disk Details",
+            "Pending Updates",
             [
-                FactViewColumn.Key("Disk"),
-                FactViewColumn.Fact("Serial", FactPaths.DiskSerial),
-                FactViewColumn.Fact("Removable", FactPaths.DiskRemovable),
-            ],
-            Kind: FactViewKind.List,
-            Group: FactViewGroup.Storage
-        ),
-
-        // FV-18 detail-only container metadata not on proj_containers.
-        new(
-            "Container Details",
-            [
-                FactViewColumn.Key("Container"),
-                FactViewColumn.Fact("Status", FactPaths.ContainerStatus),
-                FactViewColumn.Fact("Created (epoch)", FactPaths.ContainerCreated),
-                FactViewColumn.Fact("Ports", FactPaths.ContainerPorts),
-                FactViewColumn.Fact("Mounts", FactPaths.ContainerMounts),
-                FactViewColumn.Fact("Labels", FactPaths.ContainerLabels),
+                FactViewColumn.Fact("Package", FactPaths.UpdatePendingName),
+                FactViewColumn.Fact("New Version", FactPaths.UpdatePendingNewVersion),
+                FactViewColumn.Fact("Source", FactPaths.UpdatePendingSource),
+                FactViewColumn.Fact("Security", FactPaths.UpdatePendingSecurity),
             ],
             Kind: FactViewKind.List,
             Group: FactViewGroup.Software
+        ),
+
+        new(
+            "Processes",
+            [
+                FactViewColumn.Key("PID"),
+                FactViewColumn.Fact("Name", FactPaths.ProcessName),
+                FactViewColumn.Fact("CPU (s)", FactPaths.ProcessCpuTimeSecs),
+                FactViewColumn.Fact("Memory (bytes)", FactPaths.ProcessMemBytes),
+            ],
+            Kind: FactViewKind.List,
+            Group: FactViewGroup.Software
+        ),
+
+        new(
+            "System Services",
+            [
+                FactViewColumn.Fact("Unit", FactPaths.ServiceName),
+                FactViewColumn.Fact("Display Name", FactPaths.ServiceDisplayName),
+                FactViewColumn.Fact("Active", FactPaths.ServiceActiveState),
+                FactViewColumn.Fact("Sub-state", FactPaths.ServiceSubState),
+                FactViewColumn.Fact("Exit Code", FactPaths.ServiceExitCode),
+            ],
+            Kind: FactViewKind.List,
+            Group: FactViewGroup.Software
+        ),
+
+        new(
+            "Software Updates",
+            [
+                FactViewColumn.Fact("Manager", FactPaths.UpdateManager),
+                FactViewColumn.Fact("Pending", FactPaths.UpdatePendingCount),
+                FactViewColumn.Fact("Security", FactPaths.UpdateSecurityCount),
+                FactViewColumn.Fact("Reboot required", FactPaths.UpdateRebootRequired),
+            ],
+            FactViewKind.Properties,
+            FactViewGroup.Software
+        ),
+
+        new(
+            "Packages",
+            [
+                FactViewColumn.Key("Package"),
+                FactViewColumn.Fact("Version", FactPaths.PackageVersion),
+                FactViewColumn.Fact("Manager", FactPaths.PackageManager),
+            ],
+            Kind: FactViewKind.List,
+            Group: FactViewGroup.Software
+        ),
+
+        new(
+            "Reboots",
+            [
+                FactViewColumn.Fact("Last boot", FactPaths.RebootsLastBoot),
+                FactViewColumn.Fact("Reboots (30d)", FactPaths.RebootsCount30d),
+            ],
+            FactViewKind.Properties,
+            FactViewGroup.Software
+        ),
+
+        new(
+            "Reboot History",
+            [
+                FactViewColumn.Key("#"),
+                FactViewColumn.Fact("Boot time", FactPaths.RebootBootTime),
+            ],
+            Kind: FactViewKind.List,
+            Group: FactViewGroup.Software
+        ),
+
+        // ---- Security ----
+        new(
+            "Users",
+            [
+                FactViewColumn.Fact("Username", FactPaths.LocalUserUsername),
+                FactViewColumn.Fact("UID", FactPaths.LocalUserUid),
+                FactViewColumn.Fact("GID", FactPaths.LocalUserGid),
+                FactViewColumn.Fact("Home", FactPaths.LocalUserHome),
+                FactViewColumn.Fact("Shell", FactPaths.LocalUserShell),
+                FactViewColumn.Fact("Admin", FactPaths.LocalUserIsAdmin),
+                FactViewColumn.Fact("Disabled", FactPaths.LocalUserDisabled),
+            ],
+            Kind: FactViewKind.List,
+            Group: FactViewGroup.Security
+        ),
+
+        new(
+            "Active Sessions",
+            [
+                FactViewColumn.Fact("User", FactPaths.SessionUser),
+                FactViewColumn.Fact("TTY", FactPaths.SessionTty),
+                FactViewColumn.Fact("Login", FactPaths.SessionLoginAt),
+                FactViewColumn.Fact("From", FactPaths.SessionHost),
+            ],
+            Kind: FactViewKind.List,
+            Group: FactViewGroup.Security
+        ),
+
+        new(
+            "Certificates",
+            [
+                FactViewColumn.Fact("Subject", FactPaths.CertSubjectDn),
+                FactViewColumn.Fact("Issuer", FactPaths.CertIssuerDn),
+                FactViewColumn.Fact("Not Before", FactPaths.CertNotBefore),
+                FactViewColumn.Fact("Not After", FactPaths.CertNotAfter),
+                FactViewColumn.Fact("Path", FactPaths.CertPath),
+                FactViewColumn.Fact("CA", FactPaths.CertIsCA),
+                FactViewColumn.Fact("SANs", FactPaths.CertSANs),
+                FactViewColumn.Fact("Serial", FactPaths.CertSerial),
+                FactViewColumn.Fact("Signature Algorithm", FactPaths.CertSigAlgo),
+                FactViewColumn.Fact("Key Size", FactPaths.CertKeySize),
+                FactViewColumn.Fact("Key Usage", FactPaths.CertKeyUsage),
+                FactViewColumn.Fact("EKU", FactPaths.CertEku),
+            ],
+            Kind: FactViewKind.List,
+            Group: FactViewGroup.Security
+        ),
+
+        new(
+            "Trusted CAs",
+            [
+                FactViewColumn.Fact("CA URL", FactPaths.TrustedCaCaUrl),
+                FactViewColumn.Fact("Root Path", FactPaths.TrustedCaRootPath),
+            ],
+            Kind: FactViewKind.List,
+            Group: FactViewGroup.Security
+        ),
+
+        new(
+            "Security",
+            [
+                FactViewColumn.Fact("Firewall", FactPaths.SecurityFirewallEnabled),
+                FactViewColumn.Fact("Firewall provider", FactPaths.SecurityFirewallProvider),
+                FactViewColumn.Fact("Antivirus", FactPaths.SecurityAvName),
+                FactViewColumn.Fact("AV enabled", FactPaths.SecurityAvEnabled),
+                FactViewColumn.Fact("AV up to date", FactPaths.SecurityAvUpToDate),
+                FactViewColumn.Fact("Secure Boot", FactPaths.SecuritySecureBoot),
+                FactViewColumn.Fact("TPM present", FactPaths.SecurityTpmPresent),
+                FactViewColumn.Fact("TPM version", FactPaths.SecurityTpmVersion),
+                FactViewColumn.Fact("SELinux", FactPaths.SecuritySeLinuxMode),
+                FactViewColumn.Fact("AppArmor", FactPaths.SecurityAppArmor),
+                FactViewColumn.Fact("SIP (macOS)", FactPaths.SecuritySip),
+                FactViewColumn.Fact("Gatekeeper (macOS)", FactPaths.SecurityGatekeeper),
+                FactViewColumn.Fact("Defender enabled", FactPaths.SecurityDefenderEnabled),
+                FactViewColumn.Fact("Defender real-time", FactPaths.SecurityDefenderRealtimeProtected),
+                FactViewColumn.Fact("Defender sig age (days)", FactPaths.SecurityDefenderSignatureAgeDays),
+                FactViewColumn.Fact("Defender sig version", FactPaths.SecurityDefenderSignatureVersion),
+            ],
+            FactViewKind.Properties,
+            FactViewGroup.Security
+        ),
+
+
+        new(
+            "Encrypted Volumes",
+            [
+                FactViewColumn.Fact("Device", FactPaths.SecurityEncryptedVolumeDevice),
+                FactViewColumn.Fact("Mountpoint", FactPaths.SecurityEncryptedVolumeMountpoint),
+                FactViewColumn.Fact("Type", FactPaths.SecurityEncryptedVolumeType),
+                FactViewColumn.Fact("Status", FactPaths.SecurityEncryptedVolumeStatus),
+            ],
+            Kind: FactViewKind.List,
+            Group: FactViewGroup.Security
         ),
 
         // FV-19 Windows per-profile firewall state (a bare list; each element is one profile
@@ -593,6 +483,75 @@ public static class FactViewLibrary
             Group: FactViewGroup.Security
         ),
 
+        // ---- Protocols ----
+        new(
+            "SNMP",
+            [
+                FactViewColumn.Fact("System name", FactPaths.SnmpSysName),
+                FactViewColumn.Fact("Description", FactPaths.SnmpSysDescr),
+                FactViewColumn.Fact("Location", FactPaths.SnmpSysLocation),
+                FactViewColumn.Fact("Contact", FactPaths.SnmpSysContact),
+                FactViewColumn.Fact("Object ID", FactPaths.SnmpSysObjectID),
+                FactViewColumn.Fact("Engine ID", FactPaths.SnmpEngineId),
+            ],
+            FactViewKind.Properties,
+            FactViewGroup.Protocols
+        ),
+
+        // proj_bacnet_device / proj_modbus_device dropped (unification pass, migration 0062):
+        // vendor_name feeds DeviceVendorDerivation instead (proj_devices.vendor); everything
+        // else here was already single-device display only, no cross-device query need.
+        new(
+            "BACnet Details",
+            [
+                FactViewColumn.Fact("Device instance", FactPaths.BacnetDeviceInstance),
+                FactViewColumn.Fact("Vendor", FactPaths.BacnetVendorName),
+                FactViewColumn.Fact("Vendor ID", FactPaths.BacnetVendorId),
+                FactViewColumn.Fact("Model", FactPaths.BacnetModelName),
+                FactViewColumn.Fact("Object name", FactPaths.BacnetObjectName),
+                FactViewColumn.Fact("Firmware revision", FactPaths.BacnetFirmwareRevision),
+                FactViewColumn.Fact("App software version", FactPaths.BacnetApplicationSoftwareVersion),
+                FactViewColumn.Fact("Description", FactPaths.BacnetDescription),
+                FactViewColumn.Fact("Location", FactPaths.BacnetLocation),
+                FactViewColumn.Fact("System status", FactPaths.BacnetSystemStatus),
+                FactViewColumn.Fact("Serial number", FactPaths.BacnetSerialNumber),
+            ],
+            FactViewKind.Properties,
+            FactViewGroup.Protocols
+        ),
+
+        new(
+            "Modbus Details",
+            [
+                FactViewColumn.Fact("Vendor", FactPaths.ModbusVendorName),
+                FactViewColumn.Fact("Product code", FactPaths.ModbusProductCode),
+                FactViewColumn.Fact("Revision", FactPaths.ModbusRevision),
+            ],
+            FactViewKind.Properties,
+            FactViewGroup.Protocols
+        ),
+
+        new(
+            "Modbus Holding Registers",
+            [
+                FactViewColumn.Key("Register"),
+                FactViewColumn.Fact("Value", FactPaths.ModbusHoldingRegister)
+            ],
+            Kind: FactViewKind.List,
+            Group: FactViewGroup.Protocols
+        ),
+
+        new(
+            "Modbus Input Registers",
+            [
+                FactViewColumn.Key("Register"),
+                FactViewColumn.Fact("Value", FactPaths.ModbusInputRegister)
+            ],
+            Kind: FactViewKind.List,
+            Group: FactViewGroup.Protocols
+        ),
+
+        // ---- Discovery ----
         // FV-20 banner / protocol facts observed against a discovered IP (not on proj_discovered —
         // device-detail only). Every scanner signal is a typed fact routed here (or to the TLS /
         // sub-dimension views below); there is no raw Attr[] sink. Split by protocol (one view per
@@ -928,27 +887,149 @@ public static class FactViewLibrary
             Group: FactViewGroup.Discovery
         ),
 
-        // FV-21 hardware inventory components (dmidecode / lshw / SNMP entPhysical). The raw
-        // per-component Details JSON has no typed projection column — surfaced here alongside
-        // the identifying fields, keyed by the stable component handle.
+        // ---- Interfaces ----
+        // The device page's Interfaces table, served entirely from facts (no proj_interfaces
+        // read). Headline columns (name/IPs/MAC/OUI/state/speed/type) render up front, mirroring
+        // the retired GetDeviceInterfaces.sql — MAC/MAC-Type/OUI are Computed columns because
+        // a fabricated (Google Wifi/OnHub-obscured) MAC needs the real-MAC-else-trustworthy-
+        // prefix fallback that query used to do in SQL; OUI itself is a Postgres function, not a
+        // fact, resolved via the render context's OuiResolver (see InterfaceOuiKey below).
+        // FV-16 detail-only tail metadata (not on proj_interfaces, dropped mig 0042 or never
+        // projected) follows, keyed by interface, one row per NIC — absorbing the former
+        // standalone "Interface DNS" and "SSH-Probed Interfaces" views (same Device|Interface
+        // dimension key, one column each): no reason to make an operator click through three
+        // separate single-purpose tables for facts about the same interface.
         new(
-            "Hardware Components",
+            "Interfaces",
             [
-                FactViewColumn.Key("Component"),
-                FactViewColumn.Fact("Class", FactPaths.HwComponentClass),
-                FactViewColumn.Fact("Vendor", FactPaths.HwComponentVendor),
-                FactViewColumn.Fact("Model", FactPaths.HwComponentModel),
-                FactViewColumn.Fact("Serial", FactPaths.HwComponentSerial),
-                FactViewColumn.Fact("Details", FactPaths.HwComponentDetails),
+                FactViewColumn.Key("Interface"),
+                FactViewColumn.Fact("Name", FactPaths.InterfaceName),
+                FactViewColumn.Fact("IPv4", FactPaths.InterfaceIPv4),
+                FactViewColumn.Fact("IPv6", FactPaths.InterfaceIPv6),
+                FactViewColumn.Computed(
+                    "MAC",
+                    row => row.GetValueOrDefault(FactPaths.InterfaceMAC) is { } mac
+                        ? ViewFormat.FormatMac(mac)
+                        : row.GetValueOrDefault(FactPaths.InterfaceObscuredMAC),
+                    dependsOn: MacDependsOn
+                ),
+                FactViewColumn.Computed("OUI", InterfaceOuiKey, FactViewFormat.Oui, MacDependsOn),
+                // MacFlag only inspects the first byte, which survives in InterfaceOuiKey's
+                // 6-hex-char obscured-MAC prefix — no need for the full (fabricated) MAC here.
+                FactViewColumn.Computed(
+                    "MAC Type",
+                    row => ViewFormat.MacFlag(InterfaceOuiKey(row)).Label,
+                    dependsOn: MacDependsOn
+                ),
+                FactViewColumn.Fact("MTU", FactPaths.InterfaceMTU),
+                FactViewColumn.Computed(
+                    "State",
+                    row => row.GetValueOrDefault(FactPaths.InterfaceUp) switch
+                    {
+                        null => null,
+                        "true" or "1" => "up",
+                        _ => "down",
+                    },
+                    dependsOn: [FactPaths.InterfaceUp]
+                ),
+                FactViewColumn.Fact("Speed", FactPaths.InterfaceSpeedBps, FactViewFormat.BytesPerSecond),
+                FactViewColumn.Fact("Type", FactPaths.InterfaceType),
+                FactViewColumn.Fact("Alias", FactPaths.InterfaceAlias),
+                FactViewColumn.Fact("Permanent MAC", FactPaths.InterfacePermMAC),
+                FactViewColumn.Fact("Admin status", FactPaths.InterfaceAdminStatus),
+                FactViewColumn.Fact("Oper status", FactPaths.InterfaceOperStatus),
+                FactViewColumn.Fact("Gateway", FactPaths.InterfaceGateway),
+                FactViewColumn.Fact("DHCP Server", FactPaths.InterfaceDhcpServer),
+                FactViewColumn.Fact("Connection type", FactPaths.InterfaceConnectionType),
+                FactViewColumn.Fact("ISP type", FactPaths.InterfaceIspType),
+                FactViewColumn.Fact("VLAN", FactPaths.InterfaceVlanId),
+                FactViewColumn.Fact("Tagged VLANs", FactPaths.InterfaceTaggedVlans),
+                FactViewColumn.Fact("Bridge master", FactPaths.InterfaceBridgeMaster),
+                FactViewColumn.Fact("STP state", FactPaths.InterfaceStpState),
+                FactViewColumn.Fact("STP role", FactPaths.InterfaceStpRole),
+                FactViewColumn.Fact("STP cost", FactPaths.InterfaceStpCost),
+                FactViewColumn.Fact("DNS", FactPaths.InterfaceDns),
+                FactViewColumn.Fact("IP (SSH-probed)", FactPaths.SshInterfaceIP),
+                FactViewColumn.Fact("Rx bytes", FactPaths.InterfaceRxBytes),
+                FactViewColumn.Fact("Tx bytes", FactPaths.InterfaceTxBytes),
+                FactViewColumn.Fact("Rx packets", FactPaths.InterfaceRxPackets),
+                FactViewColumn.Fact("Tx packets", FactPaths.InterfaceTxPackets),
+                FactViewColumn.Fact("Total bytes", FactPaths.Derived.InterfaceTotalBytes),
             ],
             Kind: FactViewKind.List,
-            Group: FactViewGroup.Hardware
+            Group: FactViewGroup.Interfaces
+        ),
+
+        // ---- Containers ----
+        // The device page's Containers table, served entirely from facts (no proj_containers
+        // read). Headline columns (name/image/state/health/restarts) render up front; the
+        // detail-only tail (FV-18: status/created/ports/mounts/labels, not on proj_containers)
+        // follows.
+        new(
+            "Containers",
+            [
+                FactViewColumn.Key("Container"),
+                FactViewColumn.Fact("Name", FactPaths.ContainerName),
+                FactViewColumn.Fact("Image", FactPaths.ContainerImage),
+                FactViewColumn.Fact("State", FactPaths.ContainerState),
+                FactViewColumn.Fact("Health", FactPaths.ContainerHealth),
+                FactViewColumn.Fact("Restarts", FactPaths.ContainerRestartCount),
+                FactViewColumn.Fact("Status", FactPaths.ContainerStatus),
+                FactViewColumn.Fact("Created", FactPaths.ContainerCreated, FactViewFormat.UnixSeconds),
+                FactViewColumn.Fact("Ports", FactPaths.ContainerPorts),
+                FactViewColumn.Fact("Mounts", FactPaths.ContainerMounts),
+                FactViewColumn.Fact("Labels", FactPaths.ContainerLabels),
+            ],
+            Kind: FactViewKind.List,
+            Group: FactViewGroup.Containers
+        ),
+
+        new(
+            "Docker",
+            [
+                FactViewColumn.Fact("Version", FactPaths.DockerVersion),
+                FactViewColumn.Fact("API version", FactPaths.DockerApiVersion),
+                FactViewColumn.Fact("Storage driver", FactPaths.DockerStorageDriver),
+                FactViewColumn.Fact("Containers running", FactPaths.DockerContainersRunning),
+                FactViewColumn.Fact("Containers paused", FactPaths.DockerContainersPaused),
+                FactViewColumn.Fact("Containers stopped", FactPaths.DockerContainersStopped),
+                FactViewColumn.Fact("Images", FactPaths.DockerImages),
+                FactViewColumn.Fact("OS", FactPaths.DockerOS),
+                FactViewColumn.Fact("Kernel", FactPaths.DockerKernel),
+                FactViewColumn.Fact("Memory (bytes)", FactPaths.DockerMemBytes),
+                FactViewColumn.Fact("CPUs", FactPaths.DockerCpuCount),
+            ],
+            FactViewKind.Properties,
+            FactViewGroup.Containers
+        ),
+
+        // ---- System ----
+        // Moved off proj_systems (migration 0060): single-device display only, no cross-device
+        // query need (hostname/os_family/os_distro stay projected for that).
+        new(
+            "OS Details",
+            [
+                FactViewColumn.Fact("Version", FactPaths.SystemOsVersion),
+                FactViewColumn.Fact("Build", FactPaths.SystemOsBuild),
+                FactViewColumn.Fact("Kernel", FactPaths.SystemKernel),
+                FactViewColumn.Fact("Kernel arch", FactPaths.SystemKernelArch),
+                FactViewColumn.Fact("Timezone", FactPaths.SystemTimezone),
+                FactViewColumn.Fact("Boot time", FactPaths.SystemBootTime),
+                FactViewColumn.Fact("Uptime (s)", FactPaths.SystemUptimeSeconds),
+            ],
+            FactViewKind.Properties,
+            FactViewGroup.System
         ),
     ];
 
-    /// <summary>Service-detail fact views (rendered on the service page from Service-keyed facts).</summary>
+    /// <summary>
+    /// Service-detail fact views (rendered on the service page from Service-keyed facts).
+    /// Clustered by <see cref="FactViewGroup" /> in the enum's declared order, matching the
+    /// service-detail section nav (see ServiceDetail.cshtml.cs) — keep a new view in its group.
+    /// </summary>
     public static readonly IReadOnlyList<FactViewDef> Service =
     [
+        // ---- Hardware ----
         new(
             "Home Assistant",
             [
@@ -963,17 +1044,8 @@ public static class FactViewLibrary
             Kind: FactViewKind.List,
             Group: FactViewGroup.Hardware
         ),
-        new(
-            "DHCP Leases",
-            [
-                FactViewColumn.Fact("IP", ServicePaths.DhcpLeaseIP),
-                FactViewColumn.Fact("Hostname", ServicePaths.DhcpLeaseHostname),
-                FactViewColumn.Fact("Type", ServicePaths.DhcpLeaseType),
-                FactViewColumn.Fact("Expires", ServicePaths.DhcpLeaseExpires),
-            ],
-            Kind: FactViewKind.List,
-            Group: FactViewGroup.Protocols
-        ),
+
+        // ---- Software ----
         new(
             "Add-ons",
             [
@@ -985,6 +1057,21 @@ public static class FactViewLibrary
             Kind: FactViewKind.List,
             Group: FactViewGroup.Software
         ),
+
+        // ---- Protocols ----
+        new(
+            "DHCP Leases",
+            [
+                FactViewColumn.Fact("IP", ServicePaths.DhcpLeaseIP),
+                FactViewColumn.Fact("Hostname", ServicePaths.DhcpLeaseHostname),
+                FactViewColumn.Fact("Type", ServicePaths.DhcpLeaseType),
+                FactViewColumn.Fact("Expires", ServicePaths.DhcpLeaseExpires),
+            ],
+            Kind: FactViewKind.List,
+            Group: FactViewGroup.Protocols
+        ),
+
+        // ---- Discovery ----
         new(
             "Home Assistant Devices",
             [
@@ -1076,4 +1163,38 @@ public static class FactViewLibrary
             .Where(p => p is not null)
             .Select(p => p!)
             .ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>DependsOn for every "Interfaces" Computed column that reads the interface's MAC
+    /// or obscured MAC (MAC, OUI, MAC Type) — neither fact has its own visible Fact column in
+    /// that view, so without this the renderer would never select them into the row.</summary>
+    private static readonly IReadOnlyList<string> MacDependsOn =
+        [FactPaths.InterfaceMAC, FactPaths.InterfaceObscuredMAC];
+
+    /// <summary>
+    /// The MAC (or, for a Google Wifi/OnHub interface with only a partially masked MAC, the
+    /// trustworthy OUI prefix salvaged from it) an interface row's OUI should be resolved
+    /// against — mirrors the retired GetDeviceInterfaces.sql's COALESCE. Real MAC wins; falls
+    /// back to <see cref="ObscuredMacOuiPrefix" />; null if neither fact is present. Used both as
+    /// the "Interfaces" view's OUI Computed column and (by the device page) to build the set of
+    /// keys to pre-resolve via <see cref="FactViewRenderContext.OuiResolver" />.
+    /// </summary>
+    internal static string? InterfaceOuiKey(IReadOnlyDictionary<string, string?> row) =>
+        row.GetValueOrDefault(FactPaths.InterfaceMAC) ?? ObscuredMacOuiPrefix(row.GetValueOrDefault(FactPaths.InterfaceObscuredMAC));
+
+    /// <summary>
+    /// The trustworthy first-6-hex-nibble OUI prefix of an obscured MAC (Google Wifi/OnHub masks
+    /// the device-specific bytes), or null if fewer than 6 hex chars survive stripping non-hex
+    /// characters — same transform as the retired GetDeviceInterfaces.sql's
+    /// <c>left(regexp_replace(lower(obscured_mac), '[^0-9a-f]', '', 'g'), 6)</c>.
+    /// </summary>
+    internal static string? ObscuredMacOuiPrefix(string? obscuredMac)
+    {
+        if (string.IsNullOrEmpty(obscuredMac))
+        {
+            return null;
+        }
+
+        string hex = new(obscuredMac.Where(Uri.IsHexDigit).ToArray());
+        return hex.Length >= 6 ? hex[..6].ToLowerInvariant() : null;
+    }
 }

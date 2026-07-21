@@ -86,10 +86,10 @@
         @{
             (string Tab, string Label, int Count)[] atGlance =
             [
-                ("interfaces", "Interfaces", Model.Interfaces.Data.Count),
-                ("ports", "Open Ports", Model.Ports.Data.Count),
-                ("disks", "Disks", Model.Disks.Data.Count),
-                ("containers", "Containers", Model.Containers.Data.Count),
+                (DeviceDetailModel.FactViewSectionId("Interfaces"), "Interfaces", Model.FactViewCount("Interfaces")),
+                (DeviceDetailModel.FactViewSectionId("Listening Ports"), "Open Ports", Model.FactViewCount("Listening Ports")),
+                (DeviceDetailModel.FactViewSectionId("Disks"), "Disks", Model.FactViewCount("Disks")),
+                (DeviceDetailModel.FactViewSectionId("Containers"), "Containers", Model.FactViewCount("Containers")),
                 ("services", "Services", Model.Services.Data.Count),
             ];
         }
@@ -329,247 +329,6 @@
                 }
             </div>
 
-            <div class="tabpanel" role="tabpanel" data-panel="interfaces" hidden>
-                <partial name="_SectionError" model="Model.Interfaces.Error"/>
-                @if (Model.Interfaces.Error is null)
-                {
-                    @if (Model.Interfaces.Data.Count == 0)
-                    {
-                        <div class="empty">No interfaces for this device.</div>
-                    }
-                    else
-                    {
-                        <div class="detail-table-scroll">
-                            <table class="data" style="table-layout:fixed;width:100%" aria-label="Interfaces" data-client-grid>
-                                <colgroup>
-                                    <col style="width:110px">
-                                    <col style="width:130px">
-                                    <col style="width:210px">
-                                    <col style="width:150px">
-                                    <col>
-                                    <col style="width:100px">
-                                    <col style="width:70px">
-                                    <col style="width:70px">
-                                    <col style="width:100px">
-                                    <col style="width:90px">
-                                </colgroup>
-                                <thead>
-                                <tr>
-                                    <th data-col-key="name">Name</th>
-                                    <th data-col-key="ipv4">IPv4</th>
-                                    <th data-col-key="ipv6">IPv6</th>
-                                    <th data-col-key="mac">MAC</th>
-                                    <th data-col-key="oui">OUI</th>
-                                    <th data-col-key="mac-type">MAC Type</th>
-                                    <th data-col-key="mtu">MTU</th>
-                                    <th data-col-key="state">State</th>
-                                    <th data-col-key="speed">Speed</th>
-                                    <th data-col-key="type">Type</th>
-                                </tr>
-                                </thead>
-                                <tbody>
-                                @foreach (InterfaceRow i in Model.Interfaces.Data)
-                                {
-                                    (string Label, string Title, string Css) flag = ViewFormat.MacFlag(i.MacAddress ?? i.ObscuredMac);
-                                    <tr>
-                                        <td>@(i.Name ?? "—")</td>
-                                        <td class="mono">@(i.Ipv4 ?? "—")</td>
-                                        <td class="mono cell-truncate" title="@i.Ipv6">@(i.Ipv6 ?? "—")</td>
-                                        <td class="mono">
-                                            @if (!string.IsNullOrEmpty(i.MacAddress))
-                                            {
-                                                @ViewFormat.FormatMac(i.MacAddress)
-                                            }
-                                            else if (!string.IsNullOrEmpty(i.ObscuredMac))
-                                            {
-                                                <span class="text-dim" title="Obscured MAC">@i.ObscuredMac</span>
-                                            }
-                                            else
-                                            {
-                                                @:—
-                                            }
-                                        </td>
-                                        @{ string ouiText = ViewFormat.FormatOui(i.Oui, i.OuiCountry); }
-                                        <td class="text-dim cell-truncate" title="@ouiText">@ouiText</td>
-                                        <td><span class="mac-flag @flag.Css" title="@flag.Title">@flag.Label</span></td>
-                                        <td>@(i.Mtu?.ToString() ?? "—")</td>
-                                        <td>@(i.Up == true ? "up" : i.Up == false ? "down" : "—")</td>
-                                        <td>@(i.SpeedBps.HasValue ? ViewFormat.Bytes(i.SpeedBps) + "/s" : "—")</td>
-                                        <td>@(i.Type ?? "—")</td>
-                                    </tr>
-                                }
-                                </tbody>
-                            </table>
-                        </div>
-                    }
-                }
-            </div>
-
-            <div class="tabpanel" role="tabpanel" data-panel="disks" hidden>
-                <partial name="_SectionError" model="Model.Disks.Error"/>
-                @if (Model.Disks.Error is null)
-                {
-                    @if (Model.Disks.Data.Count == 0)
-                    {
-                        <div class="empty">No disks for this device.</div>
-                    }
-                    else
-                    {
-                        <div class="detail-table-scroll">
-                            <table class="data" aria-label="Disks" data-client-grid>
-                                <thead>
-                                <tr>
-                                    <th data-col-key="name">Name</th>
-                                    <th data-col-key="model">Model</th>
-                                    <th data-col-key="size">Size</th>
-                                    <th data-col-key="type">Type</th>
-                                    <th data-col-key="smart">SMART</th>
-                                    <th data-col-key="temp">Temp</th>
-                                </tr>
-                                </thead>
-                                <tbody>
-                                @foreach (DiskRow d in Model.Disks.Data)
-                                {
-                                    <tr>
-                                        <td>@(d.Name ?? d.Disk)</td>
-                                        <td>@(d.Model ?? "—")</td>
-                                        <td>@ViewFormat.Bytes(d.SizeBytes)</td>
-                                        <td>@(d.Type ?? "—")</td>
-                                        <td>@(d.SmartHealth ?? "—")</td>
-                                        <td>@(d.SmartTempC.HasValue ? d.SmartTempC.Value.ToString("0.#") + " °C" : "—")</td>
-                                    </tr>
-                                }
-                                </tbody>
-                            </table>
-                        </div>
-                    }
-                }
-            </div>
-
-            <div class="tabpanel" role="tabpanel" data-panel="filesystems" hidden>
-                <partial name="_SectionError" model="Model.Filesystems.Error"/>
-                @if (Model.Filesystems.Error is null)
-                {
-                    @if (Model.Filesystems.Data.Count == 0)
-                    {
-                        <div class="empty">No filesystems for this device.</div>
-                    }
-                    else
-                    {
-                        <div class="detail-table-scroll">
-                            <table class="data" aria-label="Filesystems" data-client-grid>
-                                <thead>
-                                <tr>
-                                    <th data-col-key="mount">Mount</th>
-                                    <th data-col-key="type">Type</th>
-                                    <th data-col-key="total">Total</th>
-                                    <th data-col-key="used">Used</th>
-                                    <th data-col-key="free">Free</th>
-                                    <th data-col-key="used-pct">Used %</th>
-                                </tr>
-                                </thead>
-                                <tbody>
-                                @foreach (FilesystemRow f in Model.Filesystems.Data)
-                                {
-                                    <tr>
-                                        <td class="mono">@f.Filesystem</td>
-                                        <td>@(f.FsType ?? "—")</td>
-                                        <td>@ViewFormat.Bytes(f.TotalBytes)</td>
-                                        <td>@ViewFormat.Bytes(f.UsedBytes)</td>
-                                        <td>@ViewFormat.Bytes(f.FreeBytes)</td>
-                                        <td>@(f.UsedPct.HasValue ? f.UsedPct.Value.ToString("0.#") + "%" : "—")</td>
-                                    </tr>
-                                }
-                                </tbody>
-                            </table>
-                        </div>
-                    }
-                }
-            </div>
-
-            <div class="tabpanel" role="tabpanel" data-panel="containers" hidden>
-                <partial name="_SectionError" model="Model.Containers.Error"/>
-                @if (Model.Containers.Error is null)
-                {
-                    @if (Model.Containers.Data.Count == 0)
-                    {
-                        <div class="empty">No containers for this device.</div>
-                    }
-                    else
-                    {
-                        <div class="detail-table-scroll">
-                            <table class="data" aria-label="Containers" data-client-grid>
-                                <thead>
-                                <tr>
-                                    <th data-col-key="name">Name</th>
-                                    <th data-col-key="container-id">Container ID</th>
-                                    <th data-col-key="image">Image</th>
-                                    <th data-col-key="state">State</th>
-                                    <th data-col-key="health">Health</th>
-                                    <th data-col-key="restarts">Restarts</th>
-                                </tr>
-                                </thead>
-                                <tbody>
-                                @foreach (ContainerRow c in Model.Containers.Data)
-                                {
-                                    <tr>
-                                        <td>@(c.Name ?? c.Container)</td>
-                                        <td class="mono">@c.Container</td>
-                                        <td class="mono">@(c.Image ?? "—")</td>
-                                        <td>@(c.State ?? "—")</td>
-                                        <td>@(c.Health ?? "—")</td>
-                                        <td>@(c.RestartCount?.ToString() ?? "—")</td>
-                                    </tr>
-                                }
-                                </tbody>
-                            </table>
-                        </div>
-                    }
-                }
-            </div>
-
-            <div class="tabpanel" role="tabpanel" data-panel="ports" hidden>
-                <partial name="_SectionError" model="Model.Ports.Error"/>
-                @if (Model.Ports.Error is null)
-                {
-                    @if (Model.Ports.Data.Count == 0)
-                    {
-                        <div class="empty">No listening ports for this device.</div>
-                    }
-                    else
-                    {
-                        <p class="prose text-dim" style="margin-bottom:var(--space-3)">
-                            Ports this device is actively listening on, with the owning process.
-                            For services it broadcasts on the network, see Advertised Services.
-                        </p>
-                        <div class="detail-table-scroll">
-                            <table class="data" aria-label="Listening ports" data-client-grid>
-                                <thead>
-                                <tr>
-                                    <th data-col-key="protocol">Protocol</th>
-                                    <th data-col-key="address">Address</th>
-                                    <th data-col-key="port">Port</th>
-                                    <th data-col-key="process">Process</th>
-                                    <th data-col-key="pid">PID</th>
-                                </tr>
-                                </thead>
-                                <tbody>
-                                @foreach (PortRow p in Model.Ports.Data)
-                                {
-                                    <tr>
-                                        <td>@(p.Protocol ?? "—")</td>
-                                        <td class="mono">@(p.Address ?? "—")</td>
-                                        <td>@(p.Port?.ToString() ?? "—")</td>
-                                        <td>@(p.ProcessName ?? "—")</td>
-                                        <td>@(p.Pid?.ToString() ?? "—")</td>
-                                    </tr>
-                                }
-                                </tbody>
-                            </table>
-                        </div>
-                    }
-                }
-            </div>
             <div class="tabpanel" role="tabpanel" data-panel="components" hidden>
                 <partial name="_SectionError" model="Model.Components.Error"/>
                 @if (Model.Components.Error is null)
@@ -716,12 +475,19 @@
                             </tr>
                             </thead>
                             <tbody>
-                            @foreach (IReadOnlyList<string?> row in view.Rows)
+                            @foreach (IReadOnlyList<FactCell> row in view.Rows)
                             {
                                 <tr>
-                                    @foreach (string? cell in row)
+                                    @foreach (FactCell cell in row)
                                     {
-                                        <td>@(cell ?? "—")</td>
+                                        @if (cell.SortValue is not null)
+                                        {
+                                            <td data-sort="@cell.SortValue">@(cell.Display ?? "—")</td>
+                                        }
+                                        else
+                                        {
+                                            <td>@(cell.Display ?? "—")</td>
+                                        }
                                     }
                                 </tr>
                             }

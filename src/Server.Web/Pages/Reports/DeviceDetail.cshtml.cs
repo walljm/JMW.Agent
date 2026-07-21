@@ -1,3 +1,5 @@
+using JMW.Discovery.Core.Analysis;
+
 using JMW.Discovery.Server;
 using JMW.Discovery.Server.Auth;
 using JMW.Discovery.Server.FactViews;
@@ -73,11 +75,6 @@ public sealed class DeviceDetailModel : PageModel
     public Section<IReadOnlyList<DeviceServiceRow>> Services { get; } = new([]);
     public Section<SystemFacts?> SystemFacts { get; } = new(null);
     public Section<HardwareFacts?> HardwareFacts { get; } = new(null);
-    public Section<IReadOnlyList<InterfaceRow>> Interfaces { get; } = new([]);
-    public Section<IReadOnlyList<DiskRow>> Disks { get; } = new([]);
-    public Section<IReadOnlyList<FilesystemRow>> Filesystems { get; } = new([]);
-    public Section<IReadOnlyList<ContainerRow>> Containers { get; } = new([]);
-    public Section<IReadOnlyList<PortRow>> Ports { get; } = new([]);
     public Section<IReadOnlyList<ComponentRow>> Components { get; } = new([]);
     public Section<IReadOnlyList<SightingRow>> Sightings { get; } = new([]);
     public Section<IReadOnlyList<string>> AdvertisedServices { get; } = new([]);
@@ -249,93 +246,6 @@ public sealed class DeviceDetailModel : PageModel
                         );
                 }
             ),
-            LoadAsync<IReadOnlyList<InterfaceRow>>(
-                _logger,
-                Interfaces,
-                async () =>
-                {
-                    await using NpgsqlConnection c = await _db.OpenConnectionAsync(ct);
-                    return await c.GetDeviceInterfacesAsync(deviceKey, ct)
-                        .Select(r => new InterfaceRow(
-                                r.Interface,
-                                r.Name,
-                                r.MacAddress,
-                                r.ObscuredMac,
-                                r.Oui,
-                                r.OuiCountry,
-                                r.Ipv4,
-                                r.Ipv6,
-                                r.Mtu,
-                                r.Up,
-                                r.SpeedBps,
-                                r.Duplex,
-                                r.Type
-                            )
-                        )
-                        .ToListAsync(ct);
-                }
-            ),
-            LoadAsync<IReadOnlyList<DiskRow>>(
-                _logger,
-                Disks,
-                async () =>
-                {
-                    await using NpgsqlConnection c = await _db.OpenConnectionAsync(ct);
-                    return await c.GetDeviceDisksAsync(deviceKey, ct)
-                        .Select(r => new DiskRow(
-                                r.Disk,
-                                r.Name,
-                                r.Model,
-                                r.SizeBytes,
-                                r.Type,
-                                r.SmartHealth,
-                                r.SmartTempC
-                            )
-                        )
-                        .ToListAsync(ct);
-                }
-            ),
-            LoadAsync<IReadOnlyList<FilesystemRow>>(
-                _logger,
-                Filesystems,
-                async () =>
-                {
-                    await using NpgsqlConnection c = await _db.OpenConnectionAsync(ct);
-                    return await c.GetDeviceFilesystemsAsync(deviceKey, ct)
-                        .Select(r => new FilesystemRow(
-                                r.Filesystem,
-                                r.FsType,
-                                r.TotalBytes,
-                                r.UsedBytes,
-                                r.FreeBytes,
-                                r.UsedPct
-                            )
-                        )
-                        .ToListAsync(ct);
-                }
-            ),
-            LoadAsync<IReadOnlyList<ContainerRow>>(
-                _logger,
-                Containers,
-                async () =>
-                {
-                    await using NpgsqlConnection c = await _db.OpenConnectionAsync(ct);
-                    return await c.GetDeviceContainersAsync(deviceKey, ct)
-                        .Select(r => new ContainerRow(r.Container, r.Name, r.Image, r.State, r.Health, r.RestartCount))
-                        .ToListAsync(ct);
-                }
-            ),
-            LoadAsync<IReadOnlyList<PortRow>>(
-                _logger,
-                Ports,
-                async () =>
-                {
-                    await using NpgsqlConnection c = await _db.OpenConnectionAsync(ct);
-                    return await c.GetDevicePortsAsync(deviceKey, ct)
-                        .Select(r => new PortRow(r.Protocol, r.Address, r.Port, r.ProcessName, r.Pid))
-                        .ToListAsync(ct);
-                }
-            ),
             LoadAsync<IReadOnlyList<ComponentRow>>(
                 _logger,
                 Components,
@@ -424,7 +334,32 @@ public sealed class DeviceDetailModel : PageModel
                             )
                         )
                         .ToListAsync(ct);
-                    return FactViewRenderer.Render(facts, FactViewLibrary.All);
+
+                    // Pre-resolve OUI for every distinct interface MAC (or obscured-MAC OUI
+                    // prefix) the "Interfaces" view's OUI Computed column could ask for —
+                    // oui_vendor/oui_country are Postgres functions, not facts, so they can't be
+                    // read off the fact list like everything else this renders.
+                    HashSet<string> ouiKeys = facts
+                        .Where(f => f.AttributePath == FactPaths.InterfaceMAC && f.Value is not null)
+                        .Select(f => f.Value!)
+                        .Concat(
+                            facts.Where(f => f.AttributePath == FactPaths.InterfaceObscuredMAC && f.Value is not null)
+                                .Select(f => FactViewLibrary.ObscuredMacOuiPrefix(f.Value))
+                                .Where(v => v is not null)
+                                .Select(v => v!)
+                        )
+                        .ToHashSet(StringComparer.Ordinal);
+
+                    Dictionary<string, (string? Vendor, string? Country)> ouiByKey = new(StringComparer.Ordinal);
+                    foreach (string key in ouiKeys)
+                    {
+                        ouiByKey[key] = await c.ResolveOuiAsync(key, ct).FirstOrDefaultAsync(ct);
+                    }
+
+                    FactViewRenderContext ctx = new(mac => mac is not null && ouiByKey.TryGetValue(mac, out (string?, string?) v)
+                        ? v
+                        : (null, null));
+                    return FactViewRenderer.Render(facts, FactViewLibrary.All, ctx);
                 }
             )
         );
@@ -502,20 +437,6 @@ public sealed class DeviceDetailModel : PageModel
     /// <summary>The overridable catalog serialized for the fact-path combo box (read client-side).</summary>
     public string CatalogJson => System.Text.Json.JsonSerializer.Serialize(OperatorFactCatalog.OverridablePaths);
 
-    // Group display order + labels for the section nav. Matches FactViewGroup's declared order.
-    private static readonly (FactViewGroup Group, string Label)[] GroupOrder =
-    [
-        (FactViewGroup.History, "History"),
-        (FactViewGroup.Hardware, "Hardware"),
-        (FactViewGroup.Storage, "Storage"),
-        (FactViewGroup.Network, "Network"),
-        (FactViewGroup.Software, "Software"),
-        (FactViewGroup.Security, "Security"),
-        (FactViewGroup.Protocols, "Protocols"),
-        (FactViewGroup.Discovery, "Discovery"),
-        (FactViewGroup.Custom, "Custom"),
-    ];
-
     /// <summary>
     /// Assembles the grouped section nav from the built-in sections and the rendered fact views,
     /// keeping only sections that actually have data. Within a group, the curated built-in
@@ -533,24 +454,20 @@ public sealed class DeviceDetailModel : PageModel
             ("history", "History", FactViewGroup.History, true, History.Data.Count),
             ("hardware", "Hardware", FactViewGroup.Hardware, HardwareFacts.Data is not null, null),
             ("components", "Components", FactViewGroup.Hardware, Components.Data.Count > 0, Components.Data.Count),
-            ("disks", "Disks", FactViewGroup.Storage, Disks.Data.Count > 0, Disks.Data.Count),
-            ("filesystems", "Filesystems", FactViewGroup.Storage, Filesystems.Data.Count > 0, Filesystems.Data.Count),
-            ("interfaces", "Interfaces", FactViewGroup.Network, Interfaces.Data.Count > 0, Interfaces.Data.Count),
-            ("ports", "Ports", FactViewGroup.Network, Ports.Data.Count > 0, Ports.Data.Count),
             ("advertised", "Advertised Services", FactViewGroup.Network, AdvertisedServices.Data.Count > 0,
                 AdvertisedServices.Data.Count),
             ("sightings", "Seen By", FactViewGroup.Network, Sightings.Data.Count > 0, Sightings.Data.Count),
-            ("containers", "Containers", FactViewGroup.Software, Containers.Data.Count > 0, Containers.Data.Count),
             ("sources", "Discovery Sources", FactViewGroup.Discovery, Sources.Data.Count > 0, Sources.Data.Count),
             ("services", "Services", FactViewGroup.Discovery, Services.Data.Count > 0, Services.Data.Count),
             ("allfacts", "All Facts", FactViewGroup.Discovery, true, AllFacts.Data.Count),
             ("operator-facts", "Operator Facts", FactViewGroup.Custom, User.IsInRole("admin"), null),
         ];
 
-        List<DeviceSectionGroup> groups = new(GroupOrder.Length);
+        List<DeviceSectionGroup> groups = new(FactViewGroups.Ordered.Count);
         List<string> flatIds = [];
-        foreach ((FactViewGroup group, string label) in GroupOrder)
+        foreach (FactViewGroup group in FactViewGroups.Ordered)
         {
+            string label = group.DisplayName();
             List<DeviceSectionItem> items = [];
             foreach ((string id, string itemLabel, FactViewGroup g, bool show, int? count) in builtins)
             {
@@ -603,6 +520,11 @@ public sealed class DeviceDetailModel : PageModel
 
         return "fv-" + new string(buf);
     }
+
+    /// <summary>Row count of a rendered fact view by title (0 if absent) — for at-a-glance stats
+    /// on sections now served from facts rather than a projection.</summary>
+    public int FactViewCount(string title) =>
+        FactViews.Data.FirstOrDefault(v => v.Title == title)?.Rows.Count ?? 0;
 
     private static async Task LoadAsync<T>(ILogger logger, Section<T> section, Func<Task<T>> load)
     {
@@ -706,58 +628,6 @@ public sealed record HardwareFacts(
     string? BiosVersion,
     string? Virtualization,
     DateTime UpdatedAt
-);
-
-public sealed record InterfaceRow(
-    string Interface,
-    string? Name,
-    string? MacAddress,
-    string? ObscuredMac,
-    string? Oui,
-    string? OuiCountry,
-    string? Ipv4,
-    string? Ipv6,
-    long? Mtu,
-    bool? Up,
-    long? SpeedBps,
-    string? Duplex,
-    string? Type
-);
-
-public sealed record DiskRow(
-    string Disk,
-    string? Name,
-    string? Model,
-    long? SizeBytes,
-    string? Type,
-    string? SmartHealth,
-    double? SmartTempC
-);
-
-public sealed record FilesystemRow(
-    string Filesystem,
-    string? FsType,
-    long? TotalBytes,
-    long? UsedBytes,
-    long? FreeBytes,
-    double? UsedPct
-);
-
-public sealed record ContainerRow(
-    string Container,
-    string? Name,
-    string? Image,
-    string? State,
-    string? Health,
-    long? RestartCount
-);
-
-public sealed record PortRow(
-    string? Protocol,
-    string? Address,
-    int? Port,
-    string? ProcessName,
-    long? Pid
 );
 
 public sealed record DeviceServiceRow(

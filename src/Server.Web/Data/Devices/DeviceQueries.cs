@@ -75,61 +75,19 @@ public static partial class DeviceQueries
         CancellationToken cancellationToken
     );
 
-    /// <summary>Interfaces tab — network interfaces for a device.</summary>
+    /// <summary>
+    /// OUI vendor+country for one MAC (or a bare OUI-prefix salvaged from a masked MAC) — backs
+    /// the device-detail "Interfaces" fact view's OUI column
+    /// (<see cref="JMW.Discovery.Server.FactViews.FactViewRenderContext.OuiResolver" />).
+    /// oui_vendor/oui_country are scalar functions with no FROM clause, so this always
+    /// returns exactly one row (both columns null when the prefix has no registry match).
+    /// </summary>
     [DatabaseCommand]
-    public static partial
-        IAsyncEnumerable<(string Interface, string? Name, string? MacAddress, string? ObscuredMac, string? Oui, string?
-            OuiCountry, string?
-            Ipv4, string? Ipv6,
-            long? Mtu, bool?
-            Up, long? SpeedBps, string?
-            Duplex, string? Type, DateTimeOffset UpdatedAt)> GetDeviceInterfacesAsync(
-            this NpgsqlConnection connection,
-            string device,
-            CancellationToken cancellationToken
-        );
-
-    /// <summary>Disks tab — physical disks and SMART health for a device.</summary>
-    [DatabaseCommand]
-    public static partial
-        IAsyncEnumerable<(string Disk, string? Name, string? Model, long? SizeBytes, string? Type, string? SmartHealth,
-            double? SmartTempC, DateTimeOffset UpdatedAt)> GetDeviceDisksAsync(
-            this NpgsqlConnection connection,
-            string device,
-            CancellationToken cancellationToken
-        );
-
-    /// <summary>Filesystems tab — mount points with capacity for a device.</summary>
-    [DatabaseCommand]
-    public static partial
-        IAsyncEnumerable<(string Filesystem, string? FsType, long? TotalBytes, long? UsedBytes, long? FreeBytes, double?
-            UsedPct, DateTimeOffset UpdatedAt)> GetDeviceFilesystemsAsync(
-            this NpgsqlConnection connection,
-            string device,
-            CancellationToken cancellationToken
-        );
-
-    /// <summary>Containers tab — Docker containers for a device.</summary>
-    [DatabaseCommand]
-    public static partial
-        IAsyncEnumerable<(string Container, string? Name, string? Image, string? State, string? Health, long?
-            RestartCount,
-            DateTimeOffset UpdatedAt)> GetDeviceContainersAsync(
-            this NpgsqlConnection connection,
-            string device,
-            CancellationToken cancellationToken
-        );
-
-    /// <summary>Ports tab — listening TCP/UDP endpoints for a device, ordered by port.</summary>
-    [DatabaseCommand]
-    public static partial
-        IAsyncEnumerable<(string ListeningPort, string? Protocol, string? Address, int? Port, string? ProcessName, long?
-            Pid
-          , DateTimeOffset UpdatedAt)> GetDevicePortsAsync(
-            this NpgsqlConnection connection,
-            string device,
-            CancellationToken cancellationToken
-        );
+    public static partial IAsyncEnumerable<(string? Vendor, string? Country)> ResolveOuiAsync(
+        this NpgsqlConnection connection,
+        string mac,
+        CancellationToken cancellationToken
+    );
 
     /// <summary>
     /// Every current fact known about a device — the "all facts" view. Unions the
