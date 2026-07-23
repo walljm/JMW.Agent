@@ -69,8 +69,31 @@ public static partial class ReportingQueries
         );
 
     // ── Reporting: ARP / Network ────────────────────────────────────────────────
-    // Hand-built in ArpApi.QueryAsync — its ORDER BY / keyset cursor are chosen dynamically
-    // from a sortable-column allowlist, which a static [DatabaseCommand] can't express.
+
+    /// <summary>
+    /// Lists ARP-observed neighbors across the fleet with MAC→device fingerprint resolution,
+    /// with optional IP/MAC search and keyset pagination ordered by (sort key, device, arp).
+    /// SortKey is the SQL-computed sort expression for the row, used verbatim for the
+    /// next-page cursor.
+    /// </summary>
+    [DatabaseCommand]
+    [SortableBy("ip", "a.arp")]
+    [SortableBy("device", "a.device")]
+    [SortableBy("mac", "coalesce(a.mac, '')")]
+    public static partial
+        IAsyncEnumerable<(string Device, string? ObserverHostname, string Ip, string? Mac, string? Iface,
+            string? State, Guid? ResolvedDeviceId, string? ResolvedHostname, string? Oui, string? OuiCountry,
+            string? SortKey, string? ResolvedFriendlyName)> ListArpAsync(
+            this NpgsqlConnection connection,
+            string? search,
+            string? afterSortKey,
+            string? afterDevice,
+            string? afterArp,
+            int limit,
+            string? sort,
+            string? dir,
+            CancellationToken cancellationToken
+        );
 
     // ── Reporting: Subnets ──────────────────────────────────────────────────────
 

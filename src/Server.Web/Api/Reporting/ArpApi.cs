@@ -1,4 +1,5 @@
 using JMW.Discovery.Server.Data;
+using JMW.Discovery.Server.Queries;
 
 using Npgsql;
 
@@ -9,26 +10,21 @@ public static class ArpApi
     public const int DefaultLimit = 100;
     public const int MaxLimit = 500;
 
-    /// <summary>
-    /// Columns the ARP list may be sorted by. One cursor shape — (sort_key, device, arp) —
-    /// covers every sort. Default is IP so entries from every observing device interleave by
-    /// neighbor address (a router's ARP cache sorted by the observer's own UUID buries whole
-    /// observers on later pages — e.g. core's rows never surfaced on page 1).
-    /// </summary>
-    private static readonly Dictionary<string, string> SortExpressions =
-        new(StringComparer.Ordinal)
-        {
-            ["ip"] = "a.arp",
-            ["device"] = "a.device",
-            ["mac"] = "coalesce(a.mac, '')",
-        };
-
+    /// <summary>Must match the first [SortableBy] key on ReportingQueries.ListArpAsync — the
+    /// generated command text falls back to that column for an unrecognized sort. Default is IP
+    /// so entries from every observing device interleave by neighbor address (a router's ARP
+    /// cache sorted by the observer's own UUID buries whole observers on later pages — e.g.
+    /// core's rows never surfaced on page 1).</summary>
     public const string DefaultSort = "ip";
 
-    public static readonly IReadOnlySet<string> SortableColumns =
-        SortExpressions.Keys.ToHashSet(StringComparer.Ordinal);
+    /// <summary>
+    /// Columns the ARP list may be sorted by. One cursor shape — (sort_key, device, arp) —
+    /// covers every sort. Sourced from the generated [SortableBy] allowlist so the UI cannot
+    /// drift from the validated SQL variants.
+    /// </summary>
+    public static readonly IReadOnlySet<string> SortableColumns = ReportingQueries.ListArpAsyncSortKeys;
 
-    public static bool IsSortable(string? sort) => sort is not null && SortExpressions.ContainsKey(sort);
+    public static bool IsSortable(string? sort) => sort is not null && SortableColumns.Contains(sort);
 
     public static void Map(IEndpointRouteBuilder app)
     {
@@ -66,69 +62,44 @@ public static class ArpApi
         string? dir = null
     )
     {
-        string sortKeyCol = sort is not null && SortExpressions.TryGetValue(sort, out string? expr)
-            ? expr
-            : SortExpressions[DefaultSort];
-        bool descending = string.Equals(dir, "desc", StringComparison.OrdinalIgnoreCase);
-        string cmp = descending ? "<" : ">";
-        string direction = descending ? "DESC" : "ASC";
-
-        string sql = $"""
-            SELECT
-                a.device, s.hostname AS observer_hostname, a.arp AS ip, a.mac, a.iface, a.state,
-                CASE WHEN df.device_id IS NULL THEN NULL ELSE d.device_id END AS resolved_device_id,
-                rs.hostname AS resolved_hostname,
-                oui_vendor(a.mac) AS oui, oui_country(a.mac) AS oui_country,
-                {sortKeyCol} AS sort_key,
-                COALESCE(rs.friendly_name, rs.hostname) AS resolved_friendly_name
-            FROM proj_device_arp a
-                LEFT JOIN proj_systems s ON s.device = a.device
-                LEFT JOIN device_fingerprints df ON df.fp_type = 'mac' AND df.fp_value = a.mac
-                LEFT JOIN devices d ON d.device_id = df.device_id
-                LEFT JOIN proj_systems rs ON rs.device = d.device_id::text
-            WHERE ($1::text IS NULL OR a.mac ILIKE '%' || $1 || '%' OR a.arp ILIKE '%' || $1 || '%')
-              AND ($2::text IS NULL OR (({sortKeyCol}, a.device, a.arp) {cmp} ($2, $3, $4)))
-            ORDER BY {sortKeyCol} {direction}, a.device {direction}, a.arp {direction}
-            LIMIT $5
-            """;
-
-        await using NpgsqlConnection conn = await db.OpenConnectionAsync(ct);
-        await using NpgsqlCommand cmd = new(sql, conn);
-        cmd.Parameters.Add(Param.Text(string.IsNullOrWhiteSpace(search) ? null : search));
-        cmd.Parameters.Add(Param.Text(afterSortKey));
-        cmd.Parameters.Add(Param.Text(afterDevice));
-        cmd.Parameters.Add(Param.Text(afterArp));
-        cmd.Parameters.Add(Param.Integer(limit + 1));
-
         List<ArpListItem> items = new();
-        // sort_key[i] is the SQL-computed sort expression for items[i] — used verbatim for the
+        // sortKeys[i] is the SQL-computed sort expression for items[i] — used verbatim for the
         // cursor so it always matches the keyset comparison (no C#-side re-derivation to drift).
         List<string> sortKeys = new();
         List<(string Device, string Arp)> tiebreakers = new();
-        await using (NpgsqlDataReader reader = await cmd.ExecuteReaderAsync(ct))
+
+        await using NpgsqlConnection conn = await db.OpenConnectionAsync(ct);
+        await foreach ((string device, string? observerHostname, string ip, string? mac, string? iface,
+            string? state, Guid? resolvedDeviceId, string? resolvedHostname, string? oui, string? ouiCountry,
+            string? sortKey, string? resolvedFriendlyName)
+            in conn.ListArpAsync(
+                string.IsNullOrWhiteSpace(search) ? null : search,
+                afterSortKey,
+                afterDevice,
+                afterArp,
+                limit + 1,
+                sort,
+                dir,
+                ct
+            ))
         {
-            while (await reader.ReadAsync(ct))
-            {
-                string device = reader.GetString(0);
-                string ip = reader.GetString(2);
-                items.Add(
-                    new ArpListItem(
-                        Device: device,
-                        ObserverHostname: GetStr(reader, 1),
-                        Ip: ip,
-                        Mac: GetStr(reader, 3),
-                        Iface: GetStr(reader, 4),
-                        State: GetStr(reader, 5),
-                        ResolvedDeviceId: reader.IsDBNull(6) ? null : reader.GetGuid(6).ToString(),
-                        ResolvedHostname: GetStr(reader, 7),
-                        Oui: GetStr(reader, 8),
-                        OuiCountry: GetStr(reader, 9),
-                        ResolvedFriendlyName: GetStr(reader, 11)
-                    )
-                );
-                sortKeys.Add(GetStr(reader, 10) ?? string.Empty);
-                tiebreakers.Add((device, ip));
-            }
+            items.Add(
+                new ArpListItem(
+                    Device: device,
+                    ObserverHostname: observerHostname,
+                    Ip: ip,
+                    Mac: mac,
+                    Iface: iface,
+                    State: state,
+                    ResolvedDeviceId: resolvedDeviceId?.ToString(),
+                    ResolvedHostname: resolvedHostname,
+                    Oui: oui,
+                    OuiCountry: ouiCountry,
+                    ResolvedFriendlyName: resolvedFriendlyName
+                )
+            );
+            sortKeys.Add(sortKey ?? string.Empty);
+            tiebreakers.Add((device, ip));
         }
 
         string? nextCursor = null;
@@ -143,9 +114,6 @@ public static class ArpApi
 
         return (items, nextCursor);
     }
-
-    private static string? GetStr(NpgsqlDataReader reader, int ordinal) =>
-        reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
 }
 
 public sealed record ArpListItem(
