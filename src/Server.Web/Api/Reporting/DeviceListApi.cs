@@ -32,7 +32,7 @@ public static class DeviceListApi
                 "coalesce(to_char(last_seen at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US'), '')",
         };
 
-    public const string DefaultSort = "hostname";
+    public const string DefaultSort = "ip";
 
     /// <summary>The sortable column keys, for <see cref="JMW.Discovery.Server.UI.GridState" />'s
     /// allowlist.</summary>

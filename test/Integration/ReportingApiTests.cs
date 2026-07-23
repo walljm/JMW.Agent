@@ -408,7 +408,9 @@ public sealed class DeviceListApiTests : IAsyncLifetime
         await InsertSystemAsync(b, hostname: "beta");
         await InsertSystemAsync(c, hostname: "gamma");
 
-        // Page 1: limit=2 should return alpha+beta and a cursor.
+        // Page 1: limit=2 should return alpha+beta and a cursor. Sort explicitly by hostname —
+        // this test is about pagination mechanics, not about whatever DeviceListApi.DefaultSort
+        // happens to be.
         (List<DeviceReportItem> page1, string? cursor1) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
@@ -419,7 +421,8 @@ public sealed class DeviceListApiTests : IAsyncLifetime
             null,
             null,
             2,
-            CancellationToken.None
+            CancellationToken.None,
+            sort: "hostname"
         );
 
         Assert.Equal(2, page1.Count);
@@ -438,7 +441,8 @@ public sealed class DeviceListApiTests : IAsyncLifetime
             afterHostname,
             afterDeviceId,
             2,
-            CancellationToken.None
+            CancellationToken.None,
+            sort: "hostname"
         );
 
         Assert.Single(page2);
