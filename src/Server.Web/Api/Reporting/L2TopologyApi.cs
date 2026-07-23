@@ -57,7 +57,7 @@ public static class L2TopologyApi
             nodes.Add(new L2GraphNode(deviceId, resolvedLabel, "device"));
         }
 
-        string EnsureUnknownNode(string identityKey, string label)
+        string EnsureUnknownNode(string identityKey, string label, string kind = "unknown")
         {
             if (unknownNodeIdByIdentity.TryGetValue(identityKey, out string? existingId))
             {
@@ -66,7 +66,7 @@ public static class L2TopologyApi
 
             string id = "unk" + unknownSeq++;
             unknownNodeIdByIdentity[identityKey] = id;
-            nodes.Add(new L2GraphNode(id, label, "unknown"));
+            nodes.Add(new L2GraphNode(id, label, kind));
             return id;
         }
 
@@ -147,6 +147,85 @@ public static class L2TopologyApi
             }
         }
 
+        // Google Wifi/OnHub mesh points: we have no direct fingerprint for a satellite mesh
+        // point, only the real BSSID of whichever one is currently relaying a given client (see
+        // OnHubStations.cs). Represent that BSSID as its own node — a real device node if it
+        // happens to be independently known (e.g. also ARP-discovered), else a synthetic "mesh"
+        // node — so the satellite still shows up on the map instead of silently vanishing into
+        // "client talks to the primary OnHub" with no relay in between.
+        Dictionary<string, string> meshNodeIdByBssid = new(StringComparer.OrdinalIgnoreCase);
+        List<(string? Mac, string? ObscuredMac, string? Hostname, string MeshApBssid)> meshRows = [];
+        await foreach ((string? mm_mac, string? mm_obscuredMac, string? mm_hostname, string mm_meshApBssid) in
+            conn.ListMeshRelayedClientsAsync(ct))
+        {
+            meshRows.Add((mm_mac, mm_obscuredMac, mm_hostname, mm_meshApBssid));
+        }
+
+        foreach ((string? mac, string? obscuredMac, string? hostname, string meshApBssid) in meshRows)
+        {
+            string? clientDeviceId = null;
+            string? clientHostname = null;
+            if (mac is { Length: > 0 })
+            {
+                await foreach ((Guid resolvedId, string? resolvedHostname) in conn.ResolveMacDeviceAsync(mac, ct))
+                {
+                    clientDeviceId = resolvedId.ToString();
+                    clientHostname = resolvedHostname;
+                    break;
+                }
+            }
+
+            string clientId;
+            if (clientDeviceId is { Length: > 0 })
+            {
+                EnsureDeviceNode(clientDeviceId, clientHostname ?? hostname);
+                clientId = clientDeviceId;
+            }
+            else
+            {
+                string identityKey = mac ?? obscuredMac ?? hostname ?? meshApBssid;
+                clientId = EnsureUnknownNode(identityKey, hostname ?? mac ?? obscuredMac ?? "Unknown client");
+            }
+
+            if (!meshNodeIdByBssid.TryGetValue(meshApBssid, out string? meshId))
+            {
+                string? meshDeviceId = null;
+                string? meshHostname = null;
+                await foreach ((Guid resolvedId, string? resolvedHostname) in
+                    conn.ResolveMacDeviceAsync(meshApBssid, ct))
+                {
+                    meshDeviceId = resolvedId.ToString();
+                    meshHostname = resolvedHostname;
+                    break;
+                }
+
+                if (meshDeviceId is { Length: > 0 })
+                {
+                    EnsureDeviceNode(meshDeviceId, meshHostname);
+                    meshId = meshDeviceId;
+                }
+                else
+                {
+                    meshId = EnsureUnknownNode(meshApBssid, $"Mesh point ({meshApBssid})", "mesh");
+                }
+
+                meshNodeIdByBssid[meshApBssid] = meshId;
+            }
+
+            if (string.Equals(clientId, meshId, StringComparison.Ordinal))
+            {
+                continue; // the mesh point relaying itself — never expected in practice
+            }
+
+            string meshPairKey = string.CompareOrdinal(clientId, meshId) <= 0
+                ? $"{clientId}|{meshId}"
+                : $"{meshId}|{clientId}";
+            if (drawnPairs.Add(meshPairKey))
+            {
+                edges.Add(new L2GraphEdge(clientId, null, meshId, null, "mesh"));
+            }
+        }
+
         return new L2Graph(nodes, edges);
     }
 
@@ -155,8 +234,11 @@ public static class L2TopologyApi
         string.Equals(label, deviceId, StringComparison.Ordinal);
 }
 
-/// <summary>Node kinds for <see cref="L2Graph" />: "device" (a known Device[] row) or "unknown"
-/// (an LLDP neighbor that couldn't be resolved to a known device by IP or MAC).</summary>
+/// <summary>
+/// Node kinds for <see cref="L2Graph" />: "device" (a known Device[] row), "unknown" (an LLDP
+/// neighbor that couldn't be resolved to a known device by IP or MAC), or "mesh" (a Google
+/// Wifi/OnHub mesh point known only by BSSID — see GetGraphAsync's mesh-relay section).
+/// </summary>
 public sealed record L2GraphNode(string Id, string Label, string Kind);
 
 /// <summary>

@@ -3030,6 +3030,86 @@ public sealed class SubnetsApiTests : IAsyncLifetime
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// L2TopologyApi
+// ─────────────────────────────────────────────────────────────────────────────
+
+[Collection("Integration")]
+public sealed class L2TopologyApiTests : IAsyncLifetime
+{
+    private readonly IntegrationFixture _fixture;
+
+    public L2TopologyApiTests(IntegrationFixture fixture)
+    {
+        _fixture = fixture;
+    }
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync() =>
+        await _fixture.TruncateAsync(
+            "proj_discovered",
+            "proj_systems",
+            "device_fingerprints",
+            "devices"
+        );
+
+    [Fact]
+    public async Task GetGraph_MeshRelayedClient_UnknownMeshPointBecomesSyntheticNode()
+    {
+        // Client is independently known (e.g. ARP-discovered elsewhere and fingerprinted); the
+        // mesh point relaying it is only ever seen as a BSSID — no direct info about that device.
+        Guid clientId = await _fixture.InsertDeviceAsync("discovered");
+        await _fixture.InsertFingerprintAsync(clientId, "mac", "aa:bb:cc:00:00:01");
+        await InsertDiscoveredMeshLinkAsync("onhub-primary", "client-1", "aa:bb:cc:00:00:01", "11:22:33:44:55:66");
+
+        L2Graph graph = await L2TopologyApi.GetGraphAsync(_fixture.DataSource, CancellationToken.None);
+
+        L2GraphNode clientNode = Assert.Single(graph.Nodes, n => n.Kind == "device" && n.Id == clientId.ToString());
+        L2GraphNode meshNode = Assert.Single(graph.Nodes, n => n.Kind == "mesh");
+        Assert.Contains("11:22:33:44:55:66", meshNode.Label);
+        Assert.Contains(graph.Edges, e => e.Via == "mesh"
+            && ((e.FromId == clientNode.Id && e.ToId == meshNode.Id) || (e.FromId == meshNode.Id && e.ToId == clientNode.Id)));
+    }
+
+    [Fact]
+    public async Task GetGraph_MeshPointAlsoIndependentlyKnown_ReusesItsDeviceNode()
+    {
+        // The specific mesh point relaying this client has ALSO been independently fingerprinted
+        // (e.g. it exposes itself on the LAN and got ARP-discovered too) — its real device node
+        // should be reused instead of a synthetic "mesh" placeholder.
+        Guid clientId = await _fixture.InsertDeviceAsync("discovered");
+        await _fixture.InsertFingerprintAsync(clientId, "mac", "aa:bb:cc:00:00:01");
+        Guid meshPointId = await _fixture.InsertDeviceAsync("discovered");
+        await _fixture.InsertFingerprintAsync(meshPointId, "mac", "11:22:33:44:55:66");
+        await InsertDiscoveredMeshLinkAsync("onhub-primary", "client-1", "aa:bb:cc:00:00:01", "11:22:33:44:55:66");
+
+        L2Graph graph = await L2TopologyApi.GetGraphAsync(_fixture.DataSource, CancellationToken.None);
+
+        Assert.DoesNotContain(graph.Nodes, n => n.Kind == "mesh");
+        Assert.Contains(graph.Nodes, n => n.Kind == "device" && n.Id == meshPointId.ToString());
+        Assert.Contains(graph.Edges, e => e.Via == "mesh"
+            && ((e.FromId == clientId.ToString() && e.ToId == meshPointId.ToString())
+             || (e.FromId == meshPointId.ToString() && e.ToId == clientId.ToString())));
+    }
+
+    private async Task InsertDiscoveredMeshLinkAsync(string device, string discovered, string mac, string meshApBssid)
+    {
+        const string sql = """
+            INSERT INTO proj_discovered (device, discovered, mac, mesh_ap_bssid)
+            VALUES (@device, @discovered, @mac, @bssid)
+            ON CONFLICT (device, discovered) DO UPDATE SET mesh_ap_bssid = EXCLUDED.mesh_ap_bssid
+            """;
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        await using NpgsqlCommand cmd = new(sql, conn);
+        cmd.Parameters.AddWithValue("device", device);
+        cmd.Parameters.AddWithValue("discovered", discovered);
+        cmd.Parameters.AddWithValue("mac", mac);
+        cmd.Parameters.AddWithValue("bssid", meshApBssid);
+        await cmd.ExecuteNonQueryAsync();
+    }
+}
+
 [Collection("Integration")]
 public sealed class AgentsApiTests : IAsyncLifetime
 {

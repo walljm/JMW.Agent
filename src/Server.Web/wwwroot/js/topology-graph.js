@@ -33,6 +33,9 @@
         'wan-subnet': { shape: 'rect', varName: '--ok' },
         vpn: { shape: 'circle', varName: '--warn' },
         device: { shape: 'rect', varName: '--accent' },
+        // A Google Wifi/OnHub mesh point known only by BSSID (L2 graph only) — amber like vpn,
+        // since it's also "real infrastructure we can only partially identify", not a plain device.
+        mesh: { shape: 'circle', varName: '--warn' },
         unknown: { shape: 'circle', varName: '--text-faint' },
     };
     const DEFAULT_STYLE = { shape: 'circle', varName: '--text-dim' };
@@ -56,6 +59,7 @@
         'wan-subnet': 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM3.5 9h17M3.5 15h17M12 3a13 13 0 0 1 0 18 13 13 0 0 1 0-18Z',
         vpn: 'M12 3 5 6v5c0 4 3 7.5 7 9 4-1.5 7-5 7-9V6l-7-3ZM12 11v3M12 8v.01',
         device: 'M4 5h16v6H4zM4 13h16v6H4zM7 8h.01M7 16h.01',
+        mesh: 'M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01',
     };
 
     function cssVar(name) {

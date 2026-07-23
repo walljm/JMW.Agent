@@ -117,6 +117,18 @@ public static partial class ReportingQueries
     );
 
     /// <summary>
+    /// Clients relayed through a Google Wifi/OnHub mesh point (real BSSID) — the L2 topology
+    /// graph's source for grouping clients under a synthetic mesh-point node when the mesh
+    /// point itself isn't independently known as a device.
+    /// </summary>
+    [DatabaseCommand]
+    public static partial IAsyncEnumerable<(string? Mac, string? ObscuredMac, string? Hostname, string MeshApBssid)>
+        ListMeshRelayedClientsAsync(
+            this NpgsqlConnection connection,
+            CancellationToken cancellationToken
+        );
+
+    /// <summary>
     /// Resolves a MAC address directly to its known device — used when an LLDP neighbor's
     /// remote identity is only a chassis MAC (no management IP advertised). At most one row.
     /// </summary>

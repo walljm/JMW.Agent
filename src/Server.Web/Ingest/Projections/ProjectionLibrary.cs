@@ -435,6 +435,11 @@ public static class ProjectionLibrary
                 new(FactPaths.DiscoveredVendor, "vendor", NpgsqlDbType.Text),
                 new(FactPaths.DiscoveredModel, "model", NpgsqlDbType.Text),
                 new(FactPaths.DiscoveredFriendlyName, "friendly_name", NpgsqlDbType.Text),
+                // The physical mesh AP (real, unobscured BSSID) currently relaying this client, for
+                // Google Wifi/OnHub networks — see OnHubStations.cs. A discrete identity value like
+                // hostname/vendor above, not a metric, so it belongs here rather than metrics_raw.
+                // Read by L2TopologyApi to group clients under their relaying mesh point.
+                new(FactPaths.DiscoveredLinkMeshApBssid, "mesh_ap_bssid", NpgsqlDbType.Text),
                 // The eleven materializer-only identity signals (OnvifSerial/RokuSerial/SnmpSerial/
                 // SsdpUuid/WsdUuid/HueBridgeId/OnvifHardwareId/CastId/DeviceType/Os/SshHostKey)
                 // moved to the fact-shaped materialization_facts table, written by
