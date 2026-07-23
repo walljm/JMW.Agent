@@ -532,16 +532,24 @@ per column (first declared = default) and must also declare `string? sort` / `st
 parameters (matched by name; never bound to SQL). Its `.sql` file uses three tokens —
 `__SORT_KEY__` (the sort expression), `__CMP__` (`>` asc / `<` desc, for the keyset row
 comparison), and `__DIR__` (`ASC`/`DESC`) — and the generator emits one command-text constant
-per column per direction plus a `{Method}SortKeys` allowlist set for the UI (`GridState`),
-selecting the variant at runtime from `sort`/`dir`. Every variant is schema-validated by
-`ServerQueryValidationTests`, so a renamed column in any sort expression fails the integration
-suite. Gotchas: sort expressions must match the expression indexes (migration 0104)
-character-for-character; wrap the select-list `sort_key` output in `COALESCE(__SORT_KEY__, '')`
-so its reported nullability is identical in every variant (a bare column reports NOT NULL,
-an expression reports nullable); don't mention token names in `.sql` comments (substitution
-rewrites them). Reference example: `Data/Reporting/ListPorts.sql` + `ListPortsAsync` +
-`PortsApi` (thin wrapper: cursor encode/decode, `SortableColumns` sourced from the generated
-set).
+per column per direction inside a public `{Method}CommandText(sort, dir)` helper (which the
+command method calls, and which EXPLAIN-based plan tests like `ReportPlanTests` can assert on)
+plus a `{Method}SortKeys` allowlist set for the UI (`GridState`). Every variant is
+schema-validated by `ServerQueryValidationTests`, so a renamed column in any sort expression
+fails the integration suite. Gotchas: sort expressions must match the expression indexes
+(migrations 0104/0106/0108) character-for-character; wrap the select-list `sort_key` output in
+`COALESCE(__SORT_KEY__, '')` so its reported nullability is identical in every variant (a bare
+column reports NOT NULL, an expression reports nullable); columns read through a view or CTE
+never report NOT NULL — declare those tuple fields nullable and coalesce in the wrapper, or
+inline the CTE; a bind parameter has one type per command, so a sort whose cursor element is a
+different SQL type (e.g. timestamptz vs text) needs its own command (see `AgentQueries`
+`ListAgentsByCreatedAt`/`ListAgentsByStatus`) — and sort expressions of non-text type must be
+normalized to text (zero-padded `lpad`, see the Interfaces speed sort) or the cursor comparison
+has no operator; don't mention token names in `.sql` comments (substitution rewrites them).
+Reference example: `Data/Reporting/ListPorts.sql` + `ListPortsAsync` + `PortsApi` (thin
+wrapper: cursor encode/decode, `SortableColumns` sourced from the generated set). All eight
+dynamic-sort keyset lists (Devices, Ports, Containers, ARP, Components, Interfaces, Hardware,
+admin Agents) use this pattern.
 
 ## Database access rules
 
