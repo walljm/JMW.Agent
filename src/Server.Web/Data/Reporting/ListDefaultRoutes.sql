@@ -1,11 +1,13 @@
 -- Each device's IPv4 default-route gateway. Used two ways on the Subnets page: (1) fills a
 -- subnet's Gateway when no DHCP scope provides one, and (2) the L3 graph's sole signal for an
 -- edge that leads off the observed network entirely (the gateway IP doesn't fall inside any
--- known subnet) — the "Internet" node.
+-- known subnet) — the "Internet" node. iface is the router's own outbound WAN interface, used
+-- to label that edge the same way every LAN subnet edge is labeled with its interface.
 SELECT
     r.device
   , COALESCE(s.friendly_name, s.hostname) AS hostname
   , r.gateway
+  , r.iface
 FROM
     proj_device_routes    r
     LEFT JOIN proj_systems s

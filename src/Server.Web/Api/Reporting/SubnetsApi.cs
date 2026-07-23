@@ -137,8 +137,6 @@ public static class SubnetsApi
         List<SubnetGraphEdge> edges = [];
         HashSet<(string From, string To)> drawnEdges = [];
         Dictionary<string, string> routerIdByKey = new(StringComparer.Ordinal);
-        int subnetSeq = 0;
-        int routerSeq = 0;
         string? internetId = null;
 
         void AddEdge(string fromId, string toId, string? via = null)
@@ -149,6 +147,9 @@ public static class SubnetsApi
             }
         }
 
+        // Router id is the same stable "dev:<id>" / "ip:<addr>" key callers already resolve —
+        // deterministic across rebuilds (unlike a sequence counter), so a saved layout's chosen
+        // roots/positions (see topology-graph.js) keep referring to the same physical router.
         string GetOrCreateRouter(string key, string? label)
         {
             if (routerIdByKey.TryGetValue(key, out string? existingId))
@@ -156,19 +157,23 @@ public static class SubnetsApi
                 return existingId;
             }
 
-            string id = "r" + routerSeq++;
+            string id = "router:" + key;
             routerIdByKey[key] = id;
             nodes.Add(new SubnetGraphNode(id, SanitizeLabel(label ?? key), "router"));
             return id;
         }
 
-        // Subnet nodes, ordered the same way the list page shows them.
+        // Subnet nodes, ordered the same way the list page shows them. Id is the network CIDR
+        // (or "L:<device>:<cidr>" for a host-local Docker bridge) — the same stable identity
+        // BuildAggregatesAsync already keys subnets by, not a sequence counter.
         Dictionary<SubnetAggregate, string> subnetNodeId = new();
         foreach (SubnetAggregate agg in subnets
             .OrderBy(s => s.Network.BaseAddress, IpAddressComparer.Instance)
             .ThenBy(s => s.Network.PrefixLength))
         {
-            string id = "n" + subnetSeq++;
+            string id = "subnet:" + (agg.HostLocalDevice is { } hostLocalDevice
+                ? $"L:{hostLocalDevice}:{agg.Network}"
+                : agg.Network.ToString());
             subnetNodeId[agg] = id;
             string label;
             if (agg.OwnerHost is { } host)
@@ -198,7 +203,11 @@ public static class SubnetsApi
             (string? gwDeviceId, string? gwHostname) =
                 await ResolveGatewayAsync(conn, agg.Gateway, interfaceByIp, ct);
             string key = gwDeviceId is { Length: > 0 } d ? "dev:" + d : "ip:" + agg.Gateway;
-            string routerId = GetOrCreateRouter(key, gwHostname ?? agg.Gateway);
+            // Show both hostname and IP when we have a hostname — a bare hostname or bare IP
+            // alone left the operator guessing at the other; router labels are the one place
+            // this graph names actual devices, so both bits of identity should be visible.
+            string routerLabel = gwHostname is { Length: > 0 } h ? $"{h} ({agg.Gateway})" : agg.Gateway;
+            string routerId = GetOrCreateRouter(key, routerLabel);
             // Track 3: label the edge with the router's own interface facing this subnet, when known.
             string? via = interfaceByIp.TryGetValue(agg.Gateway, out SubnetInterface? gwIf)
                 ? gwIf.InterfaceName
@@ -263,7 +272,7 @@ public static class SubnetsApi
 
             if (!vpnIdByLabel.TryGetValue(overlay, out string? vpnId))
             {
-                vpnId = "vpn" + vpnIdByLabel.Count;
+                vpnId = "vpn:" + overlay;
                 vpnIdByLabel[overlay] = vpnId;
                 nodes.Add(new SubnetGraphNode(vpnId, overlay, "vpn"));
             }
@@ -271,11 +280,22 @@ public static class SubnetsApi
             AddEdge(subnetNodeId[agg], vpnId);
         }
 
+        // Materialized once so it can feed both the Internet-edge pass below and the WAN-subnet
+        // heuristic after it, without a second round-trip.
+        List<(string Device, string? Hostname, string? Gateway, string? Iface)> defaultRoutes = [];
+        await foreach ((string dr_device, string? dr_hostname, string? dr_gateway, string? dr_iface) in
+            conn.ListDefaultRoutesAsync(ct))
+        {
+            defaultRoutes.Add((dr_device, dr_hostname, dr_gateway, dr_iface));
+        }
+
         // Internet --> Router: only when a default-route gateway leads outside every known
         // subnet. If every agent's default route resolves to a subnet we already model (the
         // common single-router home case), there is nothing to draw here — that's truthful, not
         // a gap: it means every router we can see is fully accounted for by the edges above.
-        await foreach ((string device, string? hostname, string? gateway) in conn.ListDefaultRoutesAsync(ct))
+        // Iface is the router's own WAN-facing interface — labels the edge the same way every
+        // LAN subnet edge already gets a "via" label.
+        foreach ((string device, string? hostname, string? gateway, string? iface) in defaultRoutes)
         {
             if (string.IsNullOrWhiteSpace(gateway)
              || !IPAddress.TryParse(gateway, out IPAddress? gwAddr)
@@ -286,7 +306,34 @@ public static class SubnetsApi
 
             internetId ??= CreateInternetNode(nodes);
             string routerId = GetOrCreateRouter("dev:" + device, hostname ?? device);
-            AddEdge(internetId, routerId);
+            AddEdge(internetId, routerId, iface);
+        }
+
+        // A stub subnet (no DHCP scope, effectively no client hosts) that's also the direct
+        // container of an already-known router's own default-route gateway is the WAN/ISP
+        // uplink segment made locally visible — the rarer counterpart to the synthetic Internet
+        // node above (most WAN links have no locally-observable subnet at all). Narrow on
+        // purpose: gated on the gateway's OWNER already being a router we recognize (not every
+        // client whose default gateway happens to land in an ordinary LAN subnet), so a normal
+        // small LAN segment never gets misflagged as "WAN".
+        foreach ((string device, string? _, string? gateway, string? _) in defaultRoutes)
+        {
+            if (string.IsNullOrWhiteSpace(gateway)
+             || !IPAddress.TryParse(gateway, out IPAddress? gwAddr)
+             || !routerIdByKey.ContainsKey("dev:" + device))
+            {
+                continue;
+            }
+
+            SubnetAggregate? gwSubnet = subnets.FirstOrDefault(a => a.Network.Contains(gwAddr));
+            if (gwSubnet is { DhcpService: null, HostIps.Count: <= 2 } && subnetNodeId.TryGetValue(gwSubnet, out string? wanSubnetId))
+            {
+                int idx = nodes.FindIndex(n => n.Id == wanSubnetId);
+                if (idx >= 0 && nodes[idx].Kind == "subnet")
+                {
+                    nodes[idx] = nodes[idx] with { Kind = "wan-subnet" };
+                }
+            }
         }
 
         return new SubnetGraph(nodes, edges);
@@ -457,7 +504,7 @@ public static class SubnetsApi
         {
             string cidr = network.ToString();
             bool hostLocal = device is not null && hostLocalNets.TryGetValue((device, cidr), out string? _);
-            string key = hostLocal ? $"L {device} {cidr}" : cidr;
+            string key = hostLocal ? $"L {device} {cidr}" : cidr;
             if (!subnets.TryGetValue(key, out SubnetAggregate? agg))
             {
                 agg = new SubnetAggregate(network);
@@ -537,7 +584,7 @@ public static class SubnetsApi
         // isn't itself a subnet, so this never creates a new one.
         if (subnets.Count > 0)
         {
-            await foreach ((string _, string? _, string? gateway) in conn.ListDefaultRoutesAsync(ct))
+            await foreach ((string _, string? _, string? gateway, string? _) in conn.ListDefaultRoutesAsync(ct))
             {
                 if (string.IsNullOrWhiteSpace(gateway) || !IPAddress.TryParse(gateway, out IPAddress? gwAddr))
                 {
@@ -773,7 +820,11 @@ public sealed record SubnetDetail(
     IReadOnlyList<SubnetInterface> Interfaces
 );
 
-/// <summary>Node kinds for <see cref="SubnetGraph" />: "subnet", "router", "internet", or "vpn".</summary>
+/// <summary>
+/// Node kinds for <see cref="SubnetGraph" />: "subnet", "router", "internet", "vpn", or
+/// "wan-subnet" (a stub subnet that IS a locally-observable WAN/ISP uplink segment — see
+/// GetGraphAsync's WAN-subnet heuristic, right after the "Internet" node it complements).
+/// </summary>
 public sealed record SubnetGraphNode(string Id, string Label, string Kind);
 
 /// <summary><see cref="Via" /> is the interface name the edge traverses (e.g. "eth0", "docker0"), when known.</summary>

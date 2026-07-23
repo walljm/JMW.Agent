@@ -2700,6 +2700,70 @@ public sealed class SubnetsApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetGraph_DefaultRouteOffKnownNetwork_LabelsEdgeWithWanInterface()
+    {
+        await InsertInterfaceAsync("nas-01", "eth0", "192.168.1.5/24");
+        await InsertRouteAsync("nas-01", "0.0.0.0/0", gateway: "203.0.113.1", iface: "eth1");
+
+        SubnetGraph graph = await SubnetsApi.GetGraphAsync(_fixture.DataSource, CancellationToken.None);
+
+        SubnetGraphNode internet = Assert.Single(graph.Nodes, n => n.Kind == "internet");
+        SubnetGraphEdge edge = Assert.Single(graph.Edges, e => e.FromId == internet.Id);
+        Assert.Equal("eth1", edge.Via);
+    }
+
+    [Fact]
+    public async Task GetGraph_RouterGatewayInStubSubnet_FlagsWanSubnet()
+    {
+        // udm is a recognized router (LAN's resolved DHCP gateway) whose own default route leads
+        // to a gateway sitting inside a second, DHCP-less, near-empty subnet — the ISP-assigned
+        // uplink segment made locally visible, as opposed to the common case where nothing on
+        // that subnet is observable at all (see the Internet-node tests above).
+        await InsertInterfaceAsync("udm", "eth0", "192.168.1.1/24");
+        await InsertInterfaceAsync("udm", "eth1", "203.0.113.5/30");
+        await InsertDhcpScopeAsync(
+            "dns-01",
+            "LAN",
+            startAddress: "192.168.1.100",
+            endAddress: "192.168.1.200",
+            subnetMask: "255.255.255.0",
+            gateway: "192.168.1.1"
+        );
+        await InsertRouteAsync("udm", "0.0.0.0/0", gateway: "203.0.113.6", iface: "eth1");
+
+        SubnetGraph graph = await SubnetsApi.GetGraphAsync(_fixture.DataSource, CancellationToken.None);
+
+        Assert.DoesNotContain(graph.Nodes, n => n.Kind == "internet"); // gateway is inside a known subnet
+        SubnetGraphNode wanSubnet = Assert.Single(graph.Nodes, n => n.Kind == "wan-subnet");
+        Assert.Contains("203.0.113.4/30", wanSubnet.Label);
+        // The ordinary LAN subnet stays an ordinary "subnet" — only the uplink segment is retagged.
+        Assert.Contains(graph.Nodes, n => n.Kind == "subnet" && n.Label.Contains("192.168.1"));
+    }
+
+    [Fact]
+    public async Task GetGraph_ClientGatewayInOrdinaryLanSubnet_DoesNotFlagWanSubnet()
+    {
+        // A client's default route into the ordinary home LAN must never be mistaken for a WAN
+        // uplink just because its gateway lands inside a known subnet — only a device this graph
+        // already recognizes as a router can nominate a subnet as WAN-adjacent.
+        await InsertInterfaceAsync("udm", "eth0", "192.168.1.1/24");
+        await InsertInterfaceAsync("laptop", "eth0", "192.168.1.50/24");
+        await InsertDhcpScopeAsync(
+            "dns-01",
+            "LAN",
+            startAddress: "192.168.1.100",
+            endAddress: "192.168.1.200",
+            subnetMask: "255.255.255.0",
+            gateway: "192.168.1.1"
+        );
+        await InsertRouteAsync("laptop", "0.0.0.0/0", gateway: "192.168.1.1");
+
+        SubnetGraph graph = await SubnetsApi.GetGraphAsync(_fixture.DataSource, CancellationToken.None);
+
+        Assert.DoesNotContain(graph.Nodes, n => n.Kind == "wan-subnet");
+    }
+
+    [Fact]
     public async Task Query_GatewayMatchesKnownInterface_ResolvesWithoutArp()
     {
         // udm's own interface IP is LAN's DHCP gateway — no ARP/fingerprint row exists for it at
@@ -2744,7 +2808,7 @@ public sealed class SubnetsApiTests : IAsyncLifetime
 
         Assert.Equal(3, graph.Nodes.Count); // 1 router + 2 subnets, NOT 4
         SubnetGraphNode router = Assert.Single(graph.Nodes, n => n.Kind == "router");
-        Assert.Equal("udm-pro", router.Label);
+        Assert.Equal("udm-pro (192.168.1.1)", router.Label); // hostname + gateway IP
         Assert.Equal(2, graph.Edges.Count);
         Assert.All(graph.Edges, e => Assert.Equal(router.Id, e.FromId));
     }
@@ -2919,18 +2983,19 @@ public sealed class SubnetsApiTests : IAsyncLifetime
         await cmd.ExecuteNonQueryAsync();
     }
 
-    private async Task InsertRouteAsync(string device, string destination, string? gateway = null)
+    private async Task InsertRouteAsync(string device, string destination, string? gateway = null, string? iface = null)
     {
         const string sql = """
-            INSERT INTO proj_device_routes (device, route, family, gateway)
-            VALUES (@device, @route, 'inet', @gateway)
-            ON CONFLICT (device, route) DO UPDATE SET gateway = EXCLUDED.gateway
+            INSERT INTO proj_device_routes (device, route, family, gateway, iface)
+            VALUES (@device, @route, 'inet', @gateway, @iface)
+            ON CONFLICT (device, route) DO UPDATE SET gateway = EXCLUDED.gateway, iface = EXCLUDED.iface
             """;
         await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
         await using NpgsqlCommand cmd = new(sql, conn);
         cmd.Parameters.AddWithValue("device", device);
         cmd.Parameters.AddWithValue("route", destination);
         cmd.Parameters.AddWithValue("gateway", (object?)gateway ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("iface", (object?)iface ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync();
     }
 

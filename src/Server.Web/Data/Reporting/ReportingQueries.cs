@@ -78,13 +78,15 @@ public static partial class ReportingQueries
 
     /// <summary>
     /// Each device's IPv4 default-route gateway — fills a subnet's gateway when no DHCP scope
-    /// provides one, and feeds the L3 graph's "Internet" edge detection.
+    /// provides one, and feeds the L3 graph's "Internet" edge detection (Iface labels that edge).
     /// </summary>
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<(string Device, string? Hostname, string? Gateway)> ListDefaultRoutesAsync(
-        this NpgsqlConnection connection,
-        CancellationToken cancellationToken
-    );
+    public static partial
+        IAsyncEnumerable<(string Device, string? Hostname, string? Gateway, string? Iface)>
+        ListDefaultRoutesAsync(
+            this NpgsqlConnection connection,
+            CancellationToken cancellationToken
+        );
 
     /// <summary>
     /// Docker network subnets per host (device, subnet CIDR, network name, driver, scope). Lets
