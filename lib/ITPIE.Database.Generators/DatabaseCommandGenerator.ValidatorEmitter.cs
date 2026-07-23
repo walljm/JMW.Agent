@@ -150,6 +150,60 @@ public sealed partial class DatabaseCommandGenerator
 
             #region Method implementation
 
+            //
+            // A plain method validates its single command text directly in the method body. A
+            // [SortableBy] method validates every (column, direction) command-text variant in
+            // turn, each wrapped in its own block so the locals don't collide.
+            //
+
+            if (m.SortableColumns.Count == 0)
+            {
+                GenerateValidationBody(
+                    m,
+                    $"{indent}    ",
+                    $"-- validate: {m.FullyQualifiedIdentifier}",
+                    m.CommandText.Value
+                );
+            }
+            else
+            {
+                for (int i = 0; i < m.SortableColumns.Count; i++)
+                {
+                    (string key, string sqlExpression) = m.SortableColumns[i];
+
+                    foreach (bool descending in new[] { false, true })
+                    {
+                        string direction = descending ? "desc" : "asc";
+
+                        _builder.AppendLine($"{indent}    // sort={key} {direction}");
+                        _builder.AppendLine($"{indent}    {{");
+                        GenerateValidationBody(
+                            m,
+                            $"{indent}        ",
+                            $"-- validate: {m.FullyQualifiedIdentifier} [sort={key} {direction}]",
+                            SubstituteSortTokens(m.CommandText.Value, sqlExpression, descending)
+                        );
+                        _builder.AppendLine($"{indent}    }}");
+                    }
+                }
+            }
+
+            _builder.AppendLine($"{indent}}}");
+
+            #endregion
+
+            _builder.AppendLine("#endif");
+
+            #endregion
+        }
+
+        private void GenerateValidationBody(
+            DatabaseCommandMethod m,
+            string indent,
+            string headerComment,
+            string commandTextValue
+        )
+        {
             #region Command text
 
             //
@@ -160,9 +214,9 @@ public sealed partial class DatabaseCommandGenerator
             // """;
             //
 
-            _builder.AppendLine($"{indent}    const string commandText = \"\"\"");
-            _builder.AppendLine($"-- validate: {m.FullyQualifiedIdentifier}");
-            _builder.AppendLine(m.CommandText.Value);
+            _builder.AppendLine($"{indent}const string commandText = \"\"\"");
+            _builder.AppendLine(headerComment);
+            _builder.AppendLine(commandTextValue);
             _builder.AppendLine("\"\"\";");
 
             #endregion
@@ -181,23 +235,23 @@ public sealed partial class DatabaseCommandGenerator
             if (m.BindParameters.Count == 0)
             {
                 _builder.AppendLine(
-                    $"{indent}    var columns = await global::ITPIE.Database.Abstractions.Testing.DatabaseCommandValidatorExtensions.ValidateAsync(connection, commandText, [], cancellationToken);"
+                    $"{indent}var columns = await global::ITPIE.Database.Abstractions.Testing.DatabaseCommandValidatorExtensions.ValidateAsync(connection, commandText, [], cancellationToken);"
                 );
             }
             else
             {
                 _builder.AppendLine(
-                    $"{indent}    var columns = await global::ITPIE.Database.Abstractions.Testing.DatabaseCommandValidatorExtensions.ValidateAsync(connection, commandText, ["
+                    $"{indent}var columns = await global::ITPIE.Database.Abstractions.Testing.DatabaseCommandValidatorExtensions.ValidateAsync(connection, commandText, ["
                 );
 
                 foreach (DatabaseCommandBindParameter p in m.BindParameters)
                 {
                     _builder.AppendLine(
-                        $"{indent}        new global::Npgsql.NpgsqlParameter<{p.Type}>() {{ TypedValue = {(p.IsCollection ? $"[{p.ValidateDefaultValue}]" : p.ValidateDefaultValue)} }},"
+                        $"{indent}    new global::Npgsql.NpgsqlParameter<{p.Type}>() {{ TypedValue = {(p.IsCollection ? $"[{p.ValidateDefaultValue}]" : p.ValidateDefaultValue)} }},"
                     );
                 }
 
-                _builder.AppendLine($"{indent}    ], cancellationToken);");
+                _builder.AppendLine($"{indent}], cancellationToken);");
             }
 
             #endregion
@@ -213,28 +267,28 @@ public sealed partial class DatabaseCommandGenerator
             if (m.Result.Parameters.Count == 0)
             {
                 _builder.AppendLine(
-                    $"{indent}    var validationContext = new global::ITPIE.Database.Abstractions.Testing.DatabaseCommandValidationContext(columns, new global::System.Collections.Generic.List<global::ITPIE.Database.Abstractions.Testing.DatabaseCommandValidationProperty>().AsReadOnly());"
+                    $"{indent}var validationContext = new global::ITPIE.Database.Abstractions.Testing.DatabaseCommandValidationContext(columns, new global::System.Collections.Generic.List<global::ITPIE.Database.Abstractions.Testing.DatabaseCommandValidationProperty>().AsReadOnly());"
                 );
             }
             else
             {
                 _builder.AppendLine(
-                    $"{indent}    var validationContext = new global::ITPIE.Database.Abstractions.Testing.DatabaseCommandValidationContext(columns, new global::System.Collections.Generic.List<global::ITPIE.Database.Abstractions.Testing.DatabaseCommandValidationProperty>()"
+                    $"{indent}var validationContext = new global::ITPIE.Database.Abstractions.Testing.DatabaseCommandValidationContext(columns, new global::System.Collections.Generic.List<global::ITPIE.Database.Abstractions.Testing.DatabaseCommandValidationProperty>()"
                 );
-                _builder.AppendLine($"{indent}    {{");
+                _builder.AppendLine($"{indent}{{");
                 for (int i = 0; i < m.Result.Parameters.Count; i++)
                 {
                     DatabaseCommandResultParameter p = m.Result.Parameters[i];
                     _builder.AppendLine(
-                        $"{indent}        new global::ITPIE.Database.Abstractions.Testing.DatabaseCommandValidationProperty(\"{p.Name}\", {p.HasNullableAnnotation.ToString().ToLower()}),"
+                        $"{indent}    new global::ITPIE.Database.Abstractions.Testing.DatabaseCommandValidationProperty(\"{p.Name}\", {p.HasNullableAnnotation.ToString().ToLower()}),"
                     );
                 }
 
-                _builder.AppendLine($"{indent}    }}.AsReadOnly());");
+                _builder.AppendLine($"{indent}}}.AsReadOnly());");
             }
 
-            _builder.AppendLine($"{indent}    validationContext.Validate();");
-            _builder.AppendLine($"{indent}    var validateCommandText = validationContext.GetValidationCommandText();");
+            _builder.AppendLine($"{indent}validationContext.Validate();");
+            _builder.AppendLine($"{indent}var validateCommandText = validationContext.GetValidationCommandText();");
 
             //
             // Now we come to the part where we execute that validation command and test Npgsql data reader field type
@@ -242,44 +296,36 @@ public sealed partial class DatabaseCommandGenerator
             //
 
             _builder.AppendLine(
-                $"{indent}    await using (var transaction = await connection.BeginTransactionAsync(cancellationToken))"
+                $"{indent}await using (var transaction = await connection.BeginTransactionAsync(cancellationToken))"
             );
             _builder.AppendLine(
-                $"{indent}    await using (var command = new global::Npgsql.NpgsqlCommand(validateCommandText, connection))"
+                $"{indent}await using (var command = new global::Npgsql.NpgsqlCommand(validateCommandText, connection))"
             );
             _builder.AppendLine(
-                $"{indent}    await using (var reader = await command.ExecuteReaderAsync(cancellationToken))"
+                $"{indent}await using (var reader = await command.ExecuteReaderAsync(cancellationToken))"
             );
+            _builder.AppendLine($"{indent}{{");
+            _builder.AppendLine($"{indent}    while (await reader.ReadAsync(cancellationToken))");
             _builder.AppendLine($"{indent}    {{");
-            _builder.AppendLine($"{indent}        while (await reader.ReadAsync(cancellationToken))");
-            _builder.AppendLine($"{indent}        {{");
             for (int i = 0; i < m.Result.Parameters.Count; i++)
             {
                 DatabaseCommandResultParameter p = m.Result.Parameters[i];
                 if (p.IsReferenceType && p.HasNullableAnnotation)
                 {
                     _builder.AppendLine(
-                        $"{indent}            var field{i} = await reader.IsDBNullAsync({i}, cancellationToken) ? null : await reader.GetFieldValueAsync<{p.Type}>({i}, cancellationToken);"
+                        $"{indent}        var field{i} = await reader.IsDBNullAsync({i}, cancellationToken) ? null : await reader.GetFieldValueAsync<{p.Type}>({i}, cancellationToken);"
                     );
                 }
                 else
                 {
                     _builder.AppendLine(
-                        $"{indent}            var field{i} = await reader.GetFieldValueAsync<{p.Type}>({i}, cancellationToken);"
+                        $"{indent}        var field{i} = await reader.GetFieldValueAsync<{p.Type}>({i}, cancellationToken);"
                     );
                 }
             }
 
-            _builder.AppendLine($"{indent}        }}");
             _builder.AppendLine($"{indent}    }}");
-
-            #endregion
-
             _builder.AppendLine($"{indent}}}");
-
-            #endregion
-
-            _builder.AppendLine("#endif");
 
             #endregion
         }

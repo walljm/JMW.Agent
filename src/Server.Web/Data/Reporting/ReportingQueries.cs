@@ -12,8 +12,33 @@ public static partial class ReportingQueries
     // [DatabaseCommand] cannot express (ORDER BY is not parameterizable).
 
     // ── Reporting: Open Ports ───────────────────────────────────────────────────
-    // Hand-built in PortsApi.QueryAsync — its ORDER BY / keyset cursor are chosen dynamically
-    // from a sortable-column allowlist, which a static [DatabaseCommand] can't express.
+
+    /// <summary>
+    /// Lists listening ports across the fleet, joined to the host's hostname, with optional
+    /// port/protocol filters and keyset pagination ordered by (sort key, device, listeningport).
+    /// The [SortableBy] declarations produce one schema-validated command-text variant per
+    /// column per direction; <c>sort</c>/<c>dir</c> select the variant at runtime (unrecognized
+    /// sort falls back to device, the first declared key). SortKey is the SQL-computed sort
+    /// expression for the row, used verbatim for the next-page cursor so it can never drift
+    /// from the keyset comparison.
+    /// </summary>
+    [DatabaseCommand]
+    [SortableBy("device", "p.device")]
+    [SortableBy("port", "lpad(p.port::text, 5, '0')")]
+    public static partial
+        IAsyncEnumerable<(string Device, string? Hostname, string ListeningPort, string? Protocol, string? Address,
+            int? Port, string? ProcessName, long? Pid, string? SortKey, string? FriendlyName)> ListPortsAsync(
+            this NpgsqlConnection connection,
+            int? port,
+            string? proto,
+            string? afterSortKey,
+            string? afterDevice,
+            string? afterListeningPort,
+            int limit,
+            string? sort,
+            string? dir,
+            CancellationToken cancellationToken
+        );
 
     // ── Reporting: Containers ───────────────────────────────────────────────────
     // Hand-built in ContainersApi.QueryAsync — its ORDER BY / keyset cursor are chosen dynamically

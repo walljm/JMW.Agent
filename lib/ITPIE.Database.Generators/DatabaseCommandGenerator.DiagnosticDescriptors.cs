@@ -204,4 +204,44 @@ public static class DiagnosticDescriptors
         DiagnosticSeverity.Error,
         isEnabledByDefault: true
     );
+
+    //
+    // 4000-4999: Sortable columns
+    //
+
+    public static DiagnosticDescriptor DatabaseCommandSortableMethodMustDeclareSortParameters { get; } = new(
+        id: "ITPIEDBGEN4001",
+        title: "Database command method with [SortableBy] must declare 'string? sort' and 'string? dir' parameters",
+        messageFormat: "Database command method with [SortableBy] must declare 'string? sort' and 'string? dir' parameters",
+        category: "DatabaseCommandGenerator",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
+    public static DiagnosticDescriptor DatabaseCommandSortableTokenNotFound { get; } = new(
+        id: "ITPIEDBGEN4002",
+        title: "Database command text for a [SortableBy] method must contain every sort token",
+        messageFormat: "Database command text for a [SortableBy] method must contain the token: {0}",
+        category: "DatabaseCommandGenerator",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
+    public static DiagnosticDescriptor DatabaseCommandSortableKeyMustBeUnique { get; } = new(
+        id: "ITPIEDBGEN4003",
+        title: "Database command [SortableBy] keys must be unique per method",
+        messageFormat: "Database command [SortableBy] keys must be unique per method: {0}",
+        category: "DatabaseCommandGenerator",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
+    public static DiagnosticDescriptor DatabaseCommandSortableTokenRequiresSortableBy { get; } = new(
+        id: "ITPIEDBGEN4004",
+        title: "Database command text contains a sort token but the method declares no [SortableBy]",
+        messageFormat: "Database command text contains a sort token but the method declares no [SortableBy]: {0}",
+        category: "DatabaseCommandGenerator",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
 }

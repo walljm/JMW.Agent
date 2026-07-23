@@ -15,6 +15,7 @@ public sealed partial class DatabaseCommandGenerator
     internal sealed class Parser
     {
         internal const string DatabaseCommandAttributeFullName = "ITPIE.Database.Abstractions.DatabaseCommandAttribute";
+        internal const string SortableByAttributeFullName = "ITPIE.Database.Abstractions.SortableByAttribute";
 
         private readonly Compilation _compilation;
         private readonly NpgsqlTypeSymbols _npgsqlTypeSymbols;
@@ -44,6 +45,8 @@ public sealed partial class DatabaseCommandGenerator
         {
             INamedTypeSymbol? databaseCommandAttributeType =
                 _compilation.GetTypeByMetadataName(DatabaseCommandAttributeFullName);
+            INamedTypeSymbol? sortableByAttributeType =
+                _compilation.GetTypeByMetadataName(SortableByAttributeFullName);
             List<DatabaseCommandClass> results = [];
 
             // group by syntax tree, since they are expensive
@@ -301,6 +304,53 @@ public sealed partial class DatabaseCommandGenerator
                                     continue;
                                 }
 
+                                #region Database Command Sortable Columns
+
+                                //
+                                // [SortableBy] declarations, in source order; the first is the default sort key. A
+                                // method with at least one gets a command-text variant per (column, direction), and
+                                // its 'sort'/'dir' parameters become variant selectors instead of bind parameters.
+                                //
+
+                                foreach (AttributeData attributeData in methodSymbol.GetAttributes())
+                                {
+                                    if (!SymbolEqualityComparer.Default.Equals(
+                                        sortableByAttributeType,
+                                        attributeData.AttributeClass
+                                    ))
+                                    {
+                                        continue;
+                                    }
+
+                                    if (attributeData.ConstructorArguments.Length != 2
+                                     || attributeData.ConstructorArguments[0].Value is not string sortKey
+                                     || attributeData.ConstructorArguments[1].Value is not string sortExpression)
+                                    {
+                                        // non-constant arguments; the compiler reports those
+                                        continue;
+                                    }
+
+                                    if (m.SortableColumns.Any(column
+                                        => string.Equals(column.Key, sortKey, StringComparison.Ordinal)
+                                    ))
+                                    {
+                                        ReportDiagnostic(
+                                            DiagnosticDescriptors.DatabaseCommandSortableKeyMustBeUnique,
+                                            attributeData.ApplicationSyntaxReference
+                                                ?.GetSyntax(_cancellationToken)
+                                                .GetLocation()
+                                         ?? methodDeclaration.Identifier.GetLocation(),
+                                            sortKey
+                                        );
+                                        m.HasErrors = true;
+                                        continue;
+                                    }
+
+                                    m.SortableColumns.Add((sortKey, sortExpression));
+                                }
+
+                                #endregion
+
                                 #region Database Command Method Required Parameters
 
                                 //
@@ -312,6 +362,8 @@ public sealed partial class DatabaseCommandGenerator
                                 int connectionParameterIndex = -1;
                                 int cancellationTokenParameterCount = 0;
                                 int cancellationTokenParameterIndex = -1;
+                                bool sortSelectorParameterFound = false;
+                                bool dirSelectorParameterFound = false;
 
                                 for (int i = 0; i < methodSymbol.Parameters.Length; i++)
                                 {
@@ -341,6 +393,29 @@ public sealed partial class DatabaseCommandGenerator
                                         methodParameterSymbol.Type
                                     );
 
+                                    //
+                                    // On a [SortableBy] method, the 'sort' and 'dir' parameters (matched by name)
+                                    // select the command-text variant at runtime; they are never bound to SQL. Both
+                                    // must be declared as string? — anything else fails ITPIEDBGEN4001 below.
+                                    //
+
+                                    bool isSortSelector = m.SortableColumns.Count > 0
+                                     && methodParameterSymbol.Name is "sort" or "dir";
+
+                                    if (isSortSelector
+                                     && methodParameterSymbol.Type.SpecialType == SpecialType.System_String
+                                     && methodParameterSymbol.Type.NullableAnnotation == NullableAnnotation.Annotated)
+                                    {
+                                        if (methodParameterSymbol.Name == "sort")
+                                        {
+                                            sortSelectorParameterFound = true;
+                                        }
+                                        else
+                                        {
+                                            dirSelectorParameterFound = true;
+                                        }
+                                    }
+
                                     if (isConnection)
                                     {
                                         connectionParameterCount++;
@@ -359,6 +434,7 @@ public sealed partial class DatabaseCommandGenerator
                                         Type = ToDisplayString(methodParameterSymbol.Type),
                                         IsConnection = isConnection,
                                         IsCancellationToken = isCancellationToken,
+                                        IsSortSelector = isSortSelector,
                                     };
 
                                     m.Parameters.Add(p);
@@ -487,6 +563,20 @@ public sealed partial class DatabaseCommandGenerator
                                     ReportDiagnostic(
                                         DiagnosticDescriptors
                                             .DatabaseCommandMethodMultipleCancellationTokenParametersFound,
+                                        methodDeclaration.Identifier.GetLocation()
+                                    );
+                                    m.HasErrors = true;
+                                }
+
+                                //
+                                // A [SortableBy] method must declare both variant selectors, each as string?.
+                                //
+
+                                if (m.SortableColumns.Count > 0
+                                 && (!sortSelectorParameterFound || !dirSelectorParameterFound))
+                                {
+                                    ReportDiagnostic(
+                                        DiagnosticDescriptors.DatabaseCommandSortableMethodMustDeclareSortParameters,
                                         methodDeclaration.Identifier.GetLocation()
                                     );
                                     m.HasErrors = true;
@@ -727,6 +817,40 @@ public sealed partial class DatabaseCommandGenerator
                                             orderedPlaceholders.Count
                                         );
                                         m.HasErrors = true;
+                                    }
+                                }
+
+                                #endregion
+
+                                #region Database Command Text Sort Tokens
+
+                                //
+                                // A [SortableBy] method's command text must contain every sort token; a plain
+                                // method's command text must contain none (tokens would reach PostgreSQL verbatim).
+                                //
+
+                                if (commandText is not null)
+                                {
+                                    foreach (string sortToken in SortTokens)
+                                    {
+                                        if (m.SortableColumns.Count > 0 && !commandText.Contains(sortToken))
+                                        {
+                                            ReportDiagnostic(
+                                                DiagnosticDescriptors.DatabaseCommandSortableTokenNotFound,
+                                                commandTextFileArgumentSyntax?.GetLocation() ?? attribute.GetLocation(),
+                                                sortToken
+                                            );
+                                            m.HasErrors = true;
+                                        }
+                                        else if (m.SortableColumns.Count == 0 && commandText.Contains(sortToken))
+                                        {
+                                            ReportDiagnostic(
+                                                DiagnosticDescriptors.DatabaseCommandSortableTokenRequiresSortableBy,
+                                                commandTextFileArgumentSyntax?.GetLocation() ?? attribute.GetLocation(),
+                                                sortToken
+                                            );
+                                            m.HasErrors = true;
+                                        }
                                     }
                                 }
 

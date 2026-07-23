@@ -2,6 +2,8 @@ using System.Text;
 
 using ITPIE.Database.Generators.Model;
 
+using Microsoft.CodeAnalysis.CSharp;
+
 namespace ITPIE.Database.Generators;
 
 public sealed partial class DatabaseCommandGenerator
@@ -88,6 +90,7 @@ public sealed partial class DatabaseCommandGenerator
                     continue;
                 }
 
+                GenerateSortKeys(m, indent);
                 GenerateMethod(m, indent);
             }
 
@@ -113,6 +116,38 @@ public sealed partial class DatabaseCommandGenerator
             #endregion
 
             #endregion
+        }
+
+        private void GenerateSortKeys(DatabaseCommandMethod m, string indent)
+        {
+            if (m.SortableColumns.Count == 0)
+            {
+                return;
+            }
+
+            //
+            // public static readonly IReadOnlySet<string> {Method}SortKeys = new HashSet<string>(...) { "device", ... };
+            //
+            // The declared [SortableBy] keys, for UI sort allowlists — sourcing an allowlist here
+            // means it cannot drift from the generated command-text variants.
+            //
+
+            _builder.AppendLine($"{indent}    [{GeneratedCodeAttribute}]");
+            _builder.Append(
+                $"{indent}    public static readonly global::System.Collections.Generic.IReadOnlySet<string> {m.Name}SortKeys = new global::System.Collections.Generic.HashSet<string>(global::System.StringComparer.Ordinal) {{ "
+            );
+
+            for (int i = 0; i < m.SortableColumns.Count; i++)
+            {
+                if (i != 0)
+                {
+                    _builder.Append(", ");
+                }
+
+                _builder.Append(SymbolDisplay.FormatLiteral(m.SortableColumns[i].Key, quote: true));
+            }
+
+            _builder.AppendLine(" };");
         }
 
         private void GenerateMethod(DatabaseCommandMethod m, string indent)
@@ -190,11 +225,54 @@ public sealed partial class DatabaseCommandGenerator
             //
             //  """;
             //
+            // For a [SortableBy] method, one const per (column, direction) variant is produced by
+            // token substitution, and __commandText becomes a local selected from the 'sort'/'dir'
+            // parameters. An unrecognized sort falls back to the first declared column; direction
+            // is descending only when dir equals "desc" (case-insensitive).
+            //
 
-            _builder.AppendLine($"{indent}    const string __commandText = \"\"\"");
-            _builder.AppendLine($"-- {m.FullyQualifiedIdentifier}");
-            _builder.AppendLine(m.CommandText.Value);
-            _builder.AppendLine("\"\"\";");
+            if (m.SortableColumns.Count == 0)
+            {
+                _builder.AppendLine($"{indent}    const string __commandText = \"\"\"");
+                _builder.AppendLine($"-- {m.FullyQualifiedIdentifier}");
+                _builder.AppendLine(m.CommandText.Value);
+                _builder.AppendLine("\"\"\";");
+            }
+            else
+            {
+                for (int i = 0; i < m.SortableColumns.Count; i++)
+                {
+                    (string key, string sqlExpression) = m.SortableColumns[i];
+
+                    foreach (bool descending in new[] { false, true })
+                    {
+                        string direction = descending ? "desc" : "asc";
+
+                        _builder.AppendLine($"{indent}    const string __commandText_{i}_{direction} = \"\"\"");
+                        _builder.AppendLine($"-- {m.FullyQualifiedIdentifier} [sort={key} {direction}]");
+                        _builder.AppendLine(SubstituteSortTokens(m.CommandText.Value, sqlExpression, descending));
+                        _builder.AppendLine("\"\"\";");
+                    }
+                }
+
+                _builder.AppendLine(
+                    $"{indent}    bool __descending = string.Equals(dir, \"desc\", global::System.StringComparison.OrdinalIgnoreCase);"
+                );
+                _builder.AppendLine($"{indent}    string __commandText = (sort, __descending) switch");
+                _builder.AppendLine($"{indent}    {{");
+
+                for (int i = 0; i < m.SortableColumns.Count; i++)
+                {
+                    string keyLiteral = SymbolDisplay.FormatLiteral(m.SortableColumns[i].Key, quote: true);
+
+                    _builder.AppendLine($"{indent}        ({keyLiteral}, false) => __commandText_{i}_asc,");
+                    _builder.AppendLine($"{indent}        ({keyLiteral}, true) => __commandText_{i}_desc,");
+                }
+
+                _builder.AppendLine($"{indent}        (_, false) => __commandText_0_asc,");
+                _builder.AppendLine($"{indent}        (_, true) => __commandText_0_desc,");
+                _builder.AppendLine($"{indent}    }};");
+            }
 
             #endregion
 

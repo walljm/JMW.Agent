@@ -15,6 +15,28 @@ public sealed partial class DatabaseCommandGenerator : IIncrementalGenerator
     private static readonly string GeneratedCodeAttribute =
         $"global::System.CodeDom.Compiler.GeneratedCodeAttribute(\"{typeof(DatabaseCommandGenerator).Assembly.GetName().Name}\", \"{typeof(DatabaseCommandGenerator).Assembly.GetName().Version}\")";
 
+    //
+    // [SortableBy] command-text tokens. The parser requires all three in a sortable method's
+    // command text; the emitters substitute them once per (column, direction) variant.
+    //
+
+    internal const string SortKeyToken = "__SORT_KEY__";
+    internal const string SortComparisonToken = "__CMP__";
+    internal const string SortDirectionToken = "__DIR__";
+
+    internal static readonly string[] SortTokens = [SortKeyToken, SortComparisonToken, SortDirectionToken];
+
+    /// <summary>
+    /// Produces one [SortableBy] command-text variant: the sort expression replaces
+    /// <c>__SORT_KEY__</c>, the keyset row-comparison operator replaces <c>__CMP__</c>
+    /// (<c>&gt;</c> asc / <c>&lt;</c> desc), and <c>ASC</c>/<c>DESC</c> replaces <c>__DIR__</c>.
+    /// </summary>
+    internal static string SubstituteSortTokens(string commandText, string sqlExpression, bool descending)
+        => commandText
+            .Replace(SortKeyToken, sqlExpression)
+            .Replace(SortComparisonToken, descending ? "<" : ">")
+            .Replace(SortDirectionToken, descending ? "DESC" : "ASC");
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         IncrementalValuesProvider<ClassDeclarationSyntax?> classes = context.SyntaxProvider

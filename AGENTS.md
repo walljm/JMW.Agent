@@ -525,6 +525,24 @@ Query methods are extension methods on `NpgsqlConnection` in namespace
 2. Declare `public static partial IAsyncEnumerable<...> FooAsync(this NpgsqlConnection connection, ..., CancellationToken cancellationToken);` in that domain's `*Queries` class, marked `[DatabaseCommand]`.
 3. Build — the generator emits the implementation and validates it against the live schema in the integration test suite.
 
+### Sortable keyset queries (`[SortableBy]`)
+
+A report query with user-selectable sort columns adds one `[SortableBy("key", "sql expr")]`
+per column (first declared = default) and must also declare `string? sort` / `string? dir`
+parameters (matched by name; never bound to SQL). Its `.sql` file uses three tokens —
+`__SORT_KEY__` (the sort expression), `__CMP__` (`>` asc / `<` desc, for the keyset row
+comparison), and `__DIR__` (`ASC`/`DESC`) — and the generator emits one command-text constant
+per column per direction plus a `{Method}SortKeys` allowlist set for the UI (`GridState`),
+selecting the variant at runtime from `sort`/`dir`. Every variant is schema-validated by
+`ServerQueryValidationTests`, so a renamed column in any sort expression fails the integration
+suite. Gotchas: sort expressions must match the expression indexes (migration 0104)
+character-for-character; wrap the select-list `sort_key` output in `COALESCE(__SORT_KEY__, '')`
+so its reported nullability is identical in every variant (a bare column reports NOT NULL,
+an expression reports nullable); don't mention token names in `.sql` comments (substitution
+rewrites them). Reference example: `Data/Reporting/ListPorts.sql` + `ListPortsAsync` +
+`PortsApi` (thin wrapper: cursor encode/decode, `SortableColumns` sourced from the generated
+set).
+
 ## Database access rules
 
 - Inject and use `NpgsqlDataSource`; never `new NpgsqlConnection` directly.
