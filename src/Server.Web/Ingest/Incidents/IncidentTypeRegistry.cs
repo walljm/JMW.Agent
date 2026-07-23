@@ -9,8 +9,12 @@ namespace JMW.Discovery.Server.Incidents;
 /// to the fleet) a FactPaths constant, and it shows up on the Dashboard/Recent Activity/Device
 /// History automatically (see docs: "From Noise to Signal" design proposal, §06).
 /// Deliberately NOT covered here (fast-follow, not silently dropped):
-///   service_down          — no single unambiguous "service health" fact path exists yet across
-///                            service types (DNS/HA/CA each expose different signals).
+///   service_down          — moved to ServiceDownSweepService: no single unambiguous "service
+///                            health" fact path exists across service types (a service collector
+///                            that can't reach its target just emits nothing, indistinguishable
+///                            from "briefly not polled this cycle"), so it needs a per-type signal
+///                            (explicit ca_status, else proj_services.updated_at staleness) via
+///                            periodic reconciliation rather than an ingest-triggered evaluator.
 ///   cert_expiring         — moved to CertExpiringSweepService: "expires within 30 days" crosses
 ///                            its threshold as the clock advances, not when a fact value changes,
 ///                            so it needs periodic reconciliation (like agent_offline) rather than

@@ -6,6 +6,18 @@ namespace JMW.Discovery.Server.Queries;
 
 public static partial class ServiceQueries
 {
+    /// <summary>
+    /// Every service's health signal, for the service_down sweep (see ServiceDownSweepService):
+    /// CaStatus when this is a CA service (an explicit "running"/"stopped" signal), else fall back
+    /// to UpdatedAt staleness — every service type touches proj_services on a successful poll.
+    /// </summary>
+    [DatabaseCommand]
+    public static partial IAsyncEnumerable<(string Service, string? Type, string? CaStatus, DateTimeOffset UpdatedAt)>
+        ListServiceHealthAsync(
+            this NpgsqlConnection connection,
+            CancellationToken cancellationToken
+        );
+
     // ── Reporting: Services ─────────────────────────────────────────────────────
 
     /// <summary>

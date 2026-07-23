@@ -118,6 +118,10 @@ builder.Services.AddHostedService<AgentLivenessSweepService>();
 // needs a periodic sweep rather than an IncidentEvaluator hook — see CertExpiringSweepService.
 builder.Services.AddHostedService<CertExpiringSweepService>();
 
+// service_down has no single unambiguous fact path across service types (a service collector
+// that can't reach its target just emits nothing) — see ServiceDownSweepService.
+builder.Services.AddHostedService<ServiceDownSweepService>();
+
 // Forces a staggered full re-collect on agents whose delta cache has gone stale vs. server-side
 // retention, so pruned 'steady' current-state gets refilled before it becomes a permanent hole.
 builder.Services.AddHostedService<DeviceRecollectSweepService>();

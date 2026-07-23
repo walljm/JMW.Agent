@@ -3740,6 +3740,103 @@ public sealed class ServicesApiTests : IAsyncLifetime
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ServiceQueries.ListServiceHealthAsync — service_down sweep's data source
+// ─────────────────────────────────────────────────────────────────────────────
+
+[Collection("Integration")]
+public sealed class ListServiceHealthTests : IAsyncLifetime
+{
+    private readonly IntegrationFixture _fixture;
+
+    public ListServiceHealthTests(IntegrationFixture fixture)
+    {
+        _fixture = fixture;
+    }
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync() => await _fixture.TruncateAsync("proj_service_ca", "proj_services");
+
+    [Fact]
+    public async Task CaService_ReportsCaStatus_RegardlessOfUpdatedAt()
+    {
+        await InsertServiceAsync("ca-1", type: "step-ca", updatedAt: DateTimeOffset.UtcNow.AddDays(-30));
+        await InsertServiceCaAsync("ca-1", "running");
+
+        (string Service, string? Type, string? CaStatus, DateTimeOffset UpdatedAt) row = await Query("ca-1");
+
+        Assert.Equal("running", row.CaStatus);
+    }
+
+    [Fact]
+    public async Task NonCaService_RecentUpdate_HasNoCaStatus()
+    {
+        await InsertServiceAsync("dns-1", type: "technitium-dns", updatedAt: DateTimeOffset.UtcNow);
+
+        (string Service, string? Type, string? CaStatus, DateTimeOffset UpdatedAt) row = await Query("dns-1");
+
+        Assert.Null(row.CaStatus);
+        Assert.True(row.UpdatedAt > DateTimeOffset.UtcNow.AddMinutes(-1));
+    }
+
+    [Fact]
+    public async Task NonCaService_StaleUpdate_SurfacesOldTimestamp()
+    {
+        DateTimeOffset old = DateTimeOffset.UtcNow.AddDays(-2);
+        await InsertServiceAsync("ha-1", type: "home-assistant", updatedAt: old);
+
+        (string Service, string? Type, string? CaStatus, DateTimeOffset UpdatedAt) row = await Query("ha-1");
+
+        Assert.Null(row.CaStatus);
+        Assert.True(Math.Abs((old - row.UpdatedAt).TotalSeconds) < 1);
+    }
+
+    private async Task<(string Service, string? Type, string? CaStatus, DateTimeOffset UpdatedAt)> Query(string service)
+    {
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        await foreach ((string s, string? type, string? caStatus, DateTimeOffset updatedAt) in
+            conn.ListServiceHealthAsync(CancellationToken.None))
+        {
+            if (s == service)
+            {
+                return (s, type, caStatus, updatedAt);
+            }
+        }
+
+        throw new InvalidOperationException($"Service '{service}' not found in ListServiceHealthAsync results.");
+    }
+
+    private async Task InsertServiceAsync(string service, string? type, DateTimeOffset updatedAt)
+    {
+        const string sql = """
+            INSERT INTO proj_services (service, type, updated_at)
+            VALUES (@service, @type, @updatedAt)
+            ON CONFLICT (service) DO UPDATE SET type = EXCLUDED.type, updated_at = EXCLUDED.updated_at
+            """;
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        await using NpgsqlCommand cmd = new(sql, conn);
+        cmd.Parameters.AddWithValue("service", service);
+        cmd.Parameters.AddWithValue("type", (object?)type ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("updatedAt", updatedAt);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private async Task InsertServiceCaAsync(string service, string caStatus)
+    {
+        const string sql = """
+            INSERT INTO proj_service_ca (service, ca_status)
+            VALUES (@service, @caStatus)
+            ON CONFLICT (service) DO UPDATE SET ca_status = EXCLUDED.ca_status
+            """;
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        await using NpgsqlCommand cmd = new(sql, conn);
+        cmd.Parameters.AddWithValue("service", service);
+        cmd.Parameters.AddWithValue("caStatus", caStatus);
+        await cmd.ExecuteNonQueryAsync();
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // TargetQueries — discovery-assisted candidates (E2)
 // ─────────────────────────────────────────────────────────────────────────────
 
