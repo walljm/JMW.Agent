@@ -100,6 +100,90 @@ public sealed class DeviceRegistry
     }
 
     /// <summary>
+    /// Merges devices that were resolved within the SAME collection cycle (one agent request)
+    /// and reported the same interface IP address in their own submitted facts. See ADR-002's
+    /// amendment (2026-07-23): this is safe only because both IP observations are contemporaneous
+    /// — no time gap exists in which a DHCP lease could have been reassigned between them.
+    /// Callers MUST restrict <paramref name="deviceIds" /> to devices actually resolved during the
+    /// current request; this must never be evaluated against historical/projection state, which
+    /// can carry a stale IP forward via COALESCE upserts.
+    /// </summary>
+    public async Task<string?> MergeCorrelatedByIpAsync(
+        IReadOnlyCollection<string> deviceIds,
+        CancellationToken ct = default
+    )
+    {
+        await using NpgsqlConnection conn = await _db.OpenConnectionAsync(ct);
+        return await MergeCorrelatedByIpWithConnectionAsync(conn, deviceIds, ct);
+    }
+
+    /// <summary>Same as <see cref="MergeCorrelatedByIpAsync" /> but reuses an already-open connection.</summary>
+    internal static async Task<string?> MergeCorrelatedByIpWithConnectionAsync(
+        NpgsqlConnection conn,
+        IReadOnlyCollection<string> deviceIds,
+        CancellationToken ct
+    )
+    {
+        if (deviceIds.Count < 2)
+        {
+            return deviceIds.FirstOrDefault();
+        }
+
+        await using NpgsqlTransaction tx = await conn.BeginTransactionAsync(ct);
+        await AcquireResolveLockAsync(conn, tx, ct);
+
+        // Resolve through any alias already recorded — e.g. a different IP group merged one of
+        // these ids away moments earlier in this same request — so a since-deleted device id
+        // never reaches FindOldestDeviceIdAsync/MergeLosersAsync.
+        HashSet<string> canonical = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string id in deviceIds)
+        {
+            canonical.Add(await ResolveAliasWithConnectionAsync(conn, tx, id, ct));
+        }
+
+        if (canonical.Count < 2)
+        {
+            await tx.CommitAsync(ct);
+            return canonical.FirstOrDefault();
+        }
+
+        List<string> ids = [.. canonical];
+        string survivor = await FindOldestDeviceIdAsync(conn, tx, ids, ct);
+        string[] losers = [.. ids.Where(id => id != survivor)];
+
+        await MergeLosersAsync(
+            conn,
+            tx,
+            survivor,
+            losers,
+            actor: "system:ingest",
+            auditAction: "device.auto_merge_ip_same_cycle",
+            auditDetail: new { merged = losers, reason = "same-collection-cycle interface IP overlap" },
+            ct
+        );
+
+        await tx.CommitAsync(ct);
+
+        await RecordMergedChangeEventAsync(conn, survivor, losers, ct);
+        return survivor;
+    }
+
+    private static async Task<string> ResolveAliasWithConnectionAsync(
+        NpgsqlConnection conn,
+        NpgsqlTransaction tx,
+        string deviceId,
+        CancellationToken ct
+    )
+    {
+        await using NpgsqlCommand cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = "SELECT survivor_device_id::text FROM device_aliases WHERE alias_device_id = $1::uuid";
+        cmd.Parameters.Add(Param.Text(deviceId));
+        object? result = await cmd.ExecuteScalarAsync(ct);
+        return result as string ?? deviceId;
+    }
+
+    /// <summary>
     /// Checks whether deviceId is a merged-away alias and returns the survivor's id if so.
     /// Returns the original id when it is not an alias.
     /// </summary>

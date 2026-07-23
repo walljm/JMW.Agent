@@ -38,6 +38,17 @@ public static class FactsEndpoint
     private static readonly string ServiceAddressAttr =
         ServicePaths.Address.Replace("[]", "", StringComparison.Ordinal);
 
+    // Fact paths that represent a device's own directly-observed interface IP — used ONLY to
+    // correlate devices resolved within this same request (ADR-002 amendment, 2026-07-23).
+    // Deliberately does not include any Discovered[]/proj_* projection state: a device "touched"
+    // in this cycle can still carry a stale IP forward via COALESCE, so only facts this exact
+    // request itself asserts are trustworthy for a same-cycle merge.
+    private static readonly HashSet<string> ContemporaneousIpFactPaths = new(StringComparer.Ordinal)
+    {
+        FactPaths.InterfaceIPv4,
+        FactPaths.SshInterfaceIP,
+    };
+
     public static void Map(IEndpointRouteBuilder app)
     {
         app.MapPost("/facts", HandleAsync).RequireRateLimiting("agent-facts");
@@ -146,6 +157,14 @@ public static class FactsEndpoint
         int acceptedBatches = 0;
         HashSet<string> touchedTables = new(StringComparer.Ordinal);
 
+        // Same-collection-cycle IP correlation (ADR-002 amendment, 2026-07-23): devices resolved
+        // in THIS request that report the same interface IP are corroborated as one physical
+        // host — safe because both observations are contemporaneous (one POST), so no
+        // DHCP-reassignment window exists between them. Populated only from facts this request
+        // itself submits; never merged against pre-existing/projection state (see
+        // ContemporaneousIpFactPaths).
+        Dictionary<string, HashSet<string>> ipToDeviceIds = new(StringComparer.Ordinal);
+
         // One connection for all ResolveWithConnectionAsync + StampAgentDevice calls — avoids N+1 opens.
         await using NpgsqlConnection batchConn = await db.OpenConnectionAsync(ct);
 
@@ -245,6 +264,7 @@ public static class FactsEndpoint
                 touchedTables.UnionWith(
                     await pipeline.IngestAsync(rewrittenFacts, ct)
                 );
+                CollectContemporaneousIps(rewrittenFacts, deviceId, ipToDeviceIds);
             }
 
             // Stamp the resolved device_id onto the agent record (first batch only — no-op after that).
@@ -255,6 +275,17 @@ public static class FactsEndpoint
 
             resolvedDevices.Add(new ResolvedDevice(fingerprintsHash, deviceId, isNew));
             acceptedBatches++;
+        }
+
+        // Merge devices that surfaced the same interface IP within this same request (see
+        // ipToDeviceIds above / ADR-002 amendment). Runs before the materializer pass below so it
+        // sees already-consistent device/fingerprint state rather than racing it.
+        foreach (HashSet<string> sameIpDeviceIds in ipToDeviceIds.Values)
+        {
+            if (sameIpDeviceIds.Count > 1)
+            {
+                await DeviceRegistry.MergeCorrelatedByIpWithConnectionAsync(batchConn, sameIpDeviceIds, ct);
+            }
         }
 
         // Post-ingest discovery pass — run after all readers are closed. Only when this batch
@@ -323,6 +354,42 @@ public static class FactsEndpoint
                 ct
             )
             .ExecuteAsync(ct);
+    }
+
+    /// <summary>
+    /// Records (ip -&gt; deviceId) for every interface-IP fact in a just-resolved batch element's
+    /// own facts, so same-cycle IP overlaps across devices in this request can be merged
+    /// afterward (ADR-002 amendment, 2026-07-23). Strips a CIDR suffix (InterfaceIPv4 carries
+    /// "192.168.1.5/24") down to the bare address so it matches a bare-IP observation.
+    /// </summary>
+    private static void CollectContemporaneousIps(
+        List<Fact> facts,
+        string deviceId,
+        Dictionary<string, HashSet<string>> ipToDeviceIds
+    )
+    {
+        foreach (Fact fact in facts)
+        {
+            if (!ContemporaneousIpFactPaths.Contains(fact.AttributePath))
+            {
+                continue;
+            }
+
+            string? raw = fact.Value.AsString();
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                continue;
+            }
+
+            string ip = raw.Split('/')[0];
+            if (!ipToDeviceIds.TryGetValue(ip, out HashSet<string>? deviceIds))
+            {
+                deviceIds = new HashSet<string>(StringComparer.Ordinal);
+                ipToDeviceIds[ip] = deviceIds;
+            }
+
+            deviceIds.Add(deviceId);
+        }
     }
 
     /// <summary>

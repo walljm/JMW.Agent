@@ -420,6 +420,83 @@ public sealed class DeviceRegistryTests : IAsyncLifetime
         Assert.Equal(survivorId.ToString(), resolved);
     }
 
+    // ── Same-cycle IP correlation (ADR-002 amendment, 2026-07-23) ──────────────
+
+    [Fact]
+    public async Task MergeCorrelatedByIpAsync_TwoDevices_MergesOldestSurvives()
+    {
+        Guid olderId = await _fixture.InsertDeviceAsync("managed", createdAt: DateTimeOffset.UtcNow.AddHours(-2));
+        Guid newerId = await _fixture.InsertDeviceAsync("managed", createdAt: DateTimeOffset.UtcNow.AddHours(-1));
+
+        // Distinct fingerprint types — these two would never merge via ordinary fingerprint
+        // overlap (FindMatchingDeviceIdsAsync); only the same-cycle IP signal links them.
+        await _fixture.InsertFingerprintAsync(olderId, FingerprintType.Mac, "00aabbcc3001");
+        await _fixture.InsertFingerprintAsync(newerId, FingerprintType.SshHostKey, "sha256:same-cycle-test");
+
+        string? survivorId = await _registry.MergeCorrelatedByIpAsync([olderId.ToString(), newerId.ToString()]);
+
+        Assert.Equal(olderId.ToString(), survivorId);
+
+        long aliasCount = await _fixture.CountAsync(
+            "device_aliases",
+            $"alias_device_id = '{newerId}' AND survivor_device_id = '{olderId}'"
+        );
+        Assert.Equal(1, aliasCount);
+
+        long fpCount = await _fixture.CountAsync("device_fingerprints", $"device_id::text = '{olderId}'");
+        Assert.Equal(2, fpCount);
+
+        long changeEventCount = await _fixture.CountAsync(
+            "change_events",
+            $"event_type = 'merged' AND entity_kind = 'device' AND entity_id = '{olderId}'"
+        );
+        Assert.Equal(1, changeEventCount);
+    }
+
+    [Fact]
+    public async Task MergeCorrelatedByIpAsync_SingleDevice_NoOp()
+    {
+        Guid id = await _fixture.InsertDeviceAsync("managed");
+        await _fixture.InsertFingerprintAsync(id, FingerprintType.Mac, "00aabbcc3002");
+
+        string? result = await _registry.MergeCorrelatedByIpAsync([id.ToString()]);
+
+        Assert.Equal(id.ToString(), result);
+        Assert.Equal(0, await _fixture.CountAsync("device_aliases", $"alias_device_id = '{id}'"));
+    }
+
+    [Fact]
+    public async Task MergeCorrelatedByIpAsync_AlreadyAliasedId_ResolvesThroughAliasFirst()
+    {
+        // Simulates a device id merged away by a DIFFERENT IP group earlier in the same request —
+        // MergeCorrelatedByIpAsync must resolve it to its current survivor before merging
+        // further, rather than operating on a since-deleted devices row.
+        Guid survivorId = await _fixture.InsertDeviceAsync("managed", createdAt: DateTimeOffset.UtcNow.AddHours(-3));
+        Guid mergedAwayId = await _fixture.InsertDeviceAsync("managed", createdAt: DateTimeOffset.UtcNow.AddHours(-2));
+        Guid thirdId = await _fixture.InsertDeviceAsync("managed", createdAt: DateTimeOffset.UtcNow.AddHours(-1));
+
+        await _fixture.InsertFingerprintAsync(survivorId, FingerprintType.Mac, "00aabbcc3003");
+        await _fixture.InsertFingerprintAsync(mergedAwayId, FingerprintType.Mac, "00aabbcc3004");
+        await _fixture.InsertFingerprintAsync(thirdId, FingerprintType.SshHostKey, "sha256:alias-chain-test");
+
+        // Pre-merge mergedAwayId into survivorId (a prior IP group in the same pass).
+        await _registry.MergeCorrelatedByIpAsync([survivorId.ToString(), mergedAwayId.ToString()]);
+
+        // Now merge the (already-merged-away) mergedAwayId's id together with thirdId.
+        string? finalSurvivor = await _registry.MergeCorrelatedByIpAsync(
+            [mergedAwayId.ToString(), thirdId.ToString()]
+        );
+
+        Assert.Equal(survivorId.ToString(), finalSurvivor);
+        Assert.Equal(
+            1,
+            await _fixture.CountAsync(
+                "device_aliases",
+                $"alias_device_id = '{thirdId}' AND survivor_device_id = '{survivorId}'"
+            )
+        );
+    }
+
     // ── Invalid fingerprints ──────────────────────────────────────────────────
 
     [Fact]
