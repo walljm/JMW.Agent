@@ -180,8 +180,42 @@
     <script src="/js/topology-graph.js" asp-append-version="true"></script>
     <script>
         // Layout mode + chosen root nodes are navigation state, so they live in the URL
-        // (l3layout/l3roots, l2layout/l2roots) — bookmarkable, shareable, refresh-safe.
+        // (l3layout/l3roots, l2layout/l2roots) — bookmarkable, shareable, refresh-safe. Manually
+        // dragged node positions are a per-user preference instead (potentially many entries with
+        // float coordinates — not a good fit for a shareable URL), saved server-side the same way
+        // column-reorder.js persists column order, keyed by the graph's stable node ids so a saved
+        // position still lands on the same physical entity after a rebuild.
         const GRAPH_KEYS = { 'topology-graph': 'l3', 'l2-graph': 'l2' };
+        const posMeta = document.querySelector('meta[name="csrf-token"]');
+        const POS_CSRF = posMeta ? posMeta.content : '';
+        const posSaveTimers = {};
+
+        function positionsPrefKey(graphId) {
+            return 'topo-pos:' + GRAPH_KEYS[graphId];
+        }
+
+        async function loadPositions(graphId) {
+            try {
+                const resp = await fetch('/api/v1/preferences/' + encodeURIComponent(positionsPrefKey(graphId)));
+                if (!resp.ok) return {};
+                const body = await resp.json();
+                return body && typeof body.positions === 'object' && body.positions !== null ? body.positions : {};
+            } catch {
+                return {};
+            }
+        }
+
+        function savePositions(graphId, positions) {
+            const key = positionsPrefKey(graphId);
+            if (posSaveTimers[key]) clearTimeout(posSaveTimers[key]);
+            posSaveTimers[key] = setTimeout(function () {
+                fetch('/api/v1/preferences/' + encodeURIComponent(key), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': POS_CSRF },
+                    body: JSON.stringify({ positions: positions }),
+                });
+            }, 500);
+        }
 
         function readGraphState(graphId) {
             const key = GRAPH_KEYS[graphId];
@@ -208,6 +242,9 @@
                 url.searchParams.delete(key + 'roots');
             }
             history.replaceState(null, '', url);
+            if (state.positions != null) {
+                savePositions(graphId, state.positions);
+            }
             syncGraphControls(graphId, state);
         }
 
@@ -240,21 +277,21 @@
             window.resetTopologyRoots(graphId);
         }
 
-        (function () {
-            ['topology-graph', 'l2-graph'].forEach((graphId) => {
-                const el = document.getElementById(graphId);
-                if (el == null) {
-                    return;
-                }
-                const state = readGraphState(graphId);
-                renderTopologyGraph(graphId, JSON.parse(el.dataset.graph || '{}'), {
-                    layout: state.layout,
-                    roots: state.roots,
-                    onStateChange: (s) => writeGraphState(graphId, s),
-                });
-                syncGraphControls(graphId, state);
+        ['topology-graph', 'l2-graph'].forEach(async (graphId) => {
+            const el = document.getElementById(graphId);
+            if (el == null) {
+                return;
+            }
+            const state = readGraphState(graphId);
+            const positions = await loadPositions(graphId);
+            renderTopologyGraph(graphId, JSON.parse(el.dataset.graph || '{}'), {
+                layout: state.layout,
+                roots: state.roots,
+                positions: positions,
+                onStateChange: (s) => writeGraphState(graphId, s),
             });
-        })();
+            syncGraphControls(graphId, state);
+        });
 
         const TABS = ['topology', 'l2', 'list'];
 

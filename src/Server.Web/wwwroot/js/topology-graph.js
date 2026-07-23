@@ -124,13 +124,16 @@
         }
     }
 
-    // Notify the host page that the interactive state (layout mode / chosen roots) changed,
-    // so it can persist it (e.g. to the URL) and sync its toolbar controls.
+    // Notify the host page that the interactive state (layout mode / chosen roots / manually
+    // dragged node positions) changed, so it can persist it and sync its toolbar controls.
+    // Positions are keyed by the graph's stable node ids (see SubnetsApi.GetGraphAsync), so a
+    // saved position still lands on the same physical entity after a rebuild.
     function fireState(container) {
         if (typeof container.__topoOnState === 'function') {
             container.__topoOnState({
                 layout: container.__topoLayout === 'hier' ? 'hier' : 'force',
                 roots: Array.from(container.__topoRoots || []),
+                positions: Object.assign({}, container.__topoPositions || {}),
             });
         }
     }
@@ -144,13 +147,16 @@
 
         // Stash everything so the resize observer can redraw on tab reveal / resize without the
         // page re-supplying it. Options are only applied when present, so an option-less redraw
-        // (e.g. the fullscreen toggle) preserves the current layout, roots, and callback.
+        // (e.g. the fullscreen toggle) preserves the current layout, roots, positions, and callback.
         container.__topoGraph = graph;
         if (options.layout) {
             container.__topoLayout = options.layout === 'hier' ? 'hier' : 'force';
         }
         if (options.roots) {
             container.__topoRoots = new Set(options.roots);
+        }
+        if (options.positions) {
+            container.__topoPositions = Object.assign({}, options.positions);
         }
         if (typeof options.onStateChange === 'function') {
             container.__topoOnState = options.onStateChange;
@@ -360,6 +366,19 @@
         container.__topoWidth = width; // so the resize observer ignores our own height change
 
         const nodes = graph.nodes.map((n) => Object.assign({}, n));
+        // Restore any manually dragged position (force mode only — hier mode's layoutHierarchy
+        // below unconditionally overwrites x/y/fx/fy for every node, so seeding here is harmless
+        // either way). Positions are keyed by the stable node id, not by array position.
+        const savedPositions = container.__topoPositions || {};
+        nodes.forEach((n) => {
+            const pos = savedPositions[n.id];
+            if (pos) {
+                n.x = pos.x;
+                n.y = pos.y;
+                n.fx = pos.x;
+                n.fy = pos.y;
+            }
+        });
         const nodeById = new Map(nodes.map((n) => [n.id, n]));
         const links = graph.edges
             .filter((e) => nodeById.has(e.fromId) && nodeById.has(e.toId))
@@ -576,6 +595,13 @@
             function dragended(event, d) {
                 if (simulation && !event.active) simulation.alphaTarget(0);
                 // Sticky: leave fx/fy set so a positioned node stays put. Double-click to release.
+                // Force mode only — a hier-mode drag is a one-off nudge, not a saved arrangement
+                // (the next redraw recomputes fixed layered positions regardless).
+                if (simulation) {
+                    if (!container.__topoPositions) container.__topoPositions = {};
+                    container.__topoPositions[d.id] = { x: d.fx, y: d.fy };
+                    fireState(container);
+                }
             }
 
             return d3.drag()
@@ -591,6 +617,10 @@
             }
             d.fx = null;
             d.fy = null;
+            if (container.__topoPositions && d.id in container.__topoPositions) {
+                delete container.__topoPositions[d.id];
+                fireState(container);
+            }
             simulation.alphaTarget(0.3).restart();
             setTimeout(() => simulation.alphaTarget(0), 300);
         });
