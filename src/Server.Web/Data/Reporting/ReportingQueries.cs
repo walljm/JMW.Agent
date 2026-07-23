@@ -95,6 +95,36 @@ public static partial class ReportingQueries
             CancellationToken cancellationToken
         );
 
+    // ── Reporting: Interfaces ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Lists network interfaces across the fleet, joined to the host's hostname, with optional
+    /// search and keyset pagination ordered by (sort key, device, interface). The hostname sort
+    /// key lives on proj_devices (the resolved identity column, context-derivations.md §3.3);
+    /// speed sorts on a zero-padded text form of speed_bps (0108 index) so the all-text cursor
+    /// tuple stays comparable. SortKey is the SQL-computed sort expression for the row, used
+    /// verbatim for the next-page cursor.
+    /// </summary>
+    [DatabaseCommand]
+    [SortableBy("hostname", "coalesce(pdv.hostname, '')")]
+    [SortableBy("name", "coalesce(i.name, '')")]
+    [SortableBy("speed", "coalesce(lpad(i.speed_bps::text, 20, '0'), '')")]
+    public static partial
+        IAsyncEnumerable<(string Device, string? Hostname, string? Name, string? MacAddress, string? ObscuredMac,
+            string? Oui, string? OuiCountry, string? Ipv4, string? Ipv6, long? Mtu, bool? Up, bool? Loopback,
+            long? SpeedBps, string? Duplex, string? Type, string Interface, string? SortKey, string? FriendlyName)>
+        ListInterfacesAsync(
+            this NpgsqlConnection connection,
+            string? search,
+            string? afterSortKey,
+            string? afterDevice,
+            string? afterInterface,
+            int limit,
+            string? sort,
+            string? dir,
+            CancellationToken cancellationToken
+        );
+
     // ── Reporting: Hardware Components ──────────────────────────────────────────
 
     /// <summary>

@@ -1,4 +1,5 @@
 using JMW.Discovery.Server.Data;
+using JMW.Discovery.Server.Queries;
 
 using Npgsql;
 
@@ -10,22 +11,19 @@ public static class InterfacesApi
     public const int DefaultLimit = 100;
     public const int MaxLimit = 500;
 
-    // hostname sorts on proj_devices' resolved identity column (context-derivations.md §3.3) —
-    // pdv can DRIVE the plan through proj_devices_hostname_sort_idx, which a LEFT-JOINed
-    // proj_systems.hostname never could. speed stays on the driving interface table (0104 index).
-    private static readonly Dictionary<string, string> SortExpressions =
-        new(StringComparer.Ordinal)
-        {
-            ["hostname"] = "coalesce(pdv.hostname, '')",
-            ["name"] = "coalesce(i.name, '')",
-            ["speed"] = "coalesce(i.speed_bps, -1)",
-        };
-
+    /// <summary>Must match the first [SortableBy] key on ReportingQueries.ListInterfacesAsync —
+    /// the generated command text falls back to that column for an unrecognized sort.</summary>
     public const string DefaultSort = "hostname";
 
-    public static readonly IReadOnlySet<string> SortableColumns = SortExpressions.Keys.ToHashSet(StringComparer.Ordinal);
+    /// <summary>
+    /// Columns the interface list may be sorted by — hostname rides proj_devices' resolved
+    /// identity column, name/speed the driving interface table (speed via the 0108 zero-padded
+    /// text index). Sourced from the generated [SortableBy] allowlist so the UI cannot drift
+    /// from the validated SQL variants.
+    /// </summary>
+    public static readonly IReadOnlySet<string> SortableColumns = ReportingQueries.ListInterfacesAsyncSortKeys;
 
-    public static bool IsSortable(string? sort) => sort is not null && SortExpressions.ContainsKey(sort);
+    public static bool IsSortable(string? sort) => sort is not null && SortableColumns.Contains(sort);
 
     public static void Map(IEndpointRouteBuilder app)
     {
@@ -63,89 +61,49 @@ public static class InterfacesApi
         string? dir = null
     )
     {
-        string sortKeyCol = sort is not null && SortExpressions.TryGetValue(sort, out string? expr)
-            ? expr
-            : SortExpressions[DefaultSort];
-        bool descending = string.Equals(dir, "desc", StringComparison.OrdinalIgnoreCase);
-        string cmp = descending ? "<" : ">";
-        string direction = descending ? "DESC" : "ASC";
-        // Decomposed keyset cursor for the cross-table hostname sort — see ComponentsApi.
-        string prefixCmp = descending ? "<=" : ">=";
-        string cursorPrefix = string.Equals(sortKeyCol, SortExpressions["hostname"], StringComparison.Ordinal)
-            ? $"(({sortKeyCol}, pdv.device) {prefixCmp} ($2, $3)) AND "
-            : string.Empty;
-
-        // JOIN proj_devices is safe (never drops rows): every device has a proj_devices row
-        // from creation (DeviceRegistry.CreateDeviceAsync + the context engine's backfill).
-        string sql = $"""
-            SELECT
-                i.device, s.hostname, i.name, i.mac_address, i.obscured_mac,
-                -- Obscured MACs (Google Wifi/OnHub firmware) preserve only the real OUI (first 6
-                -- hex nibbles); the rest is fabricated. When there's no reconstructed real MAC,
-                -- fall back to just that trustworthy prefix (same idiom as DeviceListApi.QueryAsync).
-                COALESCE(
-                    oui_vendor(i.mac_address),
-                    oui_vendor(left(regexp_replace(lower(i.obscured_mac), '[^0-9a-f]', '', 'g'), 6))
-                ) AS oui,
-                COALESCE(
-                    oui_country(i.mac_address),
-                    oui_country(left(regexp_replace(lower(i.obscured_mac), '[^0-9a-f]', '', 'g'), 6))
-                ) AS oui_country,
-                i.ipv4, i.ipv6, i.mtu, i.up, i.loopback, i.speed_bps, i.duplex, i.type,
-                i.interface,
-                {sortKeyCol} AS sort_key,
-                COALESCE(s.friendly_name, s.hostname) AS friendly_name
-            FROM proj_interfaces i
-                JOIN proj_devices pdv ON pdv.device = i.device
-                LEFT JOIN proj_systems s ON s.device = i.device
-            WHERE ($1::text IS NULL OR COALESCE(s.hostname, '') ILIKE '%' || $1 || '%'
-                    OR COALESCE(i.name, '') ILIKE '%' || $1 || '%'
-                    OR COALESCE(i.ipv4, '') ILIKE '%' || $1 || '%')
-              AND ($2::text IS NULL OR ({cursorPrefix}(({sortKeyCol}, i.device, i.interface) {cmp} ($2, $3, $4))))
-            ORDER BY {sortKeyCol} {direction}, i.device {direction}, i.interface {direction}
-            LIMIT $5
-            """;
-
-        await using NpgsqlConnection conn = await db.OpenConnectionAsync(ct);
-        await using NpgsqlCommand cmd = new(sql, conn);
-        cmd.Parameters.Add(Param.Text(string.IsNullOrWhiteSpace(search) ? null : search));
-        cmd.Parameters.Add(Param.Text(afterSortKey));
-        cmd.Parameters.Add(Param.Text(afterDevice));
-        cmd.Parameters.Add(Param.Text(afterInterface));
-        cmd.Parameters.Add(Param.Integer(limit + 1));
-
         List<InterfaceListItem> items = new();
+        // sortKeys[i] is the SQL-computed sort expression for items[i] — used verbatim for the
+        // cursor so it always matches the keyset comparison (no C#-side re-derivation to drift).
         List<string> sortKeys = new();
         List<(string Device, string Interface)> tiebreakers = new();
-        await using (NpgsqlDataReader reader = await cmd.ExecuteReaderAsync(ct))
+
+        await using NpgsqlConnection conn = await db.OpenConnectionAsync(ct);
+        await foreach ((string device, string? hostname, string? name, string? macAddress, string? obscuredMac,
+            string? oui, string? ouiCountry, string? ipv4, string? ipv6, long? mtu, bool? up, bool? loopback,
+            long? speedBps, string? duplex, string? type, string ifaceKey, string? sortKey, string? friendlyName)
+            in conn.ListInterfacesAsync(
+                string.IsNullOrWhiteSpace(search) ? null : search,
+                afterSortKey,
+                afterDevice,
+                afterInterface,
+                limit + 1,
+                sort,
+                dir,
+                ct
+            ))
         {
-            while (await reader.ReadAsync(ct))
-            {
-                string device = reader.GetString(0);
-                string ifaceKey = reader.GetString(15);
-                items.Add(
-                    new InterfaceListItem(
-                        Device: device,
-                        Hostname: GetStr(reader, 1),
-                        Name: GetStr(reader, 2),
-                        MacAddress: GetStr(reader, 3),
-                        ObscuredMac: GetStr(reader, 4),
-                        Oui: GetStr(reader, 5),
-                        OuiCountry: GetStr(reader, 6),
-                        Ipv4: GetStr(reader, 7),
-                        Ipv6: GetStr(reader, 8),
-                        Mtu: reader.IsDBNull(9) ? null : reader.GetInt64(9),
-                        Up: reader.IsDBNull(10) ? null : reader.GetBoolean(10),
-                        Loopback: reader.IsDBNull(11) ? null : reader.GetBoolean(11),
-                        SpeedBps: reader.IsDBNull(12) ? null : reader.GetInt64(12),
-                        Duplex: GetStr(reader, 13),
-                        Type: GetStr(reader, 14),
-                        FriendlyName: GetStr(reader, 17)
-                    )
-                );
-                sortKeys.Add(GetStr(reader, 16) ?? string.Empty);
-                tiebreakers.Add((device, ifaceKey));
-            }
+            items.Add(
+                new InterfaceListItem(
+                    Device: device,
+                    Hostname: hostname,
+                    Name: name,
+                    MacAddress: macAddress,
+                    ObscuredMac: obscuredMac,
+                    Oui: oui,
+                    OuiCountry: ouiCountry,
+                    Ipv4: ipv4,
+                    Ipv6: ipv6,
+                    Mtu: mtu,
+                    Up: up,
+                    Loopback: loopback,
+                    SpeedBps: speedBps,
+                    Duplex: duplex,
+                    Type: type,
+                    FriendlyName: friendlyName
+                )
+            );
+            sortKeys.Add(sortKey ?? string.Empty);
+            tiebreakers.Add((device, ifaceKey));
         }
 
         string? nextCursor = null;
@@ -160,9 +118,6 @@ public static class InterfacesApi
 
         return (items, nextCursor);
     }
-
-    private static string? GetStr(NpgsqlDataReader reader, int ordinal) =>
-        reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
 }
 
 public sealed record InterfaceListItem(

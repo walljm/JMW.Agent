@@ -28,7 +28,13 @@ public sealed class ReportPlanTests : IAsyncLifetime
         // Clear leftovers from earlier classes in the collection first: the seed below inserts
         // proj_devices/component rows for EVERY devices row, so a stray device with an existing
         // proj_devices row would fail the whole seed on its PK.
-        await _fx.TruncateAsync("proj_hardware_inventory", "proj_devices", "device_fingerprints", "devices");
+        await _fx.TruncateAsync(
+            "proj_interfaces",
+            "proj_hardware_inventory",
+            "proj_devices",
+            "device_fingerprints",
+            "devices"
+        );
 
         await using NpgsqlConnection conn = await _fx.DataSource.OpenConnectionAsync();
         await using NpgsqlCommand cmd = conn.CreateCommand();
@@ -51,13 +57,18 @@ public sealed class ReportPlanTests : IAsyncLifetime
             SELECT device_id::text, 'comp-' || s, 'disk'
             FROM devices, generate_series(1, 2) s;
 
+            INSERT INTO proj_interfaces (device, interface, name, speed_bps)
+            SELECT device_id::text, 'if-' || s, 'eth' || s, s * 1000000000::bigint
+            FROM devices, generate_series(1, 2) s;
+
             ANALYZE devices; ANALYZE proj_devices; ANALYZE proj_hardware_inventory;
+            ANALYZE proj_interfaces;
             """;
         await cmd.ExecuteNonQueryAsync();
     }
 
     public async Task DisposeAsync() =>
-        await _fx.TruncateAsync("proj_hardware_inventory", "proj_devices", "devices");
+        await _fx.TruncateAsync("proj_interfaces", "proj_hardware_inventory", "proj_devices", "devices");
 
     /// <summary>
     /// EXPLAINs the query in its first-page shape: every parameter substituted with NULL (the
@@ -111,5 +122,23 @@ public sealed class ReportPlanTests : IAsyncLifetime
         string plan = await FirstPagePlanAsync(ReportingQueries.ListComponentsAsyncCommandText("class", dir: null));
 
         Assert.Contains("proj_hardware_inventory_class_sort_idx", plan, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Interfaces_HostnameSort_DrivesFromProjDevicesIndex()
+    {
+        string plan = await FirstPagePlanAsync(ReportingQueries.ListInterfacesAsyncCommandText("hostname", dir: null));
+
+        Assert.Contains("proj_devices_hostname_sort_idx", plan, StringComparison.Ordinal);
+    }
+
+    // Pins the 0108 zero-padded text speed index — the bigint predecessor could never serve the
+    // all-text keyset cursor (the sort itself was broken until the [SortableBy] migration).
+    [Fact]
+    public async Task Interfaces_SpeedSort_UsesDrivingTableExpressionIndex()
+    {
+        string plan = await FirstPagePlanAsync(ReportingQueries.ListInterfacesAsyncCommandText("speed", dir: null));
+
+        Assert.Contains("proj_interfaces_speed_text_sort_idx", plan, StringComparison.Ordinal);
     }
 }
