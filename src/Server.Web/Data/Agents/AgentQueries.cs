@@ -54,8 +54,60 @@ public static partial class AgentQueries
     );
 
     // ── Admin: Agents ─────────────────────────────────────────────────────────
-    // Hand-built in AgentsApi.QueryAsync — its ORDER BY / keyset cursor are chosen dynamically
-    // from a sortable-column allowlist, which a static [DatabaseCommand] can't express.
+
+    /// <summary>
+    /// The Fleet agent list, created_at-primary (the default sort). Split from
+    /// <see cref="ListAgentsByStatusAsync" /> because the cursor's first element is a real
+    /// timestamptz here (never formatted to text, so the comparison stays index-driven —
+    /// agents_keyset_idx) but text there, and a bind parameter has exactly one type per
+    /// command. AgentsApi.QueryAsync picks the command from the requested sort. Liveness is
+    /// a computed expression (nullable in the reported schema, never null in practice).
+    /// </summary>
+    [DatabaseCommand]
+    [SortableBy("created_at", "created_at")]
+    public static partial
+        IAsyncEnumerable<(Guid AgentId, string Hostname, string Status, DateTimeOffset? LastHeartbeat, string? Zone,
+            string? Version, string? PassiveDiscoveryMode, string? Os, string? Arch, string? IpAddress,
+            Guid? DeviceId, DateTimeOffset CreatedAt, string? Liveness)> ListAgentsByCreatedAtAsync(
+            this NpgsqlConnection connection,
+            string? status,
+            string? zone,
+            string? version,
+            string? liveness,
+            string? search,
+            DateTimeOffset? afterSortKey,
+            DateTimeOffset? afterCreatedAt,
+            string? afterAgentId,
+            int limit,
+            string? sort,
+            string? dir,
+            CancellationToken cancellationToken
+        );
+
+    /// <summary>
+    /// The Fleet agent list, status-primary — the text-cursor twin of
+    /// <see cref="ListAgentsByCreatedAtAsync" /> (covered by agents_status_sort_idx).
+    /// </summary>
+    [DatabaseCommand]
+    [SortableBy("status", "status")]
+    public static partial
+        IAsyncEnumerable<(Guid AgentId, string Hostname, string Status, DateTimeOffset? LastHeartbeat, string? Zone,
+            string? Version, string? PassiveDiscoveryMode, string? Os, string? Arch, string? IpAddress,
+            Guid? DeviceId, DateTimeOffset CreatedAt, string? Liveness)> ListAgentsByStatusAsync(
+            this NpgsqlConnection connection,
+            string? status,
+            string? zone,
+            string? version,
+            string? liveness,
+            string? search,
+            string? afterSortKey,
+            DateTimeOffset? afterCreatedAt,
+            string? afterAgentId,
+            int limit,
+            string? sort,
+            string? dir,
+            CancellationToken cancellationToken
+        );
 
     /// <summary>
     /// Sets an agent's status to 'approved' and returns its agent_id.

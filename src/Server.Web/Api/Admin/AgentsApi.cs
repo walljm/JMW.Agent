@@ -23,26 +23,23 @@ public static class AgentsApi
     /// existing <c>agents_keyset_idx (created_at DESC, agent_id)</c>. One cursor shape —
     /// (sort_key, created_at, agent_id) — covers every sort; created_at is always the tiebreaker
     /// (kept as a real timestamptz throughout, never formatted to text, so the comparison stays
-    /// index-driven regardless of which column is primary).
+    /// index-driven regardless of which column is primary). The two sorts are separate generated
+    /// commands (the cursor's primary element is timestamptz vs text) — this allowlist is the
+    /// union of their generated [SortableBy] sets so the UI cannot drift from the validated SQL.
     /// </summary>
-    private static readonly Dictionary<string, string> SortExpressions =
-        new(StringComparer.Ordinal)
-        {
-            ["created_at"] = "created_at",
-            ["status"] = "status",
-        };
+    public static readonly IReadOnlySet<string> SortableColumns =
+        AgentQueries.ListAgentsByCreatedAtAsyncSortKeys
+            .Concat(AgentQueries.ListAgentsByStatusAsyncSortKeys)
+            .ToHashSet(StringComparer.Ordinal);
 
     public const string DefaultSort = "created_at";
     public const string DefaultDir = "desc";
 
-    /// <summary>Fixed liveness values — matches the CASE branches computed in QueryAsync
-    /// (and duplicated in GetAgentHealthSummary.sql / GetAgentHealthList.sql).</summary>
+    /// <summary>Fixed liveness values — matches the CASE branches computed by agent_liveness()
+    /// (see ListAgentsByCreatedAt.sql / GetAgentHealthSummary.sql / GetAgentHealthList.sql).</summary>
     public static readonly IReadOnlyList<string> LivenessValues = ["online", "stale", "offline"];
 
-    public static readonly IReadOnlySet<string> SortableColumns =
-        SortExpressions.Keys.ToHashSet(StringComparer.Ordinal);
-
-    public static bool IsSortable(string? sort) => sort is not null && SortExpressions.ContainsKey(sort);
+    public static bool IsSortable(string? sort) => sort is not null && SortableColumns.Contains(sort);
 
     public static void Map(IEndpointRouteBuilder app)
     {
@@ -119,62 +116,49 @@ public static class AgentsApi
         string? dir = null
     )
     {
-        string sortKeyCol = sort is not null && SortExpressions.TryGetValue(sort, out string? expr)
-            ? expr
-            : SortExpressions[DefaultSort];
+        // This list defaults to descending (newest agents first) — anything but an explicit
+        // "asc" flips to "desc" before reaching the generated command, whose own convention is
+        // ascending unless dir equals "desc".
         bool descending = !string.Equals(dir, "asc", StringComparison.OrdinalIgnoreCase);
-        string cmp = descending ? "<" : ">";
-        string direction = descending ? "DESC" : "ASC";
-        bool sortingByCreatedAt = string.Equals(sortKeyCol, "created_at", StringComparison.Ordinal);
-        // created_at is always the second tuple element (tiebreaker for a "status" primary sort,
-        // the same column as the primary when sorting by created_at itself) — its own SQL type
-        // never varies, only the primary slot's does, so only $6 needs a dynamic cast.
-        string sortKeyParamCast = sortingByCreatedAt ? "timestamptz" : "text";
-
-        // Liveness derived by agent_liveness() (see migration 0056_agent_liveness_settings.sql) —
-        // the single definition shared by GetAgentHealthSummary.sql / GetAgentHealthList.sql.
-        string sql = $"""
-            WITH agents_with_liveness AS (
-                SELECT
-                    agent_id, hostname, status, last_heartbeat, zone, version, passive_discovery_mode,
-                    os, arch, ip_address, device_id, created_at,
-                    agent_liveness(last_heartbeat, heartbeat_interval_secs) AS liveness
-                FROM agents
-            )
-            SELECT
-                agent_id, hostname, status, last_heartbeat, zone, version, passive_discovery_mode,
-                os, arch, ip_address, device_id, created_at, liveness
-            FROM agents_with_liveness
-            WHERE ($1::text IS NULL OR status = $1)
-              AND ($2::text IS NULL OR zone = $2)
-              AND ($3::text IS NULL OR version = $3)
-              AND ($4::text IS NULL OR liveness = $4)
-              AND ($5::text IS NULL OR hostname ILIKE '%' || $5 || '%' OR ip_address ILIKE '%' || $5 || '%')
-              AND ($8::text IS NULL
-                    OR (({sortKeyCol}, created_at, agent_id::text) {cmp} ($6::{sortKeyParamCast}, $7::timestamptz, $8)))
-            ORDER BY {sortKeyCol} {direction}, created_at {direction}, agent_id::text {direction}
-            LIMIT $9
-            """;
+        string normalizedDir = descending ? "desc" : "asc";
+        bool sortingByCreatedAt = !string.Equals(sort, "status", StringComparison.Ordinal);
 
         await using NpgsqlConnection conn = await db.OpenConnectionAsync(ct);
-        await using NpgsqlCommand cmd = new(sql, conn);
-        cmd.Parameters.Add(Param.Text(status));
-        cmd.Parameters.Add(Param.Text(zone));
-        cmd.Parameters.Add(Param.Text(version));
-        cmd.Parameters.Add(Param.Text(liveness));
-        cmd.Parameters.Add(Param.Text(string.IsNullOrWhiteSpace(q) ? null : q));
-        if (sortingByCreatedAt)
-        {
-            cmd.Parameters.Add(Param.NullableTimestampTz(ParseCursorTimestamp(afterSortKey)));
-        }
-        else
-        {
-            cmd.Parameters.Add(Param.Text(afterSortKey));
-        }
 
-        cmd.Parameters.Add(Param.NullableTimestampTz(ParseCursorTimestamp(afterCreatedAt)));
-        cmd.Parameters.Add(Param.Text(afterAgentId));
-        cmd.Parameters.Add(Param.Integer(limit + 1));
+        // The two sorts are separate generated commands because the cursor's primary element is
+        // a real timestamptz for created_at (never formatted to text, so the comparison stays
+        // index-driven) but text for status. Same row shape, so either feeds the loop below.
+        IAsyncEnumerable<(Guid AgentId, string Hostname, string Status, DateTimeOffset? LastHeartbeat, string? Zone,
+            string? Version, string? PassiveDiscoveryMode, string? Os, string? Arch, string? IpAddress,
+            Guid? DeviceId, DateTimeOffset CreatedAt, string? Liveness)> rows = sortingByCreatedAt
+            ? conn.ListAgentsByCreatedAtAsync(
+                status,
+                zone,
+                version,
+                liveness,
+                string.IsNullOrWhiteSpace(q) ? null : q,
+                ParseCursorTimestamp(afterSortKey),
+                ParseCursorTimestamp(afterCreatedAt),
+                afterAgentId,
+                limit + 1,
+                "created_at",
+                normalizedDir,
+                ct
+            )
+            : conn.ListAgentsByStatusAsync(
+                status,
+                zone,
+                version,
+                liveness,
+                string.IsNullOrWhiteSpace(q) ? null : q,
+                afterSortKey,
+                ParseCursorTimestamp(afterCreatedAt),
+                afterAgentId,
+                limit + 1,
+                "status",
+                normalizedDir,
+                ct
+            );
 
         List<AgentListItem> items = new();
         // sort_key/created_at cursor components are read back off the same status/created_at
@@ -184,34 +168,30 @@ public static class AgentsApi
         List<string> sortKeys = new();
         List<string> createdAtKeys = new();
         List<string> agentIds = new();
-        await using (NpgsqlDataReader reader = await cmd.ExecuteReaderAsync(ct))
+        await foreach ((Guid agentId, string hostname, string rowStatus, DateTimeOffset? lastHeartbeat,
+            string? rowZone, string? rowVersion, string? passiveDiscoveryMode, string? os, string? arch,
+            string? ipAddress, Guid? deviceId, DateTimeOffset createdAt, string? rowLiveness) in rows)
         {
-            while (await reader.ReadAsync(ct))
-            {
-                Guid agentId = reader.GetGuid(0);
-                string rowStatus = reader.GetString(2);
-                DateTimeOffset createdAt = reader.GetFieldValue<DateTimeOffset>(11);
-                items.Add(
-                    new AgentListItem(
-                        AgentId: agentId.ToString(),
-                        Hostname: reader.GetString(1),
-                        Status: rowStatus,
-                        LastHeartbeat: reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3).UtcDateTime,
-                        Zone: GetStr(reader, 4),
-                        Version: GetStr(reader, 5),
-                        PassiveDiscoveryMode: GetStr(reader, 6),
-                        Os: GetStr(reader, 7),
-                        Arch: GetStr(reader, 8),
-                        IpAddress: GetStr(reader, 9),
-                        DeviceId: reader.IsDBNull(10) ? null : reader.GetGuid(10),
-                        CreatedAt: createdAt.UtcDateTime,
-                        Liveness: reader.GetString(12)
-                    )
-                );
-                sortKeys.Add(sortingByCreatedAt ? createdAt.ToString("O") : rowStatus);
-                createdAtKeys.Add(createdAt.ToString("O"));
-                agentIds.Add(agentId.ToString());
-            }
+            items.Add(
+                new AgentListItem(
+                    AgentId: agentId.ToString(),
+                    Hostname: hostname,
+                    Status: rowStatus,
+                    LastHeartbeat: lastHeartbeat?.UtcDateTime,
+                    Zone: rowZone,
+                    Version: rowVersion,
+                    PassiveDiscoveryMode: passiveDiscoveryMode,
+                    Os: os,
+                    Arch: arch,
+                    IpAddress: ipAddress,
+                    DeviceId: deviceId,
+                    CreatedAt: createdAt.UtcDateTime,
+                    Liveness: rowLiveness ?? "offline"
+                )
+            );
+            sortKeys.Add(sortingByCreatedAt ? createdAt.ToString("O") : rowStatus);
+            createdAtKeys.Add(createdAt.ToString("O"));
+            agentIds.Add(agentId.ToString());
         }
 
         string? nextCursor = null;
