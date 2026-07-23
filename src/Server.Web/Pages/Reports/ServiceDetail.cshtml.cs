@@ -125,6 +125,7 @@ public sealed class ServiceDetailModel : PageModel
 
         (string Id, string Label, FactViewGroup Group, bool Show, int? Count)[] builtins =
         [
+            ("summary", "Summary", FactViewGroup.Summary, true, null),
             ("ca", "CA Certificate", FactViewGroup.Security, hasCa, null),
             ("dns", "DNS Zones", FactViewGroup.Network, hasDns, Zones.Count > 0 ? Zones.Count : null),
             ("dhcp", "DHCP Scopes", FactViewGroup.Network, hasDhcp, Scopes.Count),
@@ -162,7 +163,9 @@ public sealed class ServiceDetailModel : PageModel
         }
 
         NavGroups = groups;
-        DefaultSection = flatIds.Count > 0 ? flatIds[0] : "allfacts";
+        DefaultSection = flatIds.Contains("summary") ? "summary"
+            : flatIds.Count > 0 ? flatIds[0]
+            : "allfacts";
     }
 
     /// <summary>

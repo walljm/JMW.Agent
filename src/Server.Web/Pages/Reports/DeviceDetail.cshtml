@@ -14,6 +14,10 @@
         : string.Equals(status, "ok", StringComparison.OrdinalIgnoreCase)
         || string.Equals(status, "healthy", StringComparison.OrdinalIgnoreCase) ? "status ok"
         : "status warn";
+
+    // Same 30-day threshold as _CaServicesTable/_TerrainCaTable/DashboardQueries' CA-expiry widgets.
+    static bool IsExpiringSoon(DateTime? notAfter) =>
+        notAfter is not null && notAfter.Value <= DateTime.UtcNow.AddDays(30);
 }
 <main class="main data-grid-page">
     <div class="page-head">
@@ -370,6 +374,10 @@
                                             @if (svc.RootNotAfter.HasValue)
                                             {
                                                 <time data-utc="@ViewFormat.IsoUtc(svc.RootNotAfter.Value)" data-utc-format="date">@svc.RootNotAfter.Value.ToString("yyyy-MM-dd") UTC</time>
+                                                @if (IsExpiringSoon(svc.RootNotAfter))
+                                                {
+                                                    <span class="status warn" style="margin-left:var(--space-2)">soon</span>
+                                                }
                                             }
                                             else
                                             {
@@ -844,90 +852,8 @@
 
 @section Scripts {
     <script>
-        // Only sections with data are rendered, so derive the valid set from the nav.
-        var NAV = document.querySelector('.section-nav');
-        var TABS = Array.prototype.map.call(
-            document.querySelectorAll('.section-nav-item'), function (t) {
-                return t.getAttribute('data-tab');
-            });
-
-        // Clears whatever showGroup() left behind (injected headings, group-view layout,
-        // active state on the group button) so a normal single-tab switch starts clean.
-        function clearGroupView() {
-            document.querySelectorAll('.group-label-btn').forEach(function (b) {
-                b.classList.remove('active');
-            });
-            document.querySelectorAll('.tabpanel-heading').forEach(function (h) {
-                h.remove();
-            });
-            var panels = document.querySelector('.section-panels');
-            if (panels) panels.classList.remove('group-view');
-        }
-
-        function switchTab(target) {
-            if (TABS.indexOf(target) < 0) target = TABS[0];
-            clearGroupView();
-            document.querySelectorAll('.section-nav-item').forEach(function (t) {
-                var active = t.getAttribute('data-tab') === target;
-                t.classList.toggle('active', active);
-                t.setAttribute('aria-selected', active ? 'true' : 'false');
-            });
-            document.querySelectorAll('.tabpanel').forEach(function (panel) {
-                panel.hidden = panel.getAttribute('data-panel') !== target;
-            });
-            var url = new URL(location.href);
-            url.searchParams.set('tab', target);
-            history.replaceState(null, '', url);
-        }
-
-        document.querySelectorAll('.section-nav-item').forEach(function (tab) {
-            tab.addEventListener('click', function () {
-                switchTab(tab.getAttribute('data-tab'));
-            });
-        });
-
-        // "View all" on a group label shows every section in that group stacked together
-        // (scrollable), instead of one tab at a time — for correlating facts across e.g.
-        // Interfaces/Ports/Advertised Services/Seen By without clicking back and forth.
-        // Panel headings are injected here rather than server-rendered, since they're
-        // redundant with (and would duplicate) the nav highlighting in normal single-tab mode.
-        function showGroup(btn) {
-            var panelIds = btn.getAttribute('data-panels').split(',');
-            document.querySelectorAll('.tabpanel-heading').forEach(function (h) {
-                h.remove();
-            });
-            document.querySelectorAll('.section-nav-item').forEach(function (t) {
-                t.classList.remove('active');
-                t.setAttribute('aria-selected', 'false');
-            });
-            document.querySelectorAll('.group-label-btn').forEach(function (b) {
-                b.classList.toggle('active', b === btn);
-            });
-            document.querySelectorAll('.tabpanel').forEach(function (panel) {
-                var id = panel.getAttribute('data-panel');
-                var show = panelIds.indexOf(id) !== -1;
-                panel.hidden = !show;
-                if (show) {
-                    var navItem = document.querySelector('.section-nav-item[data-tab="' + id + '"]');
-                    var label = navItem ? navItem.querySelector('.section-nav-label').textContent : id;
-                    var heading = document.createElement('div');
-                    heading.className = 'tabpanel-heading';
-                    heading.textContent = label;
-                    panel.prepend(heading);
-                }
-            });
-            var sectionPanels = document.querySelector('.section-panels');
-            if (sectionPanels) sectionPanels.classList.add('group-view');
-            var url = new URL(location.href);
-            url.searchParams.set('tab', 'group:' + btn.getAttribute('data-group-label'));
-            history.replaceState(null, '', url);
-        }
-
-        document.querySelectorAll('.group-label-btn').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                showGroup(btn);
-            });
-        });
+        // Section-nav behavior (tab switching, "view all" grouping, ARIA linking, keyboard
+        // nav) is handled by the shared /js/section-nav.js, loaded globally in _Layout.cshtml.
 
         // All Facts tab's Collector filter — client-side, since every fact is already
         // loaded (this tab has no pagination) rather than a server round-trip. A row's
@@ -939,26 +865,6 @@
                 row.hidden = source !== '' && rowSources.indexOf(source) === -1;
             });
         }
-
-        document.addEventListener('DOMContentLoaded', function () {
-            if (TABS.length === 0) return;
-            // Server picks the landing section by management status; ?tab= overrides it.
-            var fallback = (NAV && NAV.getAttribute('data-default')) || TABS[0];
-            var tab = new URLSearchParams(location.search).get('tab');
-            if (tab && tab.indexOf('group:') === 0) {
-                var groupBtn = document.querySelector(
-                    '.group-label-btn[data-group-label="' + CSS.escape(tab.slice('group:'.length)) + '"]');
-                if (groupBtn) {
-                    showGroup(groupBtn);
-                    return;
-                }
-            }
-            switchTab(TABS.indexOf(tab) >= 0 ? tab : fallback);
-        });
-
-        // Client-side column sorting + search for these tables is provided by client-grid.js
-        // (they carry data-client-grid), which also coexists with column-reorder.js. No inline
-        // sort handler here — a second one would double-toggle the sort on each header click.
 
         // ── Operator facts (unified override / arbitrary) ───────────────────
         var ofDataEl = document.getElementById('ofData');

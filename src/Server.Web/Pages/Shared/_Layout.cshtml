@@ -28,6 +28,7 @@
     <script src="/js/column-resize.js" defer asp-append-version="true"></script>
     <script src="/js/column-reorder.js" defer asp-append-version="true"></script>
     <script src="/js/client-grid.js" defer asp-append-version="true"></script>
+    <script src="/js/section-nav.js" defer asp-append-version="true"></script>
 </head>
 <body class="dark-mode">
 <script>
@@ -46,12 +47,12 @@
     <nav class="sidebar" aria-label="Primary">
         <a class="brand" href="/dashboard">◆ JMW Discovery</a>
         <a class="@NavClass("dashboard")" href="/dashboard" aria-current="@Current("dashboard")">Dashboard</a>
+        <a class="@NavClass("terrain")" href="/terrain" aria-current="@Current("terrain")">Terrain</a>
         <a class="@NavClass("devices")" href="/devices" aria-current="@Current("devices")">Devices</a>
         <a class="@NavClass("services")" href="/services" aria-current="@Current("services")">Services</a>
 
         <a class="@NavClass("inventory")" href="/hardware" aria-current="@Current("inventory")">Inventory</a>
         <a class="@NavClass("network")" href="/subnets" aria-current="@Current("network")">Network</a>
-        <a class="@NavClass("terrain")" href="/terrain" aria-current="@Current("terrain")">Terrain</a>
 
         @if (User.IsInRole("admin"))
         {

@@ -1185,8 +1185,10 @@ table.data tbody tr.row-warn td:first-child {
 }
 
 @media (max-width: 960px) {
-    /* Below 960px the nav collapses to a wrapping horizontal strip above the panel, so the
-       fixed-height fill layout no longer applies — let the page scroll normally instead. */
+    /* Below 960px the nav collapses from a vertical rail to a set of stacked, wrapping
+       horizontal rows — one per group — so the fixed-height fill layout no longer applies
+       (let the page scroll normally instead) but the group label still gives a device with
+       30-40 fact-view sections some structure instead of one flat unlabeled button wall. */
     .detail-body {
         grid-template-columns: 1fr;
         flex: none;
@@ -1198,24 +1200,36 @@ table.data tbody tr.row-warn td:first-child {
         max-height: none;
         overflow-y: visible;
         display: flex;
-        flex-wrap: wrap;
-        gap: var(--space-2);
+        flex-direction: column;
+        gap: var(--space-3);
         border-bottom: 1px solid var(--border-strong);
         padding-bottom: var(--space-3);
     }
 
     .section-nav-group {
         margin-top: 0;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--space-2);
     }
 
     .section-nav-group > .group-label {
-        display: none;
+        display: inline-block;
+        padding: 0;
     }
 
-    /* "View all" assumes the grouped-rail layout; below 960px nav is a flat wrapping strip
-       with no group context, so hide the affordance rather than support it there too. */
+    .section-nav-item {
+        width: auto;
+        margin-bottom: 0;
+    }
+
+    /* "View all" still makes sense once groups keep their label/context on mobile — just
+       shrink it to content width so it sits inline with its group's buttons. */
     .group-label-btn {
-        display: none;
+        width: auto;
+        flex: none;
+        padding: 0;
     }
 
     .section-panels {
@@ -1516,7 +1530,9 @@ table.data th.col-select {
 .table-wrap table.data th:first-child,
 .table-wrap table.data td:first-child,
 .grid-scroll table.data th:first-child,
-.grid-scroll table.data td:first-child {
+.grid-scroll table.data td:first-child,
+.detail-table-scroll table.data th:first-child,
+.detail-table-scroll table.data td:first-child {
     position: sticky;
     left: 0;
     z-index: 1;
@@ -1524,13 +1540,15 @@ table.data th.col-select {
 }
 
 .table-wrap table.data thead th:first-child,
-.grid-scroll table.data thead th:first-child {
+.grid-scroll table.data thead th:first-child,
+.detail-table-scroll table.data thead th:first-child {
     background: var(--surface-2);
     z-index: 2;
 }
 
 .table-wrap table.data tbody tr:hover td:first-child,
-.grid-scroll table.data tbody tr:hover td:first-child {
+.grid-scroll table.data tbody tr:hover td:first-child,
+.detail-table-scroll table.data tbody tr:hover td:first-child {
     background: var(--surface-hover);
 }
 
