@@ -10,6 +10,7 @@ using System.Security.Cryptography;
 using System.Text;
 
 using JMW.Discovery.Agent.Collection;
+using JMW.Discovery.Agent.Collection.Local;
 using JMW.Discovery.Agent.Collection.Network;
 using JMW.Discovery.Core;
 using JMW.Discovery.Core.Analysis;
@@ -594,14 +595,19 @@ public sealed class Agent
         string trackerKey = FingerprintsHash(fingerprints);
         CollectorDeltaTracker tracker = GetOrCreateTracker(trackerKey);
 
-        // Local collectors take a placeholder device key — the server rewrites it.
+        // Local collectors take a placeholder device key for their own Device[...]-rooted facts
+        // — the server rewrites that ROOT key once it resolves this host's real DeviceId from
+        // fingerprints. StepCaCollector is the one local collector that instead links a Service
+        // fact's DeviceId VALUE to this host — a plain fact value is never rewritten the way a
+        // fact root is, so it needs the actual resolved id (from a prior cycle's response, once
+        // known) instead of the placeholder, or nothing yet on the very first cycle.
         const string placeholder = "_local_";
 
         // Run enabled local collectors in parallel — each produces its own facts with no shared state.
         List<Task<CollectorRunResult>> collectTasks = _localCollectors
             .Where(c => IsCollectorEnabled(c.GetType().Name))
             .Where(c => c is NetworkDiscoveryCollector ? runDiscovery : runInventory)
-            .Select(c => CollectOneLocalWithStatsAsync(c, placeholder, ct))
+            .Select(c => CollectOneLocalWithStatsAsync(c, c is StepCaCollector ? _localDeviceId ?? "" : placeholder, ct))
             .ToList();
 
         CollectorRunResult[] runResults = await Task.WhenAll(collectTasks);

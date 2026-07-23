@@ -156,6 +156,11 @@ public sealed class HomeAssistantCollector : IServiceCollector
         string serviceId = await context.IdentifyServiceAsync(new ServiceProbe("home-assistant", fingerprints), ct);
 
         facts.Add(Fact.Create(ServicePaths.Type, [serviceId], "home-assistant"));
+        // DeviceId (not just the HomeAssistant-scoped one below) is what the Services list/detail
+        // pages actually join on to resolve the host's name/IP — every other service collector
+        // sets it (see TechnitiumCollector). HomeAssistantDeviceId is kept too since a fact-view
+        // column already reads it.
+        facts.AddIfPresent(ServicePaths.DeviceId, [serviceId], context.HostDeviceId);
         facts.AddIfPresent(ServicePaths.HomeAssistantDeviceId, [serviceId], context.HostDeviceId);
 
         Dictionary<string, string> areaNames = areas.ToDictionary(a => a.AreaId, a => a.Name);

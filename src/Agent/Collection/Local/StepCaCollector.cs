@@ -44,6 +44,11 @@ public sealed class StepCaCollector : ILocalCollector
         "/var/lib/step-ca/config/ca.json",
     ];
 
+    // deviceId is the actual resolved DeviceId (Agent.CollectLocalAsync special-cases this
+    // collector), not the "_local_" placeholder every other local collector gets — this
+    // collector links a Service fact's DeviceId VALUE to the host, and a plain fact value is
+    // never rewritten server-side the way a Device[...]-rooted fact's key is. Empty until the
+    // agent's first cycle resolves it.
     public async Task<IReadOnlyList<Fact>> CollectAsync(string deviceId, CancellationToken ct)
     {
         // Fast exit: step CLI must be present for any collection to work.
@@ -86,7 +91,7 @@ public sealed class StepCaCollector : ILocalCollector
 
         // Identity linkbacks
         facts.Add(Fact.Create(ServicePaths.Type, [serviceId], "step-ca"));
-        facts.Add(Fact.Create(ServicePaths.DeviceId, [serviceId], deviceId));
+        facts.AddIfPresent(ServicePaths.DeviceId, [serviceId], deviceId);
 
         // ── CA status ─────────────────────────────────────────────────────────
         facts.Add(Fact.Create(ServicePaths.CaStatus, [serviceId], caRunning ? "running" : "stopped"));
