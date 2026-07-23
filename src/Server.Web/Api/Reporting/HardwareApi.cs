@@ -1,4 +1,5 @@
 using JMW.Discovery.Server.Data;
+using JMW.Discovery.Server.Queries;
 
 using Npgsql;
 
@@ -13,36 +14,20 @@ public static class HardwareApi
     public const int DefaultLimit = 100;
     public const int MaxLimit = 500;
 
-    // Hardware page vendor: the device's own DMI/SMBIOS vendor first, else the unified device
-    // vendor (proj_devices.vendor, which already includes the inferred guess as its lowest-priority
-    // fan-in input — see DeviceVendorDerivation). proj_hardware.system_vendor is reserved for the
-    // agent/dmidecode path, so a discovered/derived vendor (e.g. model→vendor for a Google Wifi
-    // station) lands only in proj_devices — coalescing here surfaces it on this page.
-    private const string VendorExpr =
-        "COALESCE(NULLIF(h.system_vendor, ''), NULLIF(pd.vendor, ''))";
-
-    // hostname sorts on proj_devices' resolved identity column (context-derivations.md §3.3) —
-    // pd can DRIVE the plan through proj_devices_hostname_sort_idx, which a LEFT-JOINed
-    // proj_systems.hostname never could; the (sort_key, device) cursor tuple lives entirely on
-    // pd, so no decomposed prefix is needed here. cpu stays on the driving proj_hardware table
-    // (0104 index); vendor is a cross-table COALESCE (deliberate DMI-first display priority) —
-    // a rare, unindexable sort left as a full sort.
-    private static readonly Dictionary<string, string> SortExpressions =
-        new(StringComparer.Ordinal)
-        {
-            ["hostname"] = "coalesce(pd.hostname, '')",
-            // Null-safe form for the keyset sort key: a NULL sort key silently drops rows from
-            // keyset pagination. The SELECT below shows the raw (nullable) VendorExpr so an absent
-            // vendor renders as "—"; sorting treats it as ''.
-            ["vendor"] = "COALESCE(" + VendorExpr + ", '')",
-            ["cpu"] = "coalesce(h.cpu_model, '')",
-        };
-
+    /// <summary>Must match the first [SortableBy] key on ReportingQueries.ListHardwareAsync —
+    /// the generated command text falls back to that column for an unrecognized sort.</summary>
     public const string DefaultSort = "hostname";
 
-    public static readonly IReadOnlySet<string> SortableColumns = SortExpressions.Keys.ToHashSet(StringComparer.Ordinal);
+    /// <summary>
+    /// Columns the hardware list may be sorted by — hostname rides proj_devices' resolved
+    /// identity column, cpu the driving proj_hardware table (0104 index); vendor is a
+    /// cross-table COALESCE (deliberate DMI-first display priority), a rare unindexable sort.
+    /// Sourced from the generated [SortableBy] allowlist so the UI cannot drift from the
+    /// validated SQL variants.
+    /// </summary>
+    public static readonly IReadOnlySet<string> SortableColumns = ReportingQueries.ListHardwareAsyncSortKeys;
 
-    public static bool IsSortable(string? sort) => sort is not null && SortExpressions.ContainsKey(sort);
+    public static bool IsSortable(string? sort) => sort is not null && SortableColumns.Contains(sort);
 
     public static void Map(IEndpointRouteBuilder app)
     {
@@ -79,76 +64,46 @@ public static class HardwareApi
         string? dir = null
     )
     {
-        string sortKeyCol = sort is not null && SortExpressions.TryGetValue(sort, out string? expr)
-            ? expr
-            : SortExpressions[DefaultSort];
-        bool descending = string.Equals(dir, "desc", StringComparison.OrdinalIgnoreCase);
-        string cmp = descending ? "<" : ">";
-        string direction = descending ? "DESC" : "ASC";
-        // The tiebreaker rides the sort key's own table so the full (sort_key, device) tuple
-        // matches that table's expression index — h.device and pd.device are join-equal, so
-        // this changes nothing semantically. JOIN proj_devices is safe (never drops rows):
-        // every device has a proj_devices row from creation + the context engine's backfill.
-        string tiebreaker = string.Equals(sortKeyCol, SortExpressions["hostname"], StringComparison.Ordinal)
-            ? "pd.device"
-            : "h.device";
-
-        string sql = $"""
-            SELECT
-                h.device, s.hostname, {VendorExpr} AS system_vendor, h.system_model, h.system_serial,
-                h.bios_version, h.virtualization, h.cpu_model, h.cpu_vendor, h.cpu_cores,
-                h.cpu_logical_cores, h.cpu_mhz, h.total_mem_bytes, disks.total_bytes,
-                {sortKeyCol} AS sort_key,
-                COALESCE(s.friendly_name, s.hostname) AS friendly_name
-            FROM proj_hardware h
-                LEFT JOIN proj_systems s ON s.device = h.device
-                JOIN proj_devices pd ON pd.device = h.device
-                LEFT JOIN LATERAL (
-                    SELECT SUM(d.size_bytes) AS total_bytes FROM proj_disks d WHERE d.device = h.device
-                ) disks ON TRUE
-            WHERE ($1::text IS NULL OR COALESCE(s.hostname, '') ILIKE '%' || $1 || '%'
-                    OR {VendorExpr} ILIKE '%' || $1 || '%'
-                    OR COALESCE(h.system_model, '') ILIKE '%' || $1 || '%'
-                    OR COALESCE(h.cpu_model, '') ILIKE '%' || $1 || '%')
-              AND ($2::text IS NULL OR (({sortKeyCol}, {tiebreaker}) {cmp} ($2, $3)))
-            ORDER BY {sortKeyCol} {direction}, {tiebreaker} {direction}
-            LIMIT $4
-            """;
+        List<HardwareListItem> items = new();
+        // sortKeys[i] is the SQL-computed sort expression for items[i] — used verbatim for the
+        // cursor so it always matches the keyset comparison (no C#-side re-derivation to drift).
+        List<string> sortKeys = new();
 
         await using NpgsqlConnection conn = await db.OpenConnectionAsync(ct);
-        await using NpgsqlCommand cmd = new(sql, conn);
-        cmd.Parameters.Add(Param.Text(string.IsNullOrWhiteSpace(search) ? null : search));
-        cmd.Parameters.Add(Param.Text(afterSortKey));
-        cmd.Parameters.Add(Param.Text(afterDevice));
-        cmd.Parameters.Add(Param.Integer(limit + 1));
-
-        List<HardwareListItem> items = new();
-        List<string> sortKeys = new();
-        await using (NpgsqlDataReader reader = await cmd.ExecuteReaderAsync(ct))
+        await foreach ((string device, string? hostname, string? systemVendor, string? systemModel,
+            string? systemSerial, string? biosVersion, string? virtualization, string? cpuModel, string? cpuVendor,
+            long? cpuCores, long? cpuLogicalCores, double? cpuMhz, long? totalMemBytes, long? totalStorageBytes,
+            string? sortKey, string? friendlyName)
+            in conn.ListHardwareAsync(
+                string.IsNullOrWhiteSpace(search) ? null : search,
+                afterSortKey,
+                afterDevice,
+                limit + 1,
+                sort,
+                dir,
+                ct
+            ))
         {
-            while (await reader.ReadAsync(ct))
-            {
-                items.Add(
-                    new HardwareListItem(
-                        Device: reader.GetString(0),
-                        Hostname: GetStr(reader, 1),
-                        SystemVendor: GetStr(reader, 2),
-                        SystemModel: GetStr(reader, 3),
-                        SystemSerial: GetStr(reader, 4),
-                        BiosVersion: GetStr(reader, 5),
-                        Virtualization: GetStr(reader, 6),
-                        CpuModel: GetStr(reader, 7),
-                        CpuVendor: GetStr(reader, 8),
-                        CpuCores: reader.IsDBNull(9) ? null : reader.GetInt64(9),
-                        CpuLogicalCores: reader.IsDBNull(10) ? null : reader.GetInt64(10),
-                        CpuMhz: reader.IsDBNull(11) ? null : reader.GetDouble(11),
-                        TotalMemBytes: reader.IsDBNull(12) ? null : reader.GetInt64(12),
-                        TotalStorageBytes: reader.IsDBNull(13) ? null : reader.GetInt64(13),
-                        FriendlyName: GetStr(reader, 15)
-                    )
-                );
-                sortKeys.Add(GetStr(reader, 14) ?? string.Empty);
-            }
+            items.Add(
+                new HardwareListItem(
+                    Device: device,
+                    Hostname: hostname,
+                    SystemVendor: systemVendor,
+                    SystemModel: systemModel,
+                    SystemSerial: systemSerial,
+                    BiosVersion: biosVersion,
+                    Virtualization: virtualization,
+                    CpuModel: cpuModel,
+                    CpuVendor: cpuVendor,
+                    CpuCores: cpuCores,
+                    CpuLogicalCores: cpuLogicalCores,
+                    CpuMhz: cpuMhz,
+                    TotalMemBytes: totalMemBytes,
+                    TotalStorageBytes: totalStorageBytes,
+                    FriendlyName: friendlyName
+                )
+            );
+            sortKeys.Add(sortKey ?? string.Empty);
         }
 
         string? nextCursor = null;
@@ -161,9 +116,6 @@ public static class HardwareApi
 
         return (items, nextCursor);
     }
-
-    private static string? GetStr(NpgsqlDataReader reader, int ordinal) =>
-        reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
 }
 
 public sealed record HardwareListItem(

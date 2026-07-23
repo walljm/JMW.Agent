@@ -30,6 +30,7 @@ public sealed class ReportPlanTests : IAsyncLifetime
         // proj_devices row would fail the whole seed on its PK.
         await _fx.TruncateAsync(
             "proj_interfaces",
+            "proj_hardware",
             "proj_hardware_inventory",
             "proj_devices",
             "device_fingerprints",
@@ -61,14 +62,24 @@ public sealed class ReportPlanTests : IAsyncLifetime
             SELECT device_id::text, 'if-' || s, 'eth' || s, s * 1000000000::bigint
             FROM devices, generate_series(1, 2) s;
 
+            INSERT INTO proj_hardware (device, cpu_model)
+            SELECT device_id::text, 'cpu-' || (row_number() OVER ()) % 50
+            FROM devices;
+
             ANALYZE devices; ANALYZE proj_devices; ANALYZE proj_hardware_inventory;
-            ANALYZE proj_interfaces;
+            ANALYZE proj_interfaces; ANALYZE proj_hardware;
             """;
         await cmd.ExecuteNonQueryAsync();
     }
 
     public async Task DisposeAsync() =>
-        await _fx.TruncateAsync("proj_interfaces", "proj_hardware_inventory", "proj_devices", "devices");
+        await _fx.TruncateAsync(
+            "proj_interfaces",
+            "proj_hardware",
+            "proj_hardware_inventory",
+            "proj_devices",
+            "devices"
+        );
 
     /// <summary>
     /// EXPLAINs the query in its first-page shape: every parameter substituted with NULL (the
@@ -140,5 +151,24 @@ public sealed class ReportPlanTests : IAsyncLifetime
         string plan = await FirstPagePlanAsync(ReportingQueries.ListInterfacesAsyncCommandText("speed", dir: null));
 
         Assert.Contains("proj_interfaces_speed_text_sort_idx", plan, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Hardware_HostnameSort_DrivesFromProjDevicesIndex()
+    {
+        string plan = await FirstPagePlanAsync(ReportingQueries.ListHardwareAsyncCommandText("hostname", dir: null));
+
+        Assert.Contains("proj_devices_hostname_sort_idx", plan, StringComparison.Ordinal);
+    }
+
+    // Pins the equivalence-class behavior the ListHardware.sql tiebreaker relies on: ORDER BY
+    // coalesce(h.cpu_model,''), pd.device still walks proj_hardware's (expr, device) index
+    // because pd.device and h.device are join-equal.
+    [Fact]
+    public async Task Hardware_CpuSort_UsesDrivingTableExpressionIndex()
+    {
+        string plan = await FirstPagePlanAsync(ReportingQueries.ListHardwareAsyncCommandText("cpu", dir: null));
+
+        Assert.Contains("proj_hardware_cpu_model_sort_idx", plan, StringComparison.Ordinal);
     }
 }

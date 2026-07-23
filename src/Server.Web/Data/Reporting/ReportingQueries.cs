@@ -95,6 +95,35 @@ public static partial class ReportingQueries
             CancellationToken cancellationToken
         );
 
+    // ── Reporting: Hardware (per-device cumulative specs) ──────────────────────
+
+    /// <summary>
+    /// Lists per-device cumulative hardware specs (CPU, installed memory, total disk capacity),
+    /// with optional search and keyset pagination ordered by (sort key, device). The hostname
+    /// sort key lives on proj_devices (the resolved identity column); cpu on the driving
+    /// proj_hardware table (0104 index); vendor is a cross-table COALESCE (deliberate DMI-first
+    /// display priority) — a rare, unindexable sort left as a full sort. SortKey is the
+    /// SQL-computed sort expression for the row, used verbatim for the next-page cursor.
+    /// </summary>
+    [DatabaseCommand]
+    [SortableBy("hostname", "coalesce(pd.hostname, '')")]
+    [SortableBy("vendor", "COALESCE(COALESCE(NULLIF(h.system_vendor, ''), NULLIF(pd.vendor, '')), '')")]
+    [SortableBy("cpu", "coalesce(h.cpu_model, '')")]
+    public static partial
+        IAsyncEnumerable<(string Device, string? Hostname, string? SystemVendor, string? SystemModel,
+            string? SystemSerial, string? BiosVersion, string? Virtualization, string? CpuModel, string? CpuVendor,
+            long? CpuCores, long? CpuLogicalCores, double? CpuMhz, long? TotalMemBytes, long? TotalStorageBytes,
+            string? SortKey, string? FriendlyName)> ListHardwareAsync(
+            this NpgsqlConnection connection,
+            string? search,
+            string? afterSortKey,
+            string? afterDevice,
+            int limit,
+            string? sort,
+            string? dir,
+            CancellationToken cancellationToken
+        );
+
     // ── Reporting: Interfaces ───────────────────────────────────────────────────
 
     /// <summary>
