@@ -40,6 +40,20 @@ public static partial class ServiceQueries
         CancellationToken cancellationToken
     );
 
+    /// <summary>
+    /// Blocked-query-percentage history for one service over the last 30 days, oldest first —
+    /// the Service Summary tab's DNS-activity trend. Sourced from facts_history (dedup-on-write,
+    /// so points land unevenly whenever the value actually changed); render as a step chart, not
+    /// smoothly interpolated.
+    /// </summary>
+    [DatabaseCommand]
+    public static partial IAsyncEnumerable<(double? Value, DateTimeOffset CollectedAt)>
+        ListServiceBlockedPctHistoryAsync(
+            this NpgsqlConnection connection,
+            string service,
+            CancellationToken cancellationToken
+        );
+
     /// <summary>CA provisioners for one service.</summary>
     [DatabaseCommand]
     public static partial IAsyncEnumerable<(string Provisioner, string? ProvisionerType, string? DefaultDuration)>

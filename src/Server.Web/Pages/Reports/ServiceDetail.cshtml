@@ -160,6 +160,23 @@
                             <dt>Blocked %</dt>
                             <dd>@(Model.BlockedPct.HasValue ? Model.BlockedPct.Value.ToString("0.#") + "%" : "—")</dd>
                         </dl>
+                        @{
+                            const double sparkW = 280;
+                            const double sparkH = 48;
+                            string? sparkPath = ServiceDetailModel.BuildSparklinePath(Model.BlockedPctTrend, sparkW, sparkH);
+                        }
+                        @if (sparkPath is not null)
+                        {
+                            <div style="margin-top:var(--space-3)">
+                                <div class="fs-xs text-dim" style="margin-bottom:var(--space-1)">Blocked % · last 30 days</div>
+                                <svg width="@sparkW" height="@sparkH" viewBox="0 0 @sparkW @sparkH" role="img"
+                                     aria-label="Blocked query percentage over the last 30 days, ending at @(Model.BlockedPct?.ToString("0.#") ?? "—")%">
+                                    <title>Blocked % over the last 30 days (currently @(Model.BlockedPct?.ToString("0.#") ?? "—")%)</title>
+                                    <path d="@sparkPath" fill="none" stroke="var(--accent)" stroke-width="2"
+                                          stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </div>
+                        }
                     </div>
                 }
             </div>

@@ -40,6 +40,11 @@ public sealed class ServiceDetailModel : PageModel
     public long? TotalBlocked { get; private set; }
     public double? BlockedPct { get; private set; }
 
+    /// <summary>Blocked-% history over the last 30 days, oldest first — see
+    /// ListServiceBlockedPctHistoryAsync. Empty when this isn't a DNS service, or one with no
+    /// history yet.</summary>
+    public IReadOnlyList<(double Value, DateTime CollectedAt)> BlockedPctTrend { get; private set; } = [];
+
     public IReadOnlyList<ServiceProvisioner> Provisioners { get; private set; } = [];
     public IReadOnlyList<ServiceZone> Zones { get; private set; } = [];
     public IReadOnlyList<ServiceScope> Scopes { get; private set; } = [];
@@ -109,8 +114,59 @@ public sealed class ServiceDetailModel : PageModel
         AllFacts = facts;
         FactViews = FactViewRenderer.Render(facts, FactViewLibrary.Service);
 
+        if (TotalQueries.HasValue || BlockedPct.HasValue)
+        {
+            BlockedPctTrend = await conn.ListServiceBlockedPctHistoryAsync(id, ct)
+                .Where(r => r.Value.HasValue)
+                .Select(r => (r.Value!.Value, r.CollectedAt.UtcDateTime))
+                .ToListAsync(ct);
+        }
+
         BuildNav();
         return Page();
+    }
+
+    /// <summary>
+    /// Builds an SVG path's "d" attribute for a 0-100% step chart (each value holds steady until
+    /// the next point, matching facts_history's dedup-on-write semantics — see
+    /// ListServiceBlockedPctHistoryAsync) spanning the last 30 days. Y is fixed to the full 0-100%
+    /// range rather than data min/max, since a zoomed axis on a percentage is the classic
+    /// misleading-chart mistake. Null when there's nothing to draw.
+    /// </summary>
+    public static string? BuildSparklinePath(IReadOnlyList<(double Value, DateTime CollectedAt)> points, double width, double height)
+    {
+        if (points.Count == 0)
+        {
+            return null;
+        }
+
+        DateTime now = DateTime.UtcNow;
+        DateTime start = now.AddDays(-30);
+
+        double X(DateTime t)
+        {
+            double span = (now - start).TotalSeconds;
+            double frac = span <= 0 ? 0 : (t - start).TotalSeconds / span;
+            return Math.Clamp(frac, 0, 1) * width;
+        }
+
+        double Y(double pct) => height - Math.Clamp(pct, 0, 100) / 100.0 * height;
+
+        System.Text.StringBuilder sb = new();
+        sb.Append("M ").Append(X(points[0].CollectedAt).ToString("F1")).Append(' ').Append(Y(points[0].Value).ToString("F1"));
+        for (int i = 1; i < points.Count; i++)
+        {
+            // Horizontal segment at the PRIOR value up to this point's time (it held steady until
+            // now), then a vertical step to the new value — the step-after shape.
+            double xAtChange = X(points[i].CollectedAt);
+            sb.Append(" L ").Append(xAtChange.ToString("F1")).Append(' ').Append(Y(points[i - 1].Value).ToString("F1"));
+            sb.Append(" L ").Append(xAtChange.ToString("F1")).Append(' ').Append(Y(points[i].Value).ToString("F1"));
+        }
+
+        // Hold the last known value out to "now" — it's still in effect, not just true at its
+        // own timestamp.
+        sb.Append(" L ").Append(X(now).ToString("F1")).Append(' ').Append(Y(points[^1].Value).ToString("F1"));
+        return sb.ToString();
     }
 
     /// <summary>
