@@ -122,7 +122,7 @@ public static partial class ReportingQueries
     /// point itself isn't independently known as a device.
     /// </summary>
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<(string? Mac, string? ObscuredMac, string? Hostname, string MeshApBssid)>
+    public static partial IAsyncEnumerable<(string? Mac, string? ObscuredMac, string? Hostname, string? MeshApBssid)>
         ListMeshRelayedClientsAsync(
             this NpgsqlConnection connection,
             CancellationToken cancellationToken

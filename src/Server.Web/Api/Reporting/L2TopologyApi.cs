@@ -154,15 +154,22 @@ public static class L2TopologyApi
         // node — so the satellite still shows up on the map instead of silently vanishing into
         // "client talks to the primary OnHub" with no relay in between.
         Dictionary<string, string> meshNodeIdByBssid = new(StringComparer.OrdinalIgnoreCase);
-        List<(string? Mac, string? ObscuredMac, string? Hostname, string MeshApBssid)> meshRows = [];
-        await foreach ((string? mm_mac, string? mm_obscuredMac, string? mm_hostname, string mm_meshApBssid) in
+        List<(string? Mac, string? ObscuredMac, string? Hostname, string? MeshApBssid)> meshRows = [];
+        await foreach ((string? mm_mac, string? mm_obscuredMac, string? mm_hostname, string? mm_meshApBssid) in
             conn.ListMeshRelayedClientsAsync(ct))
         {
             meshRows.Add((mm_mac, mm_obscuredMac, mm_hostname, mm_meshApBssid));
         }
 
-        foreach ((string? mac, string? obscuredMac, string? hostname, string meshApBssid) in meshRows)
+        foreach ((string? mac, string? obscuredMac, string? hostname, string? meshApBssid) in meshRows)
         {
+            // The query already filters mesh_ap_bssid IS NOT NULL; this is just the SQL->CLR
+            // nullability gap (a UNION/JOIN result reports nullable even for a NOT NULL column).
+            if (meshApBssid is null)
+            {
+                continue;
+            }
+
             string? clientDeviceId = null;
             string? clientHostname = null;
             if (mac is { Length: > 0 })

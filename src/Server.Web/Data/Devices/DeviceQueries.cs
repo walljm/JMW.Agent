@@ -27,6 +27,19 @@ public static partial class DeviceQueries
         );
 
     /// <summary>
+    /// Device[].Interface[].TotalBytes history for one device's busiest interface (see
+    /// GetDeviceInterfaceThroughputHistory.sql) — the Device Summary tab's throughput sparkline.
+    /// Bytes are the raw cumulative counter; the caller derives a rate from consecutive samples.
+    /// </summary>
+    [DatabaseCommand]
+    public static partial IAsyncEnumerable<(long? Bytes, DateTimeOffset? CollectedAt, string? InterfaceName)>
+        GetDeviceInterfaceThroughputHistoryAsync(
+            this NpgsqlConnection connection,
+            string deviceId,
+            CancellationToken cancellationToken
+        );
+
+    /// <summary>
     /// Returns the combined identity, OS, vendor, and hardware summary for one device.
     /// Returns no rows if the device id is unknown.
     /// </summary>

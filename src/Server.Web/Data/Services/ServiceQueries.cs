@@ -47,7 +47,7 @@ public static partial class ServiceQueries
     /// smoothly interpolated.
     /// </summary>
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<(double? Value, DateTimeOffset CollectedAt)>
+    public static partial IAsyncEnumerable<(double? Value, DateTimeOffset? CollectedAt)>
         ListServiceBlockedPctHistoryAsync(
             this NpgsqlConnection connection,
             string service,

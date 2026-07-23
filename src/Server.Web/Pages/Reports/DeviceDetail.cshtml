@@ -199,6 +199,39 @@
                     </div>
                 }
 
+                @{
+                    const double throughputSparkW = 280;
+                    const double throughputSparkH = 48;
+                    string? throughputPath = null;
+                    double peakBytesPerSec = 0;
+                    if (Model.Throughput.Error is null)
+                    {
+                        throughputPath = DeviceDetailModel.BuildThroughputSparklinePath(
+                            Model.Throughput.Data.Points, throughputSparkW, throughputSparkH, out peakBytesPerSec);
+                    }
+                }
+                @if (throughputPath is not null)
+                {
+                    <div style="margin-top:var(--space-5)">
+                        <div class="tabpanel-heading">
+                            Interface Throughput
+                            @if (Model.Throughput.Data.InterfaceName is { Length: > 0 } ifaceName)
+                            {
+                                <span class="text-dim" style="font-weight:var(--fw-normal)"> — @ifaceName</span>
+                            }
+                        </div>
+                        <div class="fs-xs text-dim" style="margin-bottom:var(--space-1)">
+                            Peak @ViewFormat.Bytes((long)peakBytesPerSec)/s
+                        </div>
+                        <svg width="@throughputSparkW" height="@throughputSparkH" viewBox="0 0 @throughputSparkW @throughputSparkH" role="img"
+                             aria-label="Interface throughput, peaking at @ViewFormat.Bytes((long)peakBytesPerSec) per second">
+                            <title>Interface throughput (Rx+Tx combined), peak @ViewFormat.Bytes((long)peakBytesPerSec)/s</title>
+                            <path d="@throughputPath" fill="none" stroke="var(--accent)" stroke-width="2"
+                                  stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                }
+
                 <div style="margin-top:var(--space-5)">
                     <div class="tabpanel-heading">Collection Health</div>
                     @{

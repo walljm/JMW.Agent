@@ -198,6 +198,37 @@ public sealed class DeviceQueriesTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetDeviceInterfaceThroughputHistoryAsync_MultipleInterfaces_PicksTheBusiestOne()
+    {
+        Guid id = await _fixture.InsertDeviceAsync(managementStatus: "managed");
+        // eth0 is the busiest (highest current total) — its full history should come back, not
+        // docker0's, even though docker0's most recent sample is more recent in time.
+        await ExecuteAsync(
+            "INSERT INTO metrics_raw (id, attribute_path, key_values, kind, value_long, collected_at, "
+          + "source, source_name) VALUES "
+          + $"('Device[{id}].Interface[eth0].TotalBytes', 'Device[].Interface[].TotalBytes', "
+          + $"'{{\"Device\": \"{id}\", \"Interface\": \"eth0\"}}'::jsonb, 1, 1000, now() - interval '10 minutes', 0, 'Agent'),"
+          + $"('Device[{id}].Interface[eth0].TotalBytes', 'Device[].Interface[].TotalBytes', "
+          + $"'{{\"Device\": \"{id}\", \"Interface\": \"eth0\"}}'::jsonb, 1, 5000, now() - interval '5 minutes', 0, 'Agent'),"
+          + $"('Device[{id}].Interface[docker0].TotalBytes', 'Device[].Interface[].TotalBytes', "
+          + $"'{{\"Device\": \"{id}\", \"Interface\": \"docker0\"}}'::jsonb, 1, 50, now(), 0, 'Agent')"
+        );
+
+        List<(long? Bytes, DateTimeOffset? CollectedAt, string? InterfaceName)> rows = [];
+        await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
+        await foreach ((long? bytes, DateTimeOffset? collectedAt, string? ifaceName) in
+            conn.GetDeviceInterfaceThroughputHistoryAsync(id.ToString(), CancellationToken.None))
+        {
+            rows.Add((bytes, collectedAt, ifaceName));
+        }
+
+        Assert.Equal(2, rows.Count);
+        Assert.All(rows, r => Assert.Equal("eth0", r.InterfaceName));
+        Assert.Equal(1000, rows[0].Bytes);
+        Assert.Equal(5000, rows[1].Bytes);
+    }
+
+    [Fact]
     public async Task GetDeviceSightingsAsync_ObscuredMacReconstructedRow_NeverContaminatesSeenByTab()
     {
         Guid id = await _fixture.InsertDeviceAsync(managementStatus: "discovered");

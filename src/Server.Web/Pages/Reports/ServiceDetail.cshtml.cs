@@ -116,10 +116,17 @@ public sealed class ServiceDetailModel : PageModel
 
         if (TotalQueries.HasValue || BlockedPct.HasValue)
         {
-            BlockedPctTrend = await conn.ListServiceBlockedPctHistoryAsync(id, ct)
-                .Where(r => r.Value.HasValue)
-                .Select(r => (r.Value!.Value, r.CollectedAt.UtcDateTime))
-                .ToListAsync(ct);
+            List<(double Value, DateTime CollectedAt)> trend = [];
+            await foreach ((double? value, DateTimeOffset? collectedAt) in
+                conn.ListServiceBlockedPctHistoryAsync(id, ct))
+            {
+                if (value.HasValue && collectedAt.HasValue)
+                {
+                    trend.Add((value.Value, collectedAt.Value.UtcDateTime));
+                }
+            }
+
+            BlockedPctTrend = trend;
         }
 
         BuildNav();

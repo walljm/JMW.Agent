@@ -81,6 +81,7 @@ public sealed class DeviceDetailModel : PageModel
     public Section<IReadOnlyList<FactRow>> AllFacts { get; } = new([]);
     public Section<IReadOnlyList<RenderedFactView>> FactViews { get; } = new([]);
     public Section<IReadOnlyList<HistoryRow>> History { get; } = new([]);
+    public Section<ThroughputHistory> Throughput { get; } = new(new ThroughputHistory(null, []));
 
     /// <summary>Overridable catalog offered by the fact-path combo box (docs/plans/architecture-operator-facts.md).</summary>
     public IReadOnlyList<string> OverridablePaths => OperatorFactCatalog.OverridablePaths;
@@ -168,6 +169,27 @@ public sealed class DeviceDetailModel : PageModel
                     return await c.ListEntityHistoryAsync("device", deviceKey, HistoryLimit, ct)
                         .Select(r => new HistoryRow(r.Kind ?? "unknown", r.TypeName ?? "unknown", r.Detail, r.At ?? DateTimeOffset.UtcNow, r.Duration, r.Resolution))
                         .ToListAsync(ct);
+                }
+            ),
+            LoadAsync(
+                _logger,
+                Throughput,
+                async () =>
+                {
+                    await using NpgsqlConnection c = await _db.OpenConnectionAsync(ct);
+                    List<ThroughputPoint> points = [];
+                    string? interfaceName = null;
+                    await foreach ((long? bytes, DateTimeOffset? collectedAt, string? ifaceName) in
+                        c.GetDeviceInterfaceThroughputHistoryAsync(deviceKey, ct))
+                    {
+                        interfaceName = ifaceName;
+                        if (bytes.HasValue && collectedAt.HasValue)
+                        {
+                            points.Add(new ThroughputPoint(bytes.Value, collectedAt.Value.UtcDateTime));
+                        }
+                    }
+
+                    return new ThroughputHistory(interfaceName, points);
                 }
             ),
             LoadAsync<IReadOnlyList<DeviceFingerprint>>(
@@ -525,6 +547,64 @@ public sealed class DeviceDetailModel : PageModel
     public int FactViewCount(string title) =>
         FactViews.Data.FirstOrDefault(v => v.Title == title)?.Rows.Count ?? 0;
 
+    /// <summary>
+    /// Builds an SVG path's "d" attribute for the interface-throughput sparkline. Interface[].
+    /// TotalBytes is a raw cumulative counter, not a rate, so this derives bytes/sec from
+    /// consecutive samples first (clamping a negative delta — an interface/counter reset — to
+    /// zero rather than showing a spurious drop), then plots those rate samples. Y is scaled to
+    /// the observed peak (there's no natural fixed bound like a percentage has); <paramref
+    /// name="peakBytesPerSec" /> is returned so the caller can label it. Null when there are
+    /// fewer than two raw samples — a rate needs at least one interval.
+    /// </summary>
+    public static string? BuildThroughputSparklinePath(
+        IReadOnlyList<ThroughputPoint> points,
+        double width,
+        double height,
+        out double peakBytesPerSec
+    )
+    {
+        peakBytesPerSec = 0;
+        if (points.Count < 2)
+        {
+            return null;
+        }
+
+        List<(DateTime At, double BytesPerSec)> rates = new(points.Count - 1);
+        for (int i = 1; i < points.Count; i++)
+        {
+            double deltaSeconds = (points[i].At - points[i - 1].At).TotalSeconds;
+            if (deltaSeconds <= 0)
+            {
+                continue;
+            }
+
+            long deltaBytes = Math.Max(0, points[i].Bytes - points[i - 1].Bytes);
+            rates.Add((points[i].At, deltaBytes / deltaSeconds));
+        }
+
+        if (rates.Count == 0)
+        {
+            return null;
+        }
+
+        peakBytesPerSec = rates.Max(r => r.BytesPerSec);
+        double yMax = peakBytesPerSec > 0 ? peakBytesPerSec : 1;
+        DateTime start = rates[0].At;
+        double spanSeconds = (rates[^1].At - start).TotalSeconds;
+
+        double X(DateTime t) => spanSeconds <= 0 ? 0 : (t - start).TotalSeconds / spanSeconds * width;
+        double Y(double bytesPerSec) => height - Math.Clamp(bytesPerSec / yMax, 0, 1) * height;
+
+        System.Text.StringBuilder sb = new();
+        sb.Append("M ").Append(X(rates[0].At).ToString("F1")).Append(' ').Append(Y(rates[0].BytesPerSec).ToString("F1"));
+        for (int i = 1; i < rates.Count; i++)
+        {
+            sb.Append(" L ").Append(X(rates[i].At).ToString("F1")).Append(' ').Append(Y(rates[i].BytesPerSec).ToString("F1"));
+        }
+
+        return sb.ToString();
+    }
+
     private static async Task LoadAsync<T>(ILogger logger, Section<T> section, Func<Task<T>> load)
     {
         try
@@ -642,6 +722,14 @@ public sealed record DeviceServiceRow(
 /// change event, narrated via IncidentDisplay.Label.</summary>
 public sealed record HistoryRow(string Kind, string TypeName, string? Detail, DateTimeOffset At, TimeSpan? Duration,
     string? Resolution);
+
+/// <summary>One raw cumulative Interface[].TotalBytes sample.</summary>
+public sealed record ThroughputPoint(long Bytes, DateTime At);
+
+/// <summary>The busiest interface's throughput history — see
+/// GetDeviceInterfaceThroughputHistoryAsync. InterfaceName is null when there's no metric data
+/// for this device yet.</summary>
+public sealed record ThroughputHistory(string? InterfaceName, IReadOnlyList<ThroughputPoint> Points);
 
 public sealed record ComponentRow(
     string HwComponent,
