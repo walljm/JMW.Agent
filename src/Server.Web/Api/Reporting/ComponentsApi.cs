@@ -1,4 +1,5 @@
 using JMW.Discovery.Server.Data;
+using JMW.Discovery.Server.Queries;
 
 using Npgsql;
 
@@ -14,21 +15,18 @@ public static class ComponentsApi
     public const int DefaultLimit = 100;
     public const int MaxLimit = 500;
 
-    // hostname sorts on proj_devices' resolved identity column (context-derivations.md §3.3) —
-    // pdv can DRIVE the plan through proj_devices_hostname_sort_idx, which a LEFT-JOINed
-    // proj_systems.hostname never could. class stays on the driving component table (0104 index).
-    private static readonly Dictionary<string, string> SortExpressions =
-        new(StringComparer.Ordinal)
-        {
-            ["hostname"] = "coalesce(pdv.hostname, '')",
-            ["class"] = "coalesce(c.class, '')",
-        };
-
+    /// <summary>Must match the first [SortableBy] key on ReportingQueries.ListComponentsAsync —
+    /// the generated command text falls back to that column for an unrecognized sort.</summary>
     public const string DefaultSort = "hostname";
 
-    public static readonly IReadOnlySet<string> SortableColumns = SortExpressions.Keys.ToHashSet(StringComparer.Ordinal);
+    /// <summary>
+    /// Columns the component list may be sorted by — hostname rides proj_devices' resolved
+    /// identity column, class the driving component table (0104 index). Sourced from the
+    /// generated [SortableBy] allowlist so the UI cannot drift from the validated SQL variants.
+    /// </summary>
+    public static readonly IReadOnlySet<string> SortableColumns = ReportingQueries.ListComponentsAsyncSortKeys;
 
-    public static bool IsSortable(string? sort) => sort is not null && SortExpressions.ContainsKey(sort);
+    public static bool IsSortable(string? sort) => sort is not null && SortableColumns.Contains(sort);
 
     public static void Map(IEndpointRouteBuilder app)
     {
@@ -68,45 +66,46 @@ public static class ComponentsApi
         string? dir = null
     )
     {
-        string sql = BuildSql(sort, dir);
-
-        await using NpgsqlConnection conn = await db.OpenConnectionAsync(ct);
-        await using NpgsqlCommand cmd = new(sql, conn);
-        cmd.Parameters.Add(Param.Text(string.IsNullOrWhiteSpace(search) ? null : search));
-        cmd.Parameters.Add(Param.Text(string.IsNullOrWhiteSpace(cls) ? null : cls));
-        cmd.Parameters.Add(Param.Text(afterSortKey));
-        cmd.Parameters.Add(Param.Text(afterDevice));
-        cmd.Parameters.Add(Param.Text(afterComponent));
-        cmd.Parameters.Add(Param.Integer(limit + 1));
-
         List<ComponentListItem> items = new();
+        // sortKeys[i] is the SQL-computed sort expression for items[i] — used verbatim for the
+        // cursor so it always matches the keyset comparison (no C#-side re-derivation to drift).
         List<string> sortKeys = new();
         List<(string Device, string Component)> tiebreakers = new();
-        await using (NpgsqlDataReader reader = await cmd.ExecuteReaderAsync(ct))
+
+        await using NpgsqlConnection conn = await db.OpenConnectionAsync(ct);
+        await foreach ((string device, string? hostname, string component, string? rowClass, string? slot,
+            string? description, string? vendor, string? model, string? serial, string? firmware,
+            string? status, bool? isFru, string? sortKey, string? friendlyName)
+            in conn.ListComponentsAsync(
+                string.IsNullOrWhiteSpace(search) ? null : search,
+                string.IsNullOrWhiteSpace(cls) ? null : cls,
+                afterSortKey,
+                afterDevice,
+                afterComponent,
+                limit + 1,
+                sort,
+                dir,
+                ct
+            ))
         {
-            while (await reader.ReadAsync(ct))
-            {
-                string device = reader.GetString(0);
-                string component = reader.GetString(2);
-                items.Add(
-                    new ComponentListItem(
-                        Device: device,
-                        Hostname: GetStr(reader, 1),
-                        Class: GetStr(reader, 3),
-                        Slot: GetStr(reader, 4),
-                        Description: GetStr(reader, 5),
-                        Vendor: GetStr(reader, 6),
-                        Model: GetStr(reader, 7),
-                        Serial: GetStr(reader, 8),
-                        Firmware: GetStr(reader, 9),
-                        Status: GetStr(reader, 10),
-                        IsFru: reader.IsDBNull(11) ? null : reader.GetBoolean(11),
-                        FriendlyName: GetStr(reader, 13)
-                    )
-                );
-                sortKeys.Add(GetStr(reader, 12) ?? string.Empty);
-                tiebreakers.Add((device, component));
-            }
+            items.Add(
+                new ComponentListItem(
+                    Device: device,
+                    Hostname: hostname,
+                    Class: rowClass,
+                    Slot: slot,
+                    Description: description,
+                    Vendor: vendor,
+                    Model: model,
+                    Serial: serial,
+                    Firmware: firmware,
+                    Status: status,
+                    IsFru: isFru,
+                    FriendlyName: friendlyName
+                )
+            );
+            sortKeys.Add(sortKey ?? string.Empty);
+            tiebreakers.Add((device, component));
         }
 
         string? nextCursor = null;
@@ -121,51 +120,6 @@ public static class ComponentsApi
 
         return (items, nextCursor);
     }
-
-    /// <summary>Builds the list SQL for a sort/direction. Extracted so the EXPLAIN-based index
-    /// test (ReportPlanTests) can assert the exact production query's plan.</summary>
-    public static string BuildSql(string? sort, string? dir)
-    {
-        string sortKeyCol = sort is not null && SortExpressions.TryGetValue(sort, out string? expr)
-            ? expr
-            : SortExpressions[DefaultSort];
-        bool descending = string.Equals(dir, "desc", StringComparison.OrdinalIgnoreCase);
-        string cmp = descending ? "<" : ">";
-        string direction = descending ? "DESC" : "ASC";
-        // Decomposed keyset cursor for the cross-table hostname sort (context-derivations.md
-        // §3.3): the exact 3-column row comparison spans pdv and c, so it can't push into
-        // proj_devices' index by itself — a redundant pdv-only prefix bound restores the
-        // Index Cond while the exact residual keeps page boundaries precise. Same-table sorts
-        // (class) push their full tuple into the 0104 index without it.
-        string prefixCmp = descending ? "<=" : ">=";
-        string cursorPrefix = string.Equals(sortKeyCol, SortExpressions["hostname"], StringComparison.Ordinal)
-            ? $"(({sortKeyCol}, pdv.device) {prefixCmp} ($3, $4)) AND "
-            : string.Empty;
-
-        // JOIN proj_devices is safe (never drops rows): every device has a proj_devices row
-        // from creation (DeviceRegistry.CreateDeviceAsync + the context engine's backfill).
-        return $"""
-            SELECT
-                c.device, s.hostname, c.hwcomponent, c.class, c.slot, c.description, c.vendor,
-                c.model, c.serial, c.firmware, c.status, c.is_fru,
-                {sortKeyCol} AS sort_key,
-                COALESCE(s.friendly_name, s.hostname) AS friendly_name
-            FROM proj_hardware_inventory c
-                JOIN proj_devices pdv ON pdv.device = c.device
-                LEFT JOIN proj_systems s ON s.device = c.device
-            WHERE ($1::text IS NULL OR COALESCE(s.hostname, '') ILIKE '%' || $1 || '%'
-                    OR COALESCE(c.description, '') ILIKE '%' || $1 || '%'
-                    OR COALESCE(c.vendor, '') ILIKE '%' || $1 || '%'
-                    OR COALESCE(c.model, '') ILIKE '%' || $1 || '%')
-              AND ($2::text IS NULL OR c.class = $2)
-              AND ($3::text IS NULL OR ({cursorPrefix}(({sortKeyCol}, c.device, c.hwcomponent) {cmp} ($3, $4, $5))))
-            ORDER BY {sortKeyCol} {direction}, c.device {direction}, c.hwcomponent {direction}
-            LIMIT $6
-            """;
-    }
-
-    private static string? GetStr(NpgsqlDataReader reader, int ordinal) =>
-        reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
 }
 
 public sealed record ComponentListItem(

@@ -95,6 +95,35 @@ public static partial class ReportingQueries
             CancellationToken cancellationToken
         );
 
+    // ── Reporting: Hardware Components ──────────────────────────────────────────
+
+    /// <summary>
+    /// Lists hardware inventory components across the fleet (board, CPU, disk, fan, PSU, …),
+    /// joined to the host's hostname, with optional search/class filters and keyset pagination
+    /// ordered by (sort key, device, hwcomponent). The hostname sort key lives on proj_devices
+    /// (the resolved identity column, context-derivations.md §3.3) so it can drive the plan
+    /// through proj_devices_hostname_sort_idx. SortKey is the SQL-computed sort expression for
+    /// the row, used verbatim for the next-page cursor.
+    /// </summary>
+    [DatabaseCommand]
+    [SortableBy("hostname", "coalesce(pdv.hostname, '')")]
+    [SortableBy("class", "coalesce(c.class, '')")]
+    public static partial
+        IAsyncEnumerable<(string Device, string? Hostname, string Hwcomponent, string? Class, string? Slot,
+            string? Description, string? Vendor, string? Model, string? Serial, string? Firmware, string? Status,
+            bool? IsFru, string? SortKey, string? FriendlyName)> ListComponentsAsync(
+            this NpgsqlConnection connection,
+            string? search,
+            string? cls,
+            string? afterSortKey,
+            string? afterDevice,
+            string? afterComponent,
+            int limit,
+            string? sort,
+            string? dir,
+            CancellationToken cancellationToken
+        );
+
     // ── Reporting: Subnets ──────────────────────────────────────────────────────
 
     /// <summary>

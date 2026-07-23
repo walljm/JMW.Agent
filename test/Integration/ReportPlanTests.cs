@@ -1,3 +1,4 @@
+using JMW.Discovery.Server.Queries;
 using JMW.Discovery.Server.Reporting;
 
 using Npgsql;
@@ -99,7 +100,7 @@ public sealed class ReportPlanTests : IAsyncLifetime
     [Fact]
     public async Task Components_HostnameSort_DrivesFromProjDevicesIndex()
     {
-        string plan = await FirstPagePlanAsync(ComponentsApi.BuildSql("hostname", dir: null));
+        string plan = await FirstPagePlanAsync(ReportingQueries.ListComponentsAsyncCommandText("hostname", dir: null));
 
         Assert.Contains("proj_devices_hostname_sort_idx", plan, StringComparison.Ordinal);
     }
@@ -107,7 +108,7 @@ public sealed class ReportPlanTests : IAsyncLifetime
     [Fact]
     public async Task Components_ClassSort_UsesDrivingTableExpressionIndex()
     {
-        string plan = await FirstPagePlanAsync(ComponentsApi.BuildSql("class", dir: null));
+        string plan = await FirstPagePlanAsync(ReportingQueries.ListComponentsAsyncCommandText("class", dir: null));
 
         Assert.Contains("proj_hardware_inventory_class_sort_idx", plan, StringComparison.Ordinal);
     }
