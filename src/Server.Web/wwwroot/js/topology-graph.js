@@ -21,21 +21,31 @@
 // line-art icon (ICON_PATHS) drawn above the node — permissive glyphs (Tabler/Lucide-style,
 // MIT/ISC), hand-vendored as inline SVG paths so nothing loads under the no-'unsafe-eval' CSP.
 (function () {
+    // `r` (circle radius) / `w`,`h` (rect size) default to the shape's usual size below when
+    // omitted — only the Internet node currently overrides them, to read as the clear edge of
+    // the network rather than just another same-sized node.
     const KIND_STYLE = {
         subnet: { shape: 'rect', varName: '--info' },
         router: { shape: 'rect', varName: '--accent' },
-        internet: { shape: 'circle', varName: '--ok' },
+        internet: { shape: 'circle', varName: '--ok', r: 26 },
+        // Same green as Internet (it's the ISP uplink segment made visible, the rarer
+        // counterpart to the synthetic Internet node) but still a rect — it IS a real subnet.
+        'wan-subnet': { shape: 'rect', varName: '--ok' },
         vpn: { shape: 'circle', varName: '--warn' },
         device: { shape: 'rect', varName: '--accent' },
         unknown: { shape: 'circle', varName: '--text-faint' },
     };
     const DEFAULT_STYLE = { shape: 'circle', varName: '--text-dim' };
+    const DEFAULT_RECT = { w: 92, h: 32 };
+    const DEFAULT_CIRCLE_R = 18;
 
     // Network-tier ordering for auto-root selection on the L3 graph: lower = higher tier
     // (closer to the internet edge), so auto-roots are the lowest-rank kind present. The L2
     // graph carries none of these kinds, so it falls back to highest-degree (see chooseAutoRoots).
-    const KIND_RANK = { internet: 0, router: 1, subnet: 2, device: 2, vpn: 3, unknown: 4 };
-    const L3_KINDS = new Set(['internet', 'router', 'subnet', 'vpn']);
+    // internet and wan-subnet share rank 0 — they're mutually exclusive per graph (see
+    // SubnetsApi.GetGraphAsync), never both roots at once.
+    const KIND_RANK = { internet: 0, 'wan-subnet': 0, router: 1, subnet: 2, device: 2, vpn: 3, unknown: 4 };
+    const L3_KINDS = new Set(['internet', 'wan-subnet', 'router', 'subnet', 'vpn']);
 
     // Icons on a 24×24 grid (Lucide viewBox), stroke line-art, drawn centered above each node.
     // network / router / server / globe / shield — themeable via stroke color.
@@ -43,6 +53,7 @@
         subnet: 'M12 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM18 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM12 9v3M7.5 16.5 10.5 12.5M16.5 16.5 13.5 12.5',
         router: 'M6.5 17.5h11a2 2 0 0 0 2-2v-1a2 2 0 0 0-2-2h-11a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2ZM7 15v.01M11 15v.01M15 9l3-3M19 10l2-2M9 15h6',
         internet: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM3.5 9h17M3.5 15h17M12 3a13 13 0 0 1 0 18 13 13 0 0 1 0-18Z',
+        'wan-subnet': 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM3.5 9h17M3.5 15h17M12 3a13 13 0 0 1 0 18 13 13 0 0 1 0-18Z',
         vpn: 'M12 3 5 6v5c0 4 3 7.5 7 9 4-1.5 7-5 7-9V6l-7-3ZM12 11v3M12 8v.01',
         device: 'M4 5h16v6H4zM4 13h16v6H4zM7 8h.01M7 16h.01',
     };
@@ -426,18 +437,24 @@
             const style = styleFor(d.kind);
             const color = cssVar(style.varName) || '#888';
 
+            let shapeTop; // top edge (rect) / negative radius (circle) — anchors the icon above it
             if (style.shape === 'rect') {
+                const w = style.w || DEFAULT_RECT.w;
+                const h = style.h || DEFAULT_RECT.h;
+                shapeTop = -h / 2;
                 g.append('rect')
-                    .attr('x', -46)
-                    .attr('y', -16)
-                    .attr('width', 92)
-                    .attr('height', 32)
+                    .attr('x', -w / 2)
+                    .attr('y', shapeTop)
+                    .attr('width', w)
+                    .attr('height', h)
                     .attr('rx', 6)
                     .attr('fill', color)
                     .attr('fill-opacity', 0.85);
             } else {
+                const r = style.r || DEFAULT_CIRCLE_R;
+                shapeTop = -r;
                 g.append('circle')
-                    .attr('r', 18)
+                    .attr('r', r)
                     .attr('fill', color)
                     .attr('fill-opacity', 0.85);
             }
@@ -448,7 +465,6 @@
             const iconPath = ICON_PATHS[d.kind];
             if (iconPath) {
                 const iconSize = 18;
-                const shapeTop = style.shape === 'rect' ? -16 : -18;
                 g.append('path')
                     .attr('class', 'tgraph-icon')
                     .attr('d', iconPath)
