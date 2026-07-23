@@ -20,6 +20,7 @@ public static class IncidentDisplay
             ["fingerprint_conflict"] =
                 new("device records sharing a fingerprint — resolve by merge", "warn", "/admin/conflicts", AdminOnly: true),
             ["agent_offline"] = new("agents offline", "warn", "/fleet/agents"),
+            ["cert_expiring"] = new("service CA certificates expiring soon", "info", "/terrain/ca-services"),
             // No dedicated report page yet — matches the prior "Detailed view coming soon" info row.
             ["hardware_failed"] = new("failed hardware components", "info", null),
         };

@@ -114,6 +114,10 @@ builder.Services.AddScoped<DiscoveryMaterializer>();
 // they need a periodic sweep rather than an IncidentEvaluator hook — see AgentLivenessSweepService.
 builder.Services.AddHostedService<AgentLivenessSweepService>();
 
+// cert_expiring is threshold-driven by the passage of time, not a fact-value change, so it also
+// needs a periodic sweep rather than an IncidentEvaluator hook — see CertExpiringSweepService.
+builder.Services.AddHostedService<CertExpiringSweepService>();
+
 // Forces a staggered full re-collect on agents whose delta cache has gone stale vs. server-side
 // retention, so pruned 'steady' current-state gets refilled before it becomes a permanent hole.
 builder.Services.AddHostedService<DeviceRecollectSweepService>();

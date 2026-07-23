@@ -346,34 +346,6 @@ public sealed class DashboardQueryTests
         Assert.Equal(4, r.WindowTotal); // window count still includes every cycle, heartbeats too
     }
 
-    // ── Posture ─────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task CertsExpiring_applies_30_day_predicate()
-    {
-        // disks/filesystems/containers/hardware/conflicts moved to the incidents table (see
-        // IncidentEvaluatorTests) — GetPostureSummary.sql was trimmed to GetCertsExpiring.sql,
-        // the one Needs-Attention signal still sourced from a projection at query time.
-        await ResetAsync();
-        DateTimeOffset now = DateTimeOffset.UtcNow;
-
-        // service CA: one expiring within 30d, one far out.
-        await ExecAsync(
-            "INSERT INTO proj_service_ca (service, root_not_after, updated_at) VALUES ('svc1', @exp, now())",
-            ("exp", now.AddDays(10))
-        );
-        await ExecAsync(
-            "INSERT INTO proj_service_ca (service, int_not_after, updated_at) VALUES ('svc2', @far, now())",
-            ("far", now.AddDays(200))
-        );
-
-        await using NpgsqlConnection conn = await _fx.DataSource.OpenConnectionAsync();
-        CertsExpiringResult certs =
-            await conn.GetCertsExpiringAsync(CancellationToken.None).FirstOrDefaultAsync(CancellationToken.None);
-
-        Assert.Equal(1, certs.CertsExpiring);
-    }
-
     // ── Composition ─────────────────────────────────────────────────────────────
 
     [Fact]

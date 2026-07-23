@@ -11,9 +11,10 @@ namespace JMW.Discovery.Server.Incidents;
 /// Deliberately NOT covered here (fast-follow, not silently dropped):
 ///   service_down          — no single unambiguous "service health" fact path exists yet across
 ///                            service types (DNS/HA/CA each expose different signals).
-///   cert_expiring         — "expires within 30 days" crosses its threshold as the clock advances,
-///                            not when a fact value changes, so it needs periodic reconciliation
-///                            (like agent_offline) rather than an ingest-triggered evaluator.
+///   cert_expiring         — moved to CertExpiringSweepService: "expires within 30 days" crosses
+///                            its threshold as the clock advances, not when a fact value changes,
+///                            so it needs periodic reconciliation (like agent_offline) rather than
+///                            an ingest-triggered evaluator.
 ///   device_offline        — silence-driven like agent_offline, but devices (unlike agents) have no
 ///                            per-entity heartbeat/interval to derive a threshold from. Flagged as
 ///                            an open sequencing question in the design doc itself.

@@ -88,14 +88,14 @@ public sealed record IncidentCountRow(string IncidentType, long OpenCount, long 
 /// <summary>
 /// Needs-Attention posture rollup — one query over open incidents (see IncidentQueries.
 /// GetOpenIncidentCountsAsync), grouped by type; a new incident type shows up here with no new
-/// SQL. CertsExpiring is the one signal not yet migrated to the incident model (see
-/// IncidentTypeRegistry's remarks on why cert_expiring needs periodic reconciliation, not an
-/// ingest-triggered evaluator) — still sourced from GetCertsExpiring.sql.
+/// SQL. cert_expiring (CertExpiringSweepService) is the most recent signal migrated onto this —
+/// see IncidentTypeRegistry's remarks on why it needed periodic reconciliation, not an
+/// ingest-triggered evaluator, to get here.
 /// </summary>
-public sealed record PostureVm(IReadOnlyList<IncidentCountRow> IncidentCounts, long CertsExpiring)
+public sealed record PostureVm(IReadOnlyList<IncidentCountRow> IncidentCounts)
 {
     /// <summary>True when nothing needs attention — drives the healthy "all clear" empty state.</summary>
-    public bool AllClear => IncidentCounts.Count == 0 && CertsExpiring == 0;
+    public bool AllClear => IncidentCounts.Count == 0;
 }
 
 /// <summary>Network composition breakdowns (top-N + "Other" already rolled up).</summary>

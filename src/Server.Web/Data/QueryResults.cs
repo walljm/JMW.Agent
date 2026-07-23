@@ -59,8 +59,6 @@ public readonly record struct CollectionKeyResult(string? CollectionKey);
 
 public readonly record struct MetadataIdResult(Guid Id);
 
-public readonly record struct CertsExpiringResult(long? CertsExpiring);
-
 /// <summary>
 /// A row from the "new discovered / DHCP" materializer queries — the shared identity +
 /// promotion fields, mapped positionally from a common SELECT column order (mac, ip,

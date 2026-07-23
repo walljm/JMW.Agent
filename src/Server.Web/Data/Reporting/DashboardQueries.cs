@@ -150,19 +150,6 @@ public static partial class DashboardQueries
             CancellationToken cancellationToken
         );
 
-    // ── Needs-attention zone: posture rollup from surviving projections ─────────
-
-    /// <summary>
-    /// Service CA certificates expiring within 30 days. The one Needs-Attention signal not yet
-    /// migrated to the incidents table — see IncidentQueries.GetOpenIncidentCountsAsync for
-    /// everything else (disks/filesystems/containers/hardware/conflicts/agents).
-    /// </summary>
-    [DatabaseCommand]
-    public static partial IAsyncEnumerable<CertsExpiringResult> GetCertsExpiringAsync(
-        this NpgsqlConnection connection,
-        CancellationToken cancellationToken
-    );
-
     // ── Network composition breakdowns (device counts by dimension) ─────────────
 
     /// <summary>Live-device counts by device-maker vendor (matches Devices vendor semantics), descending.</summary>

@@ -130,8 +130,7 @@ public sealed class DashboardModel : PageModel
                 counts.Add(new IncidentCountRow(incidentType, openCount ?? 0, distinctEntities ?? 0));
             }
 
-            CertsExpiringResult certs = await conn.GetCertsExpiringAsync(ct).FirstOrDefaultAsync(ct);
-            PostureVm vm = new(counts, certs.CertsExpiring ?? 0);
+            PostureVm vm = new(counts);
             Cache("dash_posture", vm, MedTtl);
             Posture = vm;
         }

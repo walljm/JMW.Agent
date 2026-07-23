@@ -30,7 +30,7 @@
         visibleRows = visibleRows.OrderBy(r => SeverityRank(r.Info.Severity)).ToList();
     }
 
-    int rowCount = visibleRows.Count + (p is not null && p.CertsExpiring > 0 ? 1 : 0);
+    int rowCount = visibleRows.Count;
 
     // When the fleet is all-clear (loaded OK, zero attention items) the panel is hidden entirely
     // — no "all clear" card. But the root element still polls, so the panel silently reappears the
@@ -84,15 +84,6 @@
                                 <span class="attn-label text-faint">@info.Label · @row.DistinctEntities hosts</span>
                             </div>
                         }
-                    }
-                    @if (p.CertsExpiring > 0)
-                    {
-                        <div class="attn-item" title="Detailed view coming soon"
-                             aria-label="Info: @p.CertsExpiring service CA certificates expiring soon">
-                            <span class="status info">Info</span>
-                            <span class="attn-count text-faint">@p.CertsExpiring</span>
-                            <span class="attn-label text-faint">service CA certificates expiring soon</span>
-                        </div>
                     }
                 </div>
             }
