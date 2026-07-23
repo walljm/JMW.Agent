@@ -39,13 +39,16 @@ public sealed class FactRepository
     }
 
     /// <summary>
-    /// Reads the current value of each (device, path) pair from facts_history — the latest row per
-    /// fact id — for hydrating derivation inputs before analysis (docs/plans/
-    /// architecture-identity-facts.md §11). Only Device-scoped paths are passed (the id is
-    /// <c>Device[{device}].{attr}</c>, so id uniquely identifies (device, path)); the returned facts
-    /// carry the stored value and its <c>collected_at</c>, reconstructed by kind. Bounded by the
-    /// batch's device set × the small fixed hydratable-path set, served by the existing
-    /// <c>(id, collected_at DESC)</c> covering index — one indexed read per batch, no warm cache.
+    /// Reads the current value of each (device, path) pair from the materialization_facts
+    /// current-value store for hydrating derivation inputs before analysis (§11 as originally
+    /// built read facts_history's latest-per-id; docs/plans/context-derivations.md §6.5 moved
+    /// hydration here because facts_history is retention-pruned — an unchanged-but-true input's
+    /// newest row could vanish until the recollect sweep refilled it, silently degrading a
+    /// fan-in derivation). Rows are written by <see cref="Projections.DerivationInputProjection" />
+    /// (typed: kind/value_long/value_double; value holds the text rendering) and are permanent
+    /// (entity_key = '' rows are excluded from this table's retention policy — migration 0107).
+    /// The fact id is reconstructed from the path template + device key. Bounded by the batch's
+    /// device set × the small fixed hydratable-path set, served by the primary key.
     /// </summary>
     public async Task<IReadOnlyList<Fact>> HydrateInputsAsync(
         IReadOnlyCollection<string> devices,
@@ -60,11 +63,13 @@ public sealed class FactRepository
 
         await using NpgsqlConnection conn = await _db.OpenConnectionAsync(ct);
         await using NpgsqlCommand cmd = conn.CreateCommand();
+        // No entity_key filter: Device-scoped rows have entity_key = ''; Discovered-scoped rows
+        // (guarded gap-fill inputs, plus the identity-signal rows IdentityFactProjection wrote
+        // for DeviceType/Os) carry the station key. The path set narrows both correctly.
         cmd.CommandText = """
-            SELECT DISTINCT ON (id) id, kind, value_str, value_long, value_double, collected_at
-            FROM   facts_history
-            WHERE  key_values ->> 'Device' = ANY($1) AND attribute_path = ANY($2)
-            ORDER  BY id, collected_at DESC
+            SELECT device, entity_key, attribute_path, kind, value, value_long, value_double, updated_at
+            FROM   materialization_facts
+            WHERE  device = ANY($1) AND attribute_path = ANY($2)
             """;
         cmd.Parameters.Add(Param.TextArray(devices.ToArray()));
         cmd.Parameters.Add(Param.TextArray(paths.ToArray()));
@@ -73,12 +78,14 @@ public sealed class FactRepository
         await using NpgsqlDataReader reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {
-            string id = reader.GetString(0);
-            FactValueKind kind = (FactValueKind)reader.GetInt16(1);
-            string? str = reader.IsDBNull(2) ? null : reader.GetString(2);
-            long? lng = reader.IsDBNull(3) ? null : reader.GetInt64(3);
-            double? dbl = reader.IsDBNull(4) ? null : reader.GetDouble(4);
-            DateTimeOffset collectedAt = reader.GetFieldValue<DateTimeOffset>(5);
+            string device = reader.GetString(0);
+            string entityKey = reader.GetString(1);
+            string path = reader.GetString(2);
+            FactValueKind kind = (FactValueKind)reader.GetInt16(3);
+            string? str = reader.IsDBNull(4) ? null : reader.GetString(4);
+            long? lng = reader.IsDBNull(5) ? null : reader.GetInt64(5);
+            double? dbl = reader.IsDBNull(6) ? null : reader.GetDouble(6);
+            DateTimeOffset updatedAt = reader.GetFieldValue<DateTimeOffset>(7);
 
             FactValue? value = kind switch
             {
@@ -86,11 +93,19 @@ public sealed class FactRepository
                 FactValueKind.Long when lng is not null => FactValue.FromLong(lng.Value),
                 FactValueKind.Double when dbl is not null => FactValue.FromDouble(dbl.Value),
                 FactValueKind.Bool when lng is not null => FactValue.FromBool(lng.Value != 0),
-                _ => null, // other kinds aren't among the Device-scoped hydratable paths; skip defensively
+                _ => null, // other kinds are never routed by DerivationInputProjection; skip defensively
             };
             if (value is { } v)
             {
-                result.Add(Fact.Create(id, v, collectedAt));
+                string id = path.Replace("Device[]", $"Device[{device}]", StringComparison.Ordinal);
+                if (entityKey.Length > 0)
+                {
+                    // Discovered-scoped: re-key the station dimension so the injected fact lands
+                    // in the same scope group as the batch's facts for that station.
+                    id = id.Replace("Discovered[]", $"Discovered[{entityKey}]", StringComparison.Ordinal);
+                }
+
+                result.Add(Fact.Create(id, v, updatedAt));
             }
         }
 

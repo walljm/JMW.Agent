@@ -2,6 +2,7 @@ SELECT
     table_name
   , time_column
   , stale_after
+  , prune_predicate
 FROM
     retention_policies
 WHERE

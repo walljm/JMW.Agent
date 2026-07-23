@@ -36,15 +36,26 @@ public sealed class AnalysisEngine
 
     /// <summary>
     /// The derivation input paths worth hydrating from current state before deriving
-    /// (docs/plans/architecture-identity-facts.md §11): a raw input (not itself any derivation's
-    /// output — derived values are always recomputed, never frozen) that is <b>Device-scoped</b>
-    /// (DimKey == "Device"). Restricting to Device-scoped is the deliberate first cut: it covers
-    /// the priority fan-ins that suffer batch-locality clobbering (vendor/os/model/hostname) while
-    /// excluding high-cardinality per-child paths (per-interface/-filesystem metrics) whose
-    /// hydration would be costly at the 80K-device design target. The pipeline reads the current
-    /// value of these paths for the devices in a batch and passes them to
-    /// <see cref="Analyze(IReadOnlyList{Fact}, IReadOnlyList{Fact})" /> so a partial batch is
-    /// derived against full current state, not just the delta.
+    /// (docs/plans/architecture-identity-facts.md §11; store: context-derivations.md §6.5):
+    /// <list type="bullet">
+    /// <item><b>Device-scoped</b> (DimKey == "Device"): a raw input that is not itself any
+    /// derivation's output — derived values are always recomputed, never frozen. Excluding
+    /// high-cardinality per-child paths (per-interface/-filesystem metrics) keeps hydration
+    /// cheap at the 80K-device design target.</item>
+    /// <item><b>Discovered-scoped</b> (DimKey == "Device|Discovered"): ALL inputs, including
+    /// paths that are also outputs (DiscoveredVendor/DiscoveredOs). Both discovered derivations
+    /// are absence-guarded gap-fills — "an observed value always wins" — so their guards must
+    /// see the world's current value, not just the batch's: a batch re-sending DiscoveredModel
+    /// without the unchanged DiscoveredVendor would otherwise re-infer and clobber a real
+    /// observation. Hydrating an also-output path is safe here: batch values win over hydrated
+    /// ones, and injected facts are subtracted from the result, so a prior output can suppress
+    /// a re-derivation but can never persist itself. The same is deliberately NOT done for
+    /// Device scope, where self-refining derivations (DeviceKind, SystemOsFamily) consume their
+    /// own outputs and hydration would feed back.</item>
+    /// </list>
+    /// The pipeline reads the current value of these paths for the devices in a batch and passes
+    /// them to <see cref="Analyze(IReadOnlyList{Fact}, IReadOnlyList{Fact})" /> so a partial
+    /// batch is derived against full current state, not just the delta.
     /// </summary>
     public IReadOnlySet<string> HydratableInputPaths { get; }
 
@@ -64,7 +75,12 @@ public sealed class AnalysisEngine
         HashSet<string> outputs = derivations.SelectMany(d => d.Outputs).ToHashSet(StringComparer.Ordinal);
         return derivations
             .SelectMany(d => d.Inputs)
-            .Where(p => !outputs.Contains(p) && Fact.DeriveDimKey(p) == "Device")
+            .Where(p => Fact.DeriveDimKey(p) switch
+            {
+                "Device" => !outputs.Contains(p),
+                "Device|Discovered" => true, // guards need also-output paths — see HydratableInputPaths doc
+                _ => false,
+            })
             .ToHashSet(StringComparer.Ordinal);
     }
 

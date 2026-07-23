@@ -21,10 +21,16 @@ public static class HardwareApi
     private const string VendorExpr =
         "COALESCE(NULLIF(h.system_vendor, ''), NULLIF(pd.vendor, ''))";
 
+    // hostname sorts on proj_devices' resolved identity column (context-derivations.md §3.3) —
+    // pd can DRIVE the plan through proj_devices_hostname_sort_idx, which a LEFT-JOINed
+    // proj_systems.hostname never could; the (sort_key, device) cursor tuple lives entirely on
+    // pd, so no decomposed prefix is needed here. cpu stays on the driving proj_hardware table
+    // (0104 index); vendor is a cross-table COALESCE (deliberate DMI-first display priority) —
+    // a rare, unindexable sort left as a full sort.
     private static readonly Dictionary<string, string> SortExpressions =
         new(StringComparer.Ordinal)
         {
-            ["hostname"] = "coalesce(s.hostname, '')",
+            ["hostname"] = "coalesce(pd.hostname, '')",
             // Null-safe form for the keyset sort key: a NULL sort key silently drops rows from
             // keyset pagination. The SELECT below shows the raw (nullable) VendorExpr so an absent
             // vendor renders as "—"; sorting treats it as ''.
@@ -79,6 +85,13 @@ public static class HardwareApi
         bool descending = string.Equals(dir, "desc", StringComparison.OrdinalIgnoreCase);
         string cmp = descending ? "<" : ">";
         string direction = descending ? "DESC" : "ASC";
+        // The tiebreaker rides the sort key's own table so the full (sort_key, device) tuple
+        // matches that table's expression index — h.device and pd.device are join-equal, so
+        // this changes nothing semantically. JOIN proj_devices is safe (never drops rows):
+        // every device has a proj_devices row from creation + the context engine's backfill.
+        string tiebreaker = string.Equals(sortKeyCol, SortExpressions["hostname"], StringComparison.Ordinal)
+            ? "pd.device"
+            : "h.device";
 
         string sql = $"""
             SELECT
@@ -89,7 +102,7 @@ public static class HardwareApi
                 COALESCE(s.friendly_name, s.hostname) AS friendly_name
             FROM proj_hardware h
                 LEFT JOIN proj_systems s ON s.device = h.device
-                LEFT JOIN proj_devices pd ON pd.device = h.device
+                JOIN proj_devices pd ON pd.device = h.device
                 LEFT JOIN LATERAL (
                     SELECT SUM(d.size_bytes) AS total_bytes FROM proj_disks d WHERE d.device = h.device
                 ) disks ON TRUE
@@ -97,8 +110,8 @@ public static class HardwareApi
                     OR {VendorExpr} ILIKE '%' || $1 || '%'
                     OR COALESCE(h.system_model, '') ILIKE '%' || $1 || '%'
                     OR COALESCE(h.cpu_model, '') ILIKE '%' || $1 || '%')
-              AND ($2::text IS NULL OR (({sortKeyCol}, h.device) {cmp} ($2, $3)))
-            ORDER BY {sortKeyCol} {direction}, h.device {direction}
+              AND ($2::text IS NULL OR (({sortKeyCol}, {tiebreaker}) {cmp} ($2, $3)))
+            ORDER BY {sortKeyCol} {direction}, {tiebreaker} {direction}
             LIMIT $4
             """;
 

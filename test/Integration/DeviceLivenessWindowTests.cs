@@ -39,13 +39,15 @@ public sealed class DeviceLivenessWindowTests
         ExecAsync("UPDATE device_liveness_settings SET window_hours = @h WHERE id = TRUE", ("h", hours));
 
     /// <summary>Seeds a device with a single MAC fingerprint whose last_seen is <paramref name="ageHours" />
-    /// hours ago (0 = seen just now).</summary>
+    /// hours ago (0 = seen just now). Stamps devices.last_seen alongside, matching the production
+    /// invariant (every fingerprint sighting also advances the denormalized column — migration 0105).</summary>
     private async Task<Guid> SeedDeviceAsync(string managementStatus, double ageHours)
     {
         Guid id = await _fx.InsertDeviceAsync(managementStatus);
         await ExecAsync(
-            "INSERT INTO device_fingerprints (fp_type, fp_value, device_id, source, last_seen) "
-          + "VALUES ('mac', @v, @d, 'test', now() - make_interval(mins => @m))",
+            "WITH fp AS (INSERT INTO device_fingerprints (fp_type, fp_value, device_id, source, last_seen) "
+          + "VALUES ('mac', @v, @d, 'test', now() - make_interval(mins => @m))) "
+          + "UPDATE devices SET last_seen = now() - make_interval(mins => @m) WHERE device_id = @d",
             ("v", Guid.NewGuid().ToString("N")[..12]),
             ("d", id),
             ("m", (int)(ageHours * 60))
@@ -109,10 +111,12 @@ public sealed class DeviceLivenessWindowTests
     {
         await ResetAsync(); // window 24h
         Guid id = await _fx.InsertDeviceAsync("discovered");
-        // First sighting is stale...
+        // First sighting is stale... (fingerprint + devices.last_seen stamped together, as
+        // production always does — migration 0105)
         await ExecAsync(
-            "INSERT INTO device_fingerprints (fp_type, fp_value, device_id, source, last_seen) "
-          + "VALUES ('mac', @v, @d, 'test', now() - interval '48 hours')",
+            "WITH fp AS (INSERT INTO device_fingerprints (fp_type, fp_value, device_id, source, last_seen) "
+          + "VALUES ('mac', @v, @d, 'test', now() - interval '48 hours')) "
+          + "UPDATE devices SET last_seen = now() - interval '48 hours' WHERE device_id = @d",
             ("v", "aaaaaaaaaaaa"),
             ("d", id)
         );
@@ -120,7 +124,8 @@ public sealed class DeviceLivenessWindowTests
 
         // ...then it is seen again (last_seen bumped, as UpsertFingerprints does every resolution).
         await ExecAsync(
-            "UPDATE device_fingerprints SET last_seen = now() WHERE device_id = @d",
+            "WITH fp AS (UPDATE device_fingerprints SET last_seen = now() WHERE device_id = @d) "
+          + "UPDATE devices SET last_seen = GREATEST(last_seen, now()) WHERE device_id = @d",
             ("d", id)
         );
         Assert.True(await IsInAsync("visible_devices", id));

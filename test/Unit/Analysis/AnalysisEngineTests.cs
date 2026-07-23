@@ -122,18 +122,33 @@ public sealed class AnalysisEngineTests
     }
 
     [Fact]
-    public void HydratableInputPaths_AreDeviceScopedRawInputsOnly()
+    public void HydratableInputPaths_FollowThePerScopeRules()
     {
+        // Pins the per-scope hydration contract (context-derivations.md §6.5):
+        // Device scope = raw inputs only (outputs recomputed, never frozen — self-refining
+        // derivations would feed back); Device|Discovered scope = ALL inputs, including
+        // also-output guard paths (the discovered derivations are absence-guarded gap-fills,
+        // and batch-wins + injected-subtraction makes hydrating a guard path safe).
         AnalysisEngine engine = AnalysisLibrary.CreateEngine();
 
-        // Priority fan-in raw inputs are hydratable...
+        // Device scope: priority fan-in raw inputs are hydratable...
         Assert.Contains(FactPaths.HwSystemVendor, engine.HydratableInputPaths);
         Assert.Contains(FactPaths.DeviceVendor, engine.HydratableInputPaths);
-        // ...derived outputs never are (they're always recomputed, never frozen)...
+        // ...derived outputs never are.
         Assert.DoesNotContain(FactPaths.Derived.DeviceVendorCanonical, engine.HydratableInputPaths);
         Assert.DoesNotContain(FactPaths.Derived.DeviceVendorGuess, engine.HydratableInputPaths);
-        // ...and every hydratable path is Device-scoped (no per-child cardinality blowup).
-        Assert.All(engine.HydratableInputPaths, p => Assert.Equal("Device", Fact.DeriveDimKey(p)));
+
+        // Discovered scope: the absence-guard paths ARE hydratable despite being outputs —
+        // this is what stops a delta-tracked model-only batch re-inferring over an observation.
+        Assert.Contains(FactPaths.DiscoveredVendor, engine.HydratableInputPaths);
+        Assert.Contains(FactPaths.DiscoveredOs, engine.HydratableInputPaths);
+        Assert.Contains(FactPaths.DiscoveredModel, engine.HydratableInputPaths);
+
+        // No other scope leaks in (per-interface/-filesystem cardinality stays excluded).
+        Assert.All(
+            engine.HydratableInputPaths,
+            p => Assert.Contains(Fact.DeriveDimKey(p), new[] { "Device", "Device|Discovered" })
+        );
     }
 
     // ── Vendor context ────────────────────────────────────────────────────────

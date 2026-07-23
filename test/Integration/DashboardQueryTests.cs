@@ -42,8 +42,11 @@ public sealed class DashboardQueryTests
     }
 
     private async Task FingerprintAsync(Guid deviceId, string value, DateTimeOffset lastSeen) =>
+        // Stamps devices.last_seen alongside, matching the production invariant (migration 0105).
         await ExecAsync(
-            "INSERT INTO device_fingerprints (fp_type, fp_value, device_id, last_seen) VALUES ('mac', @v, @d, @ls)",
+            "WITH fp AS (INSERT INTO device_fingerprints (fp_type, fp_value, device_id, last_seen) "
+          + "VALUES ('mac', @v, @d, @ls)) "
+          + "UPDATE devices SET last_seen = GREATEST(last_seen, @ls) WHERE device_id = @d",
             ("v", value),
             ("d", deviceId),
             ("ls", lastSeen)
@@ -362,15 +365,18 @@ public sealed class DashboardQueryTests
         await _fx.InsertFingerprintAsync(alias, "mac", "aa0011223303");
 
         await ExecAsync(
-            "INSERT INTO proj_devices (device, kind, updated_at) VALUES (@d,'server',now())",
+            "INSERT INTO proj_devices (device, kind, updated_at) VALUES (@d,'server',now()) "
+          + "ON CONFLICT (device) DO UPDATE SET kind = EXCLUDED.kind, updated_at = EXCLUDED.updated_at",
             ("d", d1.ToString())
         );
         await ExecAsync(
-            "INSERT INTO proj_devices (device, kind, updated_at) VALUES (@d,'workstation',now())",
+            "INSERT INTO proj_devices (device, kind, updated_at) VALUES (@d,'workstation',now()) "
+          + "ON CONFLICT (device) DO UPDATE SET kind = EXCLUDED.kind, updated_at = EXCLUDED.updated_at",
             ("d", d2.ToString())
         );
         await ExecAsync(
-            "INSERT INTO proj_devices (device, kind, updated_at) VALUES (@d,'server',now())",
+            "INSERT INTO proj_devices (device, kind, updated_at) VALUES (@d,'server',now()) "
+          + "ON CONFLICT (device) DO UPDATE SET kind = EXCLUDED.kind, updated_at = EXCLUDED.updated_at",
             ("d", alias.ToString())
         );
         await ExecAsync(

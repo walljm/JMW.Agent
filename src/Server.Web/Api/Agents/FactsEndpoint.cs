@@ -8,6 +8,7 @@ using JMW.Discovery.Core;
 using JMW.Discovery.Core.Analysis;
 using JMW.Discovery.Server.Api;
 using JMW.Discovery.Server.Audit;
+using JMW.Discovery.Server.Ingest.Context;
 using JMW.Discovery.Server.Queries;
 
 using Npgsql;
@@ -59,6 +60,7 @@ public static class FactsEndpoint
         NpgsqlDataSource db,
         FactIngestPipeline pipeline,
         DiscoveryMaterializer materializer,
+        ContextDerivationEngine contextDerivations,
         ServiceRegistry serviceRegistry,
         AuditLog audit,
         ILoggerFactory loggerFactory,
@@ -296,6 +298,11 @@ public static class FactsEndpoint
         {
             await materializer.MaterializeAsync(ct);
         }
+
+        // Context derivations run after the materializer so a pass sees what it wrote this
+        // cycle (docs/plans/context-derivations.md §3.1). Self-gates per derivation on
+        // (touchedTables ∩ TriggerTables) + debounce; skips outright if a pass is running.
+        await contextDerivations.RunDueAsync(touchedTables, ct);
 
         // Store cycle summary if agent sent one.
         if (request.CycleSummary is not null)

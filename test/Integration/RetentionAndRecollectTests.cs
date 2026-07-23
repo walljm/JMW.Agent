@@ -1,4 +1,10 @@
+using ITPIE.Migrations;
+
+using JMW.Discovery.Server.Infrastructure;
 using JMW.Discovery.Server.Queries;
+
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 
 using Npgsql;
 
@@ -66,6 +72,50 @@ public sealed class RetentionAndRecollectTests
         Assert.Equal(("steady", TimeSpan.FromDays(30)), await PolicyAsync("proj_discovered"));
         // History unchanged.
         Assert.Equal(("history", TimeSpan.FromDays(90)), await PolicyAsync("facts_history"));
+    }
+
+    [Fact]
+    public async Task Retention_prunes_neighbor_rows_but_spares_derivation_input_rows()
+    {
+        // migration 0107: materialization_facts' policy carries prune_predicate "entity_key <> ''"
+        // so the steady-tier sweep removes stale neighbor-sighting rows (entity_key = station IP)
+        // while device-scoped derivation-input rows (entity_key = '') — the hydration store — are
+        // permanent. Both rows below are far past the 30d steady threshold; only one may die.
+        await ExecAsync(
+            "INSERT INTO materialization_facts (device, entity_key, attribute_path, value, updated_at) VALUES "
+          + "('ret-test-dev', '', 'Device[].Vendor', 'Ubiquiti', now() - interval '60 days'), "
+          + "('ret-test-dev', '192.168.9.9', 'Device[].Discovered[].SsdpUuid', 'uuid-x', now() - interval '60 days') "
+          + "ON CONFLICT (device, entity_key, attribute_path) DO UPDATE SET updated_at = EXCLUDED.updated_at"
+        );
+
+        IConfiguration config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Retention:Enabled"] = "true" })
+            .Build();
+        RetentionService service = new(
+            _fx.DataSource,
+            new MigrationCompletedSignal(), // TriggerAsync doesn't await it; only the hosted loop does
+            config,
+            NullLogger<RetentionService>.Instance
+        );
+
+        try
+        {
+            Assert.NotNull(await service.TriggerAsync());
+
+            Assert.Equal(
+                1L,
+                await _fx.CountAsync("materialization_facts", "device = 'ret-test-dev' AND entity_key = ''")
+            );
+            Assert.Equal(
+                0L,
+                await _fx.CountAsync("materialization_facts", "device = 'ret-test-dev' AND entity_key <> ''")
+            );
+        }
+        finally
+        {
+            service.Dispose();
+            await ExecAsync("DELETE FROM materialization_facts WHERE device = 'ret-test-dev'");
+        }
     }
 
     // ── Passive-device liveness re-stamp ──────────────────────────────────────

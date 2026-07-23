@@ -1,5 +1,7 @@
 using ITPIE.Migrations;
 
+using JMW.Discovery.Core.Analysis;
+
 using Npgsql;
 
 namespace JMW.Discovery.Server.Projections;
@@ -70,7 +72,22 @@ public sealed partial class ProjectionSchemaService : BackgroundService
             Log.SchemaEnsureFailed(_logger, ex);
         }
 
-        await ProjectionBackfill.RunAsync(_db, _router, _facts, defs, _logger, stoppingToken);
+        await ProjectionBackfill.RunAsync(
+            _db,
+            _router,
+            _facts,
+            defs,
+            _logger,
+            // Derivation-input store: devices that predate DerivationInputProjection get their
+            // hydratable inputs replayed from facts_history once, so the first hydration read
+            // is complete (context-derivations.md §6.5).
+            extras:
+            [
+                (ProjectionBackfill.DerivationInputsWatermark,
+                    AnalysisLibrary.CreateEngine().HydratableInputPaths.ToArray()),
+            ],
+            ct: stoppingToken
+        );
     }
 
     private static partial class Log

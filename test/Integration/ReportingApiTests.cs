@@ -46,10 +46,39 @@ public sealed class DeviceListApiTests : IAsyncLifetime
             "proj_device_arp",
             "proj_dhcp_leases",
             "proj_discovered",
+            "proj_interfaces",
             "device_fingerprints",
             "devices",
+            "facts_history",
+            "materialization_facts",
             "oui_entries"
         );
+
+    /// <summary>
+    /// Runs one full context-derivation pass, resolving the identity columns
+    /// (hostname/friendly_name/mac/ip) onto proj_devices from the seeded observation state —
+    /// the production step that happens on ingest. The device list reads those columns; the
+    /// resolution rules themselves are pinned by ContextDerivationEngineTests and the tests
+    /// below become end-to-end: seed observations → resolve → report shows the resolved value.
+    /// </summary>
+    private async Task ResolveIdentityAsync()
+    {
+        using JMW.Discovery.Server.Ingest.Context.ContextDerivationEngine engine = new(
+            _fixture.DataSource,
+            new JMW.Discovery.Server.FactRepository(
+                _fixture.DataSource,
+                new JMW.Discovery.Server.MetricsRepository(_fixture.DataSource)
+            ),
+            new JMW.Discovery.Server.Projections.ProjectionRouter(
+                _fixture.DataSource,
+                JMW.Discovery.Server.Projections.ProjectionLibrary.CreateAll(_fixture.DataSource)
+            ),
+            JMW.Discovery.Server.Ingest.Context.ContextDerivationLibrary.CreateAll(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<
+                JMW.Discovery.Server.Ingest.Context.ContextDerivationEngine>.Instance
+        );
+        await engine.RunAllAsync(CancellationToken.None);
+    }
 
     [Fact]
     public async Task Query_NoDevices_ReturnsEmptyList()
@@ -76,8 +105,8 @@ public sealed class DeviceListApiTests : IAsyncLifetime
     {
         Guid id = await _fixture.InsertDeviceAsync(managementStatus: "managed");
         await InsertSystemAsync(id, hostname: "web-01", osFamily: "Linux", osDistro: "Ubuntu");
-        // Vendor now comes from the best parsed source (hardware DMI), not proj_devices.
-        await InsertHardwareVendorAsync(id, vendor: "Dell");
+        // Vendor comes from proj_devices.vendor — DeviceVendorDerivation's canonical output.
+        await InsertDeviceVendorAsync(id, vendor: "Dell");
 
         (List<DeviceReportItem> items, string? next) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
@@ -148,6 +177,8 @@ public sealed class DeviceListApiTests : IAsyncLifetime
         await SeedOuiAsync("aabbcc", "Real Vendor Inc.");
         await SeedOuiAsync("00e0bf", "Google Inc.");
 
+        await ResolveIdentityAsync();
+
         (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
@@ -183,6 +214,8 @@ public sealed class DeviceListApiTests : IAsyncLifetime
           + "VALUES ('observer-1', '192.168.1.211', 'd88c79420abf', 'Kitchen Audio', 'eureka', now())"
         );
 
+        await ResolveIdentityAsync();
+
         (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
@@ -212,6 +245,8 @@ public sealed class DeviceListApiTests : IAsyncLifetime
             "INSERT INTO proj_discovered (device, discovered, mac, hostname, friendly_name, sources, updated_at) "
           + "VALUES ('observer-1', '192.168.1.212', 'd88c79420abc', 'raw-mdns-name.local', 'Living Room Speaker', 'eureka', now())"
         );
+
+        await ResolveIdentityAsync();
 
         (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
@@ -352,8 +387,8 @@ public sealed class DeviceListApiTests : IAsyncLifetime
         Guid hp = await _fixture.InsertDeviceAsync("managed");
         await InsertSystemAsync(dell, hostname: "dell-box");
         await InsertSystemAsync(hp, hostname: "hp-box");
-        await InsertHardwareVendorAsync(dell, vendor: "Dell");
-        await InsertHardwareVendorAsync(hp, vendor: "HP");
+        await InsertDeviceVendorAsync(dell, vendor: "Dell");
+        await InsertDeviceVendorAsync(hp, vendor: "HP");
 
         (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
@@ -368,6 +403,9 @@ public sealed class DeviceListApiTests : IAsyncLifetime
             CancellationToken.None
         );
 
+        // Assert.Single first: an over-aggressive filter returning zero rows would make the
+        // two negative assertions below pass vacuously.
+        Assert.Single(items);
         Assert.All(items, i => Assert.Equal("Dell", i.Vendor));
         Assert.DoesNotContain(items, i => i.Vendor == "HP");
     }
@@ -379,6 +417,8 @@ public sealed class DeviceListApiTests : IAsyncLifetime
         Guid noMatch = await _fixture.InsertDeviceAsync("managed");
         await InsertSystemAsync(match, hostname: "database-server-01");
         await InsertSystemAsync(noMatch, hostname: "webserver-01");
+
+        await ResolveIdentityAsync();
 
         (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
@@ -411,6 +451,8 @@ public sealed class DeviceListApiTests : IAsyncLifetime
         // Page 1: limit=2 should return alpha+beta and a cursor. Sort explicitly by hostname —
         // this test is about pagination mechanics, not about whatever DeviceListApi.DefaultSort
         // happens to be.
+        await ResolveIdentityAsync();
+
         (List<DeviceReportItem> page1, string? cursor1) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
@@ -476,12 +518,17 @@ public sealed class DeviceListApiTests : IAsyncLifetime
         await cmd.ExecuteNonQueryAsync();
     }
 
-    private async Task InsertHardwareVendorAsync(Guid deviceId, string? vendor = null)
+    /// <summary>Seeds proj_devices.vendor — the unified cross-protocol vendor that
+    /// DeviceVendorDerivation writes (hydrated fan-in of DMI/BACnet/Modbus/guess inputs).
+    /// The devices report reads this column alone; a raw proj_hardware.system_vendor with no
+    /// derivation run is not a state production produces (the same batch that routes
+    /// HwSystemVendor also derives the canonical vendor).</summary>
+    private async Task InsertDeviceVendorAsync(Guid deviceId, string? vendor = null)
     {
         const string sql = """
-            INSERT INTO proj_hardware (device, system_vendor)
+            INSERT INTO proj_devices (device, vendor)
             VALUES (@device, @vendor)
-            ON CONFLICT (device) DO UPDATE SET system_vendor = EXCLUDED.system_vendor
+            ON CONFLICT (device) DO UPDATE SET vendor = EXCLUDED.vendor
             """;
         await using NpgsqlConnection conn = await _fixture.DataSource.OpenConnectionAsync();
         await using NpgsqlCommand cmd = new(sql, conn);
@@ -506,6 +553,8 @@ public sealed class DeviceListApiTests : IAsyncLifetime
             "INSERT INTO proj_device_arp (device, arp, mac, iface, state, updated_at) "
           + "VALUES ('observer-1', '192.168.1.80', '001122334499', 'eth0', 'reachable', now())"
         );
+
+        await ResolveIdentityAsync();
 
         (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
@@ -543,6 +592,8 @@ public sealed class DeviceListApiTests : IAsyncLifetime
           + $"('{id}', 'br-lan', '192.168.1.1', now() - interval '2 min')" // private LAN → the answer
         );
 
+        await ResolveIdentityAsync();
+
         (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
@@ -573,6 +624,8 @@ public sealed class DeviceListApiTests : IAsyncLifetime
             "INSERT INTO proj_discovered (device, discovered, mac, sources, updated_at) "
           + "VALUES ('observer-1', '192.168.1.42', 'aabbccddee01', 'SshBannerScanner', now())"
         );
+
+        await ResolveIdentityAsync();
 
         (List<DeviceReportItem> items, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
@@ -632,6 +685,8 @@ public sealed class DeviceListApiTests : IAsyncLifetime
         await InsertSystemAsync(c, hostname: "gamma");
 
         // Full descending order → gamma, beta, alpha.
+        await ResolveIdentityAsync();
+
         (List<DeviceReportItem> all, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,
             null,
@@ -723,6 +778,8 @@ public sealed class DeviceListApiTests : IAsyncLifetime
         await ExecuteAsync(
             $"INSERT INTO proj_systems (device, hostname, last_seen_ip, updated_at) VALUES ('{c}', 'h100', '192.168.1.100', now())"
         );
+
+        await ResolveIdentityAsync();
 
         (List<DeviceReportItem> asc, _) = await DeviceListApi.QueryAsync(
             _fixture.DataSource,

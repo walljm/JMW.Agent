@@ -52,6 +52,13 @@ public sealed partial class RetentionService : BackgroundService
     [GeneratedRegex(@"^[a-z_][a-z0-9_]*$")]
     private static partial Regex SafeIdentifier();
 
+    // Guards retention_policies.prune_predicate (migration-seeded raw SQL, e.g.
+    // "entity_key <> ''") the same defence-in-depth way as SafeIdentifier: identifiers,
+    // string literals, comparison operators, and whitespace only — no statement separators,
+    // comments, or function calls.
+    [GeneratedRegex(@"^[a-z0-9_' <>=!]+$")]
+    private static partial Regex SafePredicate();
+
     private const int BatchSize = 10_000;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -142,17 +149,17 @@ public sealed partial class RetentionService : BackgroundService
         List<TablePruneResult> results = [];
 
         // Load policies with a short-lived connection; close it before the per-table work.
-        List<(string TableName, string TimeColumn, TimeSpan? StaleAfter)> policies = [];
+        List<(string TableName, string TimeColumn, TimeSpan? StaleAfter, string? PrunePredicate)> policies = [];
         await using (NpgsqlConnection loadConn = await _db.OpenConnectionAsync(ct))
         {
-            await foreach ((string TableName, string TimeColumn, TimeSpan? StaleAfter) policy in loadConn
+            await foreach ((string, string, TimeSpan?, string?) policy in loadConn
                 .ListRetentionPoliciesAsync(ct))
             {
                 policies.Add(policy);
             }
         }
 
-        foreach ((string tableName, string timeColumn, TimeSpan? staleAfter) in policies)
+        foreach ((string tableName, string timeColumn, TimeSpan? staleAfter, string? prunePredicate) in policies)
         {
             if (staleAfter is null) { continue; }
 
@@ -162,12 +169,18 @@ public sealed partial class RetentionService : BackgroundService
                 continue;
             }
 
+            if (prunePredicate is not null && !SafePredicate().IsMatch(prunePredicate))
+            {
+                Log.UnsafePredicate(_logger, tableName, prunePredicate);
+                continue;
+            }
+
             // Open a fresh connection per table so the 50ms inter-batch delays don't
             // hold a pooled connection idle across the entire sweep.
             long deleted;
             await using (NpgsqlConnection conn = await _db.OpenConnectionAsync(ct))
             {
-                deleted = await PruneTableAsync(conn, tableName, timeColumn, staleAfter.Value, ct);
+                deleted = await PruneTableAsync(conn, tableName, timeColumn, staleAfter.Value, prunePredicate, ct);
 
                 if (deleted > 0)
                 {
@@ -209,10 +222,15 @@ public sealed partial class RetentionService : BackgroundService
         string tableName,
         string timeColumn,
         TimeSpan staleAfter,
+        string? prunePredicate,
         CancellationToken ct
     )
     {
         long totalDeleted = 0;
+        // Optional migration-seeded row scope (validated by SafePredicate above) — e.g.
+        // materialization_facts prunes only neighbor-sighting rows (entity_key <> ''), never
+        // device-scoped derivation-input rows, which are permanent current-value state.
+        string predicate = prunePredicate is null ? string.Empty : $" AND ({prunePredicate})";
 
         while (true)
         {
@@ -223,7 +241,7 @@ public sealed partial class RetentionService : BackgroundService
                 DELETE FROM {tableName}
                 WHERE ctid IN (
                     SELECT ctid FROM {tableName}
-                    WHERE {timeColumn} < now() - $1
+                    WHERE {timeColumn} < now() - $1{predicate}
                     LIMIT {BatchSize}
                 )
                 """;
@@ -270,6 +288,13 @@ public sealed partial class RetentionService : BackgroundService
                 "Skipping retention_policies row with unsafe identifier: table='{TableName}' column='{TimeColumn}'."
         )]
         internal static partial void UnsafeIdentifier(ILogger logger, string tableName, string timeColumn);
+
+        [LoggerMessage(
+            Level = LogLevel.Error,
+            Message =
+                "Skipping retention_policies row with unsafe prune predicate: table='{TableName}' predicate='{Predicate}'."
+        )]
+        internal static partial void UnsafePredicate(ILogger logger, string tableName, string predicate);
 
         [LoggerMessage(Level = LogLevel.Error, Message = "Retention sweep failed.")]
         internal static partial void SweepFailed(ILogger logger, Exception ex);

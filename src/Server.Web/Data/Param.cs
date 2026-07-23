@@ -31,6 +31,9 @@ public static class Param
     public static NpgsqlParameter TimestampTz(DateTimeOffset value) =>
         new() { Value = value, NpgsqlDbType = NpgsqlDbType.TimestampTz };
 
+    public static NpgsqlParameter NullableTimestampTz(DateTimeOffset? value) =>
+        new() { Value = (object?)value ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.TimestampTz };
+
     public static NpgsqlParameter Interval(TimeSpan value) =>
         new() { Value = value, NpgsqlDbType = NpgsqlDbType.Interval };
 

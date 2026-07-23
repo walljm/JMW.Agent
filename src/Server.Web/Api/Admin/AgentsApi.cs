@@ -1,3 +1,5 @@
+using System.Globalization;
+
 using JMW.Discovery.Server.Api;
 using JMW.Discovery.Server.Audit;
 using JMW.Discovery.Server.Auth;
@@ -16,14 +18,17 @@ public static class AgentsApi
     public const int MaxLimit = 200;
 
     /// <summary>
-    /// Columns the agent list may be sorted by. Only columns with a supporting index are
-    /// exposed — see <c>agents_status_idx</c>. One cursor shape —
-    /// (sort_key, created_at, agent_id) — covers every sort.
+    /// Columns the agent list may be sorted by. Both are plain columns on <c>agents</c> — "status"
+    /// is covered by <c>agents_status_sort_idx (status, created_at)</c>, "created_at" by the
+    /// existing <c>agents_keyset_idx (created_at DESC, agent_id)</c>. One cursor shape —
+    /// (sort_key, created_at, agent_id) — covers every sort; created_at is always the tiebreaker
+    /// (kept as a real timestamptz throughout, never formatted to text, so the comparison stays
+    /// index-driven regardless of which column is primary).
     /// </summary>
     private static readonly Dictionary<string, string> SortExpressions =
         new(StringComparer.Ordinal)
         {
-            ["created_at"] = "to_char(created_at at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US')",
+            ["created_at"] = "created_at",
             ["status"] = "status",
         };
 
@@ -120,7 +125,11 @@ public static class AgentsApi
         bool descending = !string.Equals(dir, "asc", StringComparison.OrdinalIgnoreCase);
         string cmp = descending ? "<" : ">";
         string direction = descending ? "DESC" : "ASC";
-        string createdAtSortKey = SortExpressions[DefaultSort];
+        bool sortingByCreatedAt = string.Equals(sortKeyCol, "created_at", StringComparison.Ordinal);
+        // created_at is always the second tuple element (tiebreaker for a "status" primary sort,
+        // the same column as the primary when sorting by created_at itself) — its own SQL type
+        // never varies, only the primary slot's does, so only $6 needs a dynamic cast.
+        string sortKeyParamCast = sortingByCreatedAt ? "timestamptz" : "text";
 
         // Liveness derived by agent_liveness() (see migration 0056_agent_liveness_settings.sql) —
         // the single definition shared by GetAgentHealthSummary.sql / GetAgentHealthList.sql.
@@ -134,17 +143,16 @@ public static class AgentsApi
             )
             SELECT
                 agent_id, hostname, status, last_heartbeat, zone, version, passive_discovery_mode,
-                os, arch, ip_address, device_id, created_at, liveness,
-                {sortKeyCol} AS sort_key, {createdAtSortKey} AS created_at_key
+                os, arch, ip_address, device_id, created_at, liveness
             FROM agents_with_liveness
             WHERE ($1::text IS NULL OR status = $1)
               AND ($2::text IS NULL OR zone = $2)
               AND ($3::text IS NULL OR version = $3)
               AND ($4::text IS NULL OR liveness = $4)
               AND ($5::text IS NULL OR hostname ILIKE '%' || $5 || '%' OR ip_address ILIKE '%' || $5 || '%')
-              AND ($6::text IS NULL
-                    OR (({sortKeyCol}, {createdAtSortKey}, agent_id::text) {cmp} ($6, $7, $8)))
-            ORDER BY {sortKeyCol} {direction}, {createdAtSortKey} {direction}, agent_id::text {direction}
+              AND ($8::text IS NULL
+                    OR (({sortKeyCol}, created_at, agent_id::text) {cmp} ($6::{sortKeyParamCast}, $7::timestamptz, $8)))
+            ORDER BY {sortKeyCol} {direction}, created_at {direction}, agent_id::text {direction}
             LIMIT $9
             """;
 
@@ -155,15 +163,24 @@ public static class AgentsApi
         cmd.Parameters.Add(Param.Text(version));
         cmd.Parameters.Add(Param.Text(liveness));
         cmd.Parameters.Add(Param.Text(string.IsNullOrWhiteSpace(q) ? null : q));
-        cmd.Parameters.Add(Param.Text(afterSortKey));
-        cmd.Parameters.Add(Param.Text(afterCreatedAt));
+        if (sortingByCreatedAt)
+        {
+            cmd.Parameters.Add(Param.NullableTimestampTz(ParseCursorTimestamp(afterSortKey)));
+        }
+        else
+        {
+            cmd.Parameters.Add(Param.Text(afterSortKey));
+        }
+
+        cmd.Parameters.Add(Param.NullableTimestampTz(ParseCursorTimestamp(afterCreatedAt)));
         cmd.Parameters.Add(Param.Text(afterAgentId));
         cmd.Parameters.Add(Param.Integer(limit + 1));
 
         List<AgentListItem> items = new();
-        // sort_key[i] / created_at_key[i] are the SQL-computed sort expressions for items[i] —
-        // used verbatim for the cursor so it always matches the keyset comparison (no C#-side
-        // re-derivation to drift).
+        // sort_key/created_at cursor components are read back off the same status/created_at
+        // values used to build items[i] — created_at's ISO round-trip ("O") is an exact,
+        // invertible format of the identical value used in the WHERE/ORDER BY comparison, not a
+        // re-derivation, so the cursor still always matches the keyset comparison.
         List<string> sortKeys = new();
         List<string> createdAtKeys = new();
         List<string> agentIds = new();
@@ -172,11 +189,13 @@ public static class AgentsApi
             while (await reader.ReadAsync(ct))
             {
                 Guid agentId = reader.GetGuid(0);
+                string rowStatus = reader.GetString(2);
+                DateTimeOffset createdAt = reader.GetFieldValue<DateTimeOffset>(11);
                 items.Add(
                     new AgentListItem(
                         AgentId: agentId.ToString(),
                         Hostname: reader.GetString(1),
-                        Status: reader.GetString(2),
+                        Status: rowStatus,
                         LastHeartbeat: reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3).UtcDateTime,
                         Zone: GetStr(reader, 4),
                         Version: GetStr(reader, 5),
@@ -185,12 +204,12 @@ public static class AgentsApi
                         Arch: GetStr(reader, 8),
                         IpAddress: GetStr(reader, 9),
                         DeviceId: reader.IsDBNull(10) ? null : reader.GetGuid(10),
-                        CreatedAt: reader.GetFieldValue<DateTimeOffset>(11).UtcDateTime,
+                        CreatedAt: createdAt.UtcDateTime,
                         Liveness: reader.GetString(12)
                     )
                 );
-                sortKeys.Add(GetStr(reader, 13) ?? string.Empty);
-                createdAtKeys.Add(GetStr(reader, 14) ?? string.Empty);
+                sortKeys.Add(sortingByCreatedAt ? createdAt.ToString("O") : rowStatus);
+                createdAtKeys.Add(createdAt.ToString("O"));
                 agentIds.Add(agentId.ToString());
             }
         }
@@ -207,6 +226,15 @@ public static class AgentsApi
 
         return (items, nextCursor);
     }
+
+    /// <summary>Parses a cursor-carried timestamp (this class's own <see cref="DateTimeOffset.ToString(string)" />
+    /// "O" output) back into a typed value for a native timestamptz comparison. Returns null for
+    /// a missing/malformed cursor part (treated as "no cursor" by the $8 IS NULL guard).</summary>
+    private static DateTimeOffset? ParseCursorTimestamp(string? value) =>
+        value is not null
+        && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTimeOffset parsed)
+            ? parsed
+            : null;
 
     /// <summary>Distinct zones/versions across all agents, for the Fleet list's filter chips.</summary>
     public static async Task<(List<string> Zones, List<string> Versions)> GetFilterFacetsAsync(

@@ -44,7 +44,10 @@ public sealed class FactIngestPipelineTests : IAsyncLifetime
             "proj_hardware",
             "proj_devices",
             "proj_discovered",
-            "facts_history"
+            "facts_history",
+            // Derivation-input current-value store: tests reuse the same device id, so leftover
+            // rows would hydrate into later tests and change their derived-fact counts.
+            "materialization_facts"
         );
     }
 
@@ -71,6 +74,81 @@ public sealed class FactIngestPipelineTests : IAsyncLifetime
 
         // The high-priority vendor from cycle 1 survives cycle 2's lower-priority-only batch.
         Assert.Equal(afterFirst, afterSecond);
+    }
+
+    [Fact]
+    public async Task Ingest_DiscoveredModelAlone_DoesNotClobberObservedVendor()
+    {
+        // Discovered-scope counterpart of the clobber regression above (the §11 fix's deferred
+        // gap, closed by the materialization_facts store — context-derivations.md §6.5).
+        // VendorFromDiscoveredModelDerivation is absence-guarded: it infers a vendor from the
+        // mDNS model ONLY when no observed vendor exists. Cycle 1 observes a real UPnP vendor
+        // for the station. Cycle 2 re-sends only the model (as delta-tracking does when the
+        // vendor is unchanged and omitted) with a model string whose inferred vendor differs.
+        // Without Discovered-scope hydration the guard sees no vendor and the inference
+        // overwrites the observation; with it, the hydrated vendor trips the guard and the
+        // observation holds.
+        string deviceId = DeviceId;
+        const string station = "192.168.1.77";
+
+        await _pipeline.IngestAsync(
+            [
+                Fact.Create($"Device[{deviceId}].Discovered[{station}].Vendor", "Sonos, Inc."),
+                Fact.Create($"Device[{deviceId}].Discovered[{station}].Model", "Nest Audio"),
+            ]
+        );
+        string? afterFirst = await ReadScalarAsync(
+            $"SELECT vendor FROM proj_discovered WHERE device = '{deviceId}' AND discovered = '{station}'"
+        );
+        // Normalization may canonicalize the raw string; the observation must be Sonos-derived,
+        // not the model-inferred Google.
+        Assert.NotNull(afterFirst);
+        Assert.StartsWith("Sonos", afterFirst, StringComparison.Ordinal);
+
+        // Model-only re-send: "Nest Audio" resolves to Google via ModelVendor — the wrong vendor
+        // if the guard fails to see the stored observation.
+        await _pipeline.IngestAsync(
+            [Fact.Create($"Device[{deviceId}].Discovered[{station}].Model", "Nest Audio")]
+        );
+        string? afterSecond = await ReadScalarAsync(
+            $"SELECT vendor FROM proj_discovered WHERE device = '{deviceId}' AND discovered = '{station}'"
+        );
+
+        Assert.Equal(afterFirst, afterSecond);
+    }
+
+    [Fact]
+    public async Task Ingest_NumericInput_RoundTripsThroughDerivationInputStore()
+    {
+        // The derivation-input store carries typed values (migration 0107): a Long input written
+        // by DerivationInputProjection must hydrate back as a Long so metric fan-ins
+        // (MemoryUsedPercentDerivation = used/total) keep computing across delta-tracked batches.
+        // Cycle 1 sends both mem facts; cycle 2 sends ONLY used (total unchanged/omitted) —
+        // the derived percent must still land, computed against the hydrated total.
+        string deviceId = DeviceId;
+
+        await _pipeline.IngestAsync(
+            [
+                Fact.Create($"Device[{deviceId}].System.MemUsedBytes", 2_000_000_000L),
+                Fact.Create($"Device[{deviceId}].System.MemTotalBytes", 8_000_000_000L),
+            ]
+        );
+
+        string? storedTotal = await ReadScalarAsync(
+            $"SELECT value_long::text FROM materialization_facts WHERE device = '{deviceId}' "
+          + "AND attribute_path = 'Device[].System.MemTotalBytes' AND entity_key = ''"
+        );
+        Assert.Equal("8000000000", storedTotal);
+
+        await _pipeline.IngestAsync([Fact.Create($"Device[{deviceId}].System.MemUsedBytes", 4_000_000_000L)]);
+
+        // 4GB / 8GB = 50% — provable only if the hydrated total round-tripped as a Long.
+        string? percent = await ReadScalarAsync(
+            "SELECT value_double::text FROM facts_history "
+          + $"WHERE id = 'Device[{deviceId}].System.MemUsedPercent' "
+          + "ORDER BY collected_at DESC LIMIT 1"
+        );
+        Assert.Equal("50", percent);
     }
 
     [Fact]

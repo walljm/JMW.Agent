@@ -39,6 +39,14 @@ public enum FactSource : ushort
     /// </summary>
     ManualEntry = 2,
 
+    /// <summary>
+    /// A value resolved server-side by a context derivation (ContextDerivationEngine,
+    /// docs/plans/context-derivations.md): a set-based "best value" pick over cross-entity or
+    /// non-fact state (registry tables, other devices' observations) that no single collector
+    /// owns. SourceName carries the specific derivation's name.
+    /// </summary>
+    ContextDerivation = 3,
+
     // ── Network scanners (INetworkScanner.Name): 100-199 ──────────────────────
     AirPlay = 100,
     ArpScanner = 101,

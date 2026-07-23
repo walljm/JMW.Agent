@@ -762,6 +762,18 @@ public static class FactPaths
         // itself the previously-raw, last-write-wins path; this canonical output is what
         // proj_systems.os_distro now maps to (architecture-identity-facts.md §12, Phase 6b).
         public const string SystemOsDistroCanonical = "Device[].OS.DistroCanonical";
+
+        // ── Context-derivation finals (docs/plans/context-derivations.md) ─────────
+        // The resolved "best current value" identity picks, recomputed set-based by
+        // ContextDerivationEngine over cross-entity/non-fact state that AnalysisEngine
+        // structurally cannot see (observer-keyed proj_discovered/proj_device_arp rows,
+        // the device_fingerprints registry, raw-SQL-written proj_systems.last_seen_ip).
+        // Routed into proj_devices beside the other derivation finals (vendor/kind/model)
+        // — the driving table for report sorts.
+        public const string IdentityHostname = "Device[].Identity.Hostname";
+        public const string IdentityFriendlyName = "Device[].Identity.FriendlyName";
+        public const string IdentityMac = "Device[].Identity.MAC";
+        public const string IdentityIp = "Device[].Identity.IP";
     }
 
     // ── Metric classification ──────────────────────────────────────────────────

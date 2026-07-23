@@ -60,7 +60,10 @@ public sealed class IntegrationFixture : IAsyncLifetime
     // ── Seed helpers ──────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Inserts a row into devices and returns the generated device_id.
+    /// Inserts a row into devices and returns the generated device_id. Also inserts the bare
+    /// proj_devices row every device carries from creation in production
+    /// (DeviceRegistry.CreateDeviceAsync + ContextDerivationEngine's per-pass backfill) — the
+    /// device list drives FROM proj_devices, so a device without one is invisible to it.
     /// </summary>
     public async Task<Guid> InsertDeviceAsync(
         string managementStatus,
@@ -69,8 +72,11 @@ public sealed class IntegrationFixture : IAsyncLifetime
     {
         Guid id = Guid.NewGuid();
         const string sql = """
-            INSERT INTO devices (device_id, management_status, created_at)
-            VALUES (@id, @status, @createdAt)
+            WITH dev AS (
+                INSERT INTO devices (device_id, management_status, created_at)
+                VALUES (@id, @status, @createdAt)
+            )
+            INSERT INTO proj_devices (device) VALUES (@id::text) ON CONFLICT (device) DO NOTHING
             """;
         await using NpgsqlConnection conn = await DataSource.OpenConnectionAsync();
         await using NpgsqlCommand cmd = new(sql, conn);
@@ -82,7 +88,10 @@ public sealed class IntegrationFixture : IAsyncLifetime
     }
 
     /// <summary>
-    /// Inserts a device_fingerprint row.
+    /// Inserts a device_fingerprint row, stamping devices.last_seen alongside it — the same
+    /// invariant production maintains (DeviceRegistry.UpsertFingerprintsAsync /
+    /// StampObservedMacLastSeen.sql, migration 0105): every fingerprint sighting also advances
+    /// the device's denormalized last_seen.
     /// </summary>
     public async Task InsertFingerprintAsync(
         Guid deviceId,
@@ -93,9 +102,12 @@ public sealed class IntegrationFixture : IAsyncLifetime
     {
         // PK is (fp_type, fp_value) — one device per fingerprint.
         const string sql = """
-            INSERT INTO device_fingerprints (fp_type, fp_value, device_id, source, last_seen)
-            VALUES (@type, @value, @id, @source, now())
-            ON CONFLICT (fp_type, fp_value) DO NOTHING
+            WITH fp AS (
+                INSERT INTO device_fingerprints (fp_type, fp_value, device_id, source, last_seen)
+                VALUES (@type, @value, @id, @source, now())
+                ON CONFLICT (fp_type, fp_value) DO NOTHING
+            )
+            UPDATE devices SET last_seen = GREATEST(last_seen, now()) WHERE device_id = @id
             """;
         await using NpgsqlConnection conn = await DataSource.OpenConnectionAsync();
         await using NpgsqlCommand cmd = new(sql, conn);

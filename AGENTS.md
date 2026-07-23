@@ -331,21 +331,30 @@ enforces this: a new `FactPaths` constant with no projection column and no fact 
 **fails the build**. If a parsed value isn't worth showing, don't emit it (and delete
 the constant) — don't dump it in a generic bag.
 
-**Materializer-only identity signals route to `materialization_facts`, not a `proj_*` column.**
-A signal that exists *only* so `DiscoveryMaterializer` can read its current value back out — a
-scanner fingerprint like an ONVIF/Roku/SNMP serial, an SSDP/WSD UUID, a Hue bridge id, a Cast id,
-etc. — has no cross-device report reader, so a wide projection column is the wrong shape: every new
-one was a column-per-signal migration. These route instead to the fact-shaped `materialization_facts`
-table (`(device, entity_key, attribute_path, value)`, written by `IdentityFactProjection`, one row
-per signal), so adding a fingerprint is a **data change** — one `FactPaths` const added to
-`IdentitySignalPaths` — not a migration. It is *not* a general EAV bag: it is exactly the
-identity-signal set in `IdentitySignalPaths`, text-only, and `FactPathRoutingFitnessTests` treats
-"∈ IdentitySignalPaths" as a third valid routing home alongside projection-column and fact-view.
+**Pulled-back-per-(device, path) values route to `materialization_facts`, not a `proj_*` column.**
+A value that is only ever read back per device/entity and path — never joined or sorted by a
+report — is the wrong shape for a wide projection column (every new one was a
+column-per-signal migration). Two sets route to the fact-shaped `materialization_facts` table
+(`(device, entity_key, attribute_path, value, kind, value_long, value_double)`) instead, so
+adding one is a **data change**, not a migration:
+
+- **Materializer-only identity signals** (`IdentitySignalPaths`: ONVIF/Roku/SNMP serials,
+  SSDP/WSD UUIDs, Hue bridge id, Cast id, …) — written text-only by `IdentityFactProjection`,
+  read back by `DiscoveryMaterializer`.
+- **Derivation inputs** (`AnalysisEngine.HydratableInputPaths`) — written typed by
+  `DerivationInputProjection` (one instance per scope), read back by
+  `FactRepository.HydrateInputsAsync`, which reads THIS table (not facts_history's prunable
+  latest-per-id) so derivations are retention-proof (migration 0107,
+  docs/plans/context-derivations.md §6.5). Retention splits on `entity_key` via
+  `retention_policies.prune_predicate`: device-scoped rows (`entity_key = ''`) are permanent;
+  neighbor-sighting rows prune on the steady tier.
+
+It is *not* a general EAV bag — exactly those two path sets — and `FactPathRoutingFitnessTests`
+treats membership in them as valid routing homes alongside projection-column and fact-view.
 The wide `proj_discovered` intrinsics that reports *do* read (mac, obscured_mac, hostname,
 friendly_name, vendor, model, sources) deliberately stay columns — the split is by **consumer**, not
 by semantics. `materialization_facts` is not a `ProjectionDef`, so its device-merge repoint and
-delete are hand-written in `DeviceRegistry` (pinned by `MergeRepointCoverageTests`). Full design:
-`docs/plans/architecture-identity-facts.md`.
+delete are hand-written in `DeviceRegistry` (pinned by `MergeRepointCoverageTests`).
 
 **Monotonic counters route to `metrics_raw`, not `facts_history`.** A path listed in
 `FactPaths.MetricPaths` (interface Rx/Tx bytes/packets, discovered-link Rx/Tx bytes —
@@ -391,9 +400,12 @@ fact path — automatically operator-editable through the existing manual-fact m
 (`ManualFactCatalog`) with no extra UI. `DiscoveryMaterializer`'s promotion writes (see
 `UpsertDeviceSystem.sql`) pass friendly-name-ish sources to the `friendly_name` param, never the
 `hostname` param. Reporting's display-name rollup is priority custom/promoted `friendly_name` >
-a live `proj_discovered` friendly-name join (agentless devices not yet promoted) > `hostname` —
-see `DeviceListApi.cs`'s `filtered` CTE and `GetDeviceSummary.sql`. List/report tables that show a
-per-row device label expose both `Hostname` (genuine) and `FriendlyName` (rollup) columns.
+a `proj_discovered` friendly-name match by newest MAC (agentless devices not yet promoted) >
+`hostname` — resolved set-based at ingest by the identity-friendly-name context derivation into
+`proj_devices.friendly_name` (`ResolveIdentityFriendlyName.sql`; docs/plans/context-derivations.md),
+which the device list reads directly; `GetDeviceSummary.sql` still computes it live. List/report
+tables that show a per-row device label expose both `Hostname` (genuine) and `FriendlyName`
+(rollup) columns.
 
 **Device vs service identity.** Devices are identified by hardware fingerprints
 (`DeviceRegistry`); services (Technitium DNS, Home Assistant) are their own

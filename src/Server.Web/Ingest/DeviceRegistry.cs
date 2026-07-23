@@ -344,6 +344,18 @@ public sealed class DeviceRegistry
                 : throw new InvalidOperationException("INSERT INTO devices returned no device_id.");
         }
 
+        // Reports drive FROM proj_devices for their sorts (docs/plans/context-derivations.md
+        // §3.3), so every device needs a row there from the moment it exists — a device with no
+        // derived values yet would otherwise be unreachable in the driving-table index walk
+        // until a derivation first writes one. Bare row; the router/context engine fill columns.
+        await using (NpgsqlCommand projCmd = conn.CreateCommand())
+        {
+            projCmd.Transaction = tx;
+            projCmd.CommandText = "INSERT INTO proj_devices (device) VALUES ($1) ON CONFLICT (device) DO NOTHING";
+            projCmd.Parameters.Add(Param.Text(deviceId));
+            await projCmd.ExecuteNonQueryAsync(ct);
+        }
+
         await UpsertFingerprintsAsync(conn, tx, deviceId, fingerprints, source, ct);
 
         return (deviceId, IsNew: true);
@@ -529,13 +541,18 @@ public sealed class DeviceRegistry
 
         // merged_from UPDATE: append losers not already recorded, deduplicated — safe to
         // retry the same merge (auto-merge re-running on the same batch, or a repeated
-        // manual-merge call) without accumulating duplicate entries.
+        // manual-merge call) without accumulating duplicate entries. last_seen absorbs the
+        // losers' sightings: their fingerprints were repointed to the survivor above, so the
+        // survivor's fingerprint set now spans both sides and its max is the merged truth
+        // (GREATEST guards the no-fingerprints edge where the subquery is NULL).
         await using (NpgsqlCommand mergeCmd = conn.CreateCommand())
         {
             mergeCmd.Transaction = tx;
             mergeCmd.CommandText = """
                 UPDATE devices
                 SET merged_from = (SELECT array_agg(DISTINCT e) FROM unnest(merged_from || $2::uuid[]) e),
+                    last_seen   = GREATEST(last_seen,
+                        (SELECT max(df.last_seen) FROM device_fingerprints df WHERE df.device_id = $1::uuid)),
                     updated_at  = now()
                 WHERE device_id = $1::uuid
                 """;
@@ -941,6 +958,22 @@ public sealed class DeviceRegistry
         cmd.Parameters.Add(Param.TextArray(sourceArr));
 
         await cmd.ExecuteNonQueryAsync(ct);
+
+        // devices.last_seen mirrors max(device_fingerprints.last_seen) so readers never have to
+        // aggregate the sighting set (docs/plans/context-derivations.md §3.4). Stamped here —
+        // the row is already write-locked by this resolution — and in StampObservedMacLastSeen.sql
+        // (the only other place fingerprint last_seen moves). GREATEST keeps it monotonic if a
+        // concurrent stamp raced ahead.
+        await using NpgsqlCommand stampCmd = conn.CreateCommand();
+        stampCmd.Transaction = tx;
+        stampCmd.CommandText = """
+            UPDATE devices
+            SET last_seen = GREATEST(last_seen, $2::timestamptz)
+            WHERE device_id = $1::uuid
+            """;
+        stampCmd.Parameters.Add(Param.Text(deviceId));
+        stampCmd.Parameters.Add(Param.TimestampTz(now));
+        await stampCmd.ExecuteNonQueryAsync(ct);
     }
 
     // ── Manual merge ──────────────────────────────────────────────────────────

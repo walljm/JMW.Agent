@@ -6,10 +6,11 @@ SELECT
     -- SystemOsDistroDerivation's lowest-priority fan-in input.
   , s.os_distro AS os_distro
   , d.management_status
-    -- Newest fingerprint sighting: stamped on every resolution, so it reflects true recency for
-    -- every device (managed included) and matches the liveness-window filter. proj_systems.updated_at
-    -- is deliberately NOT used — it only moves on a data change and goes stale on a live static host.
-  , (SELECT max(df.last_seen) FROM device_fingerprints df WHERE df.device_id = d.device_id) AS last_seen
+    -- Newest fingerprint sighting, denormalized onto devices.last_seen (migration 0105): stamped
+    -- on every resolution, so it reflects true recency for every device (managed included) and
+    -- matches the liveness-window filter. proj_systems.updated_at is deliberately NOT used — it
+    -- only moves on a data change and goes stale on a live static host.
+  , d.last_seen
     -- Already includes the inferred guess (VendorFromOsDistroDerivation et al.) as
     -- DeviceVendorDerivation's lowest-priority fan-in input.
   , pd.vendor AS vendor

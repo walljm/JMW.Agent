@@ -12,6 +12,7 @@ using JMW.Discovery.Server.Audit;
 using JMW.Discovery.Server.Auth;
 using JMW.Discovery.Server.Incidents;
 using JMW.Discovery.Server.Infrastructure;
+using JMW.Discovery.Server.Ingest.Context;
 using JMW.Discovery.Server.Projections;
 using JMW.Discovery.Server.Reporting;
 
@@ -109,6 +110,20 @@ builder.Services.AddSingleton<FactIngestPipeline>();
 builder.Services.AddSingleton<DeviceRegistry>();
 builder.Services.AddSingleton<ServiceRegistry>();
 builder.Services.AddScoped<DiscoveryMaterializer>();
+
+// Context derivations (docs/plans/context-derivations.md): set-based "best value" resolution
+// over cross-entity/non-fact state, run after each ingest batch's materializer pass (gated on
+// touched tables + debounce) and once at startup by the bootstrap service below.
+builder.Services.AddSingleton(sp =>
+    new ContextDerivationEngine(
+        sp.GetRequiredService<NpgsqlDataSource>(),
+        sp.GetRequiredService<FactRepository>(),
+        sp.GetRequiredService<ProjectionRouter>(),
+        ContextDerivationLibrary.CreateAll(),
+        sp.GetRequiredService<ILogger<ContextDerivationEngine>>()
+    )
+);
+builder.Services.AddHostedService<ContextDerivationBootstrapService>();
 
 // Agent-offline incidents are silence-driven (absence of a heartbeat), not fact-value-driven, so
 // they need a periodic sweep rather than an IncidentEvaluator hook — see AgentLivenessSweepService.

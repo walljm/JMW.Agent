@@ -155,7 +155,7 @@ public sealed class ProjectionBackfillTests : IAsyncLifetime
             factRepo,
             defs,
             NullLogger.Instance,
-            CancellationToken.None
+            ct: CancellationToken.None
         );
     }
 

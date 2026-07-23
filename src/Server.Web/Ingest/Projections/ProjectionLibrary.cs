@@ -32,6 +32,16 @@ public static class ProjectionLibrary
                 // Fanned in from whichever raw model field is present (DeviceModelDerivation),
                 // vendor+OS-dispatched cleanup applied on top — see FactPaths.Derived.DeviceModelCanonical.
                 new(FactPaths.Derived.DeviceModelCanonical, "model", NpgsqlDbType.Text),
+                // Context-derivation finals (docs/plans/context-derivations.md): resolved "best
+                // current value" identity picks computed set-based by ContextDerivationEngine
+                // over cross-entity/non-fact state, emitted as ordinary facts — the same species
+                // of canonical derived value as vendor/kind/model above. proj_devices is the
+                // driving table for report sorts; its expression indexes are migration-owned
+                // (0106). NOT the raw proj_systems columns: these are rollups, those are inputs.
+                new(FactPaths.Derived.IdentityHostname, "hostname", NpgsqlDbType.Text),
+                new(FactPaths.Derived.IdentityFriendlyName, "friendly_name", NpgsqlDbType.Text),
+                new(FactPaths.Derived.IdentityMac, "mac", NpgsqlDbType.Text),
+                new(FactPaths.Derived.IdentityIp, "ip", NpgsqlDbType.Text),
             ]
         ),
 
@@ -485,5 +495,19 @@ public static class ProjectionLibrary
     public static IReadOnlyList<IProjection> CreateAll(
         NpgsqlDataSource db,
         int maxCacheEntries = 500_000
-    ) => AllDefs.Select(def => new GenericProjection(def, maxCacheEntries)).ToList();
+    ) =>
+    [
+        .. AllDefs.Select(def => new GenericProjection(def, maxCacheEntries)),
+        // Dual-writes every hydratable derivation input into the materialization_facts
+        // current-value store so hydration is retention-proof (context-derivations.md §6.5).
+        // Included here (not just Program.cs) so every router construction — tests included —
+        // maintains the store the hydration read path depends on. CreateEngine is a cheap pure
+        // construction; only its path set is used. One instance per scope: the router indexes
+        // a projection under its own DimKey, and each instance filters the path set to its scope.
+        new DerivationInputProjection(["Device"], AnalysisLibrary.CreateEngine().HydratableInputPaths),
+        new DerivationInputProjection(
+            ["Device", "Discovered"],
+            AnalysisLibrary.CreateEngine().HydratableInputPaths
+        ),
+    ];
 }

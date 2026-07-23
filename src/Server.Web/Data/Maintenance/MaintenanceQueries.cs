@@ -25,9 +25,12 @@ public static partial class MaintenanceQueries
 
     /// <summary>
     /// Returns all enabled retention policies that have a stale_after interval set.
+    /// PrunePredicate optionally scopes the DELETE to matching rows (e.g. materialization_facts
+    /// prunes only neighbor-sighting rows, never device-scoped derivation-input rows).
     /// </summary>
     [DatabaseCommand]
-    public static partial IAsyncEnumerable<(string TableName, string TimeColumn, TimeSpan? StaleAfter)>
+    public static partial IAsyncEnumerable<(string TableName, string TimeColumn, TimeSpan? StaleAfter, string?
+            PrunePredicate)>
         ListRetentionPoliciesAsync(
             this NpgsqlConnection connection,
             CancellationToken cancellationToken

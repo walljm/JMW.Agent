@@ -9,6 +9,10 @@
 -- ephemeral ARP is re-sent every cycle, keeping its observed updated_at current) stays fresh, while
 -- a DEPARTED device -- whose observation timestamp is frozen at its last sighting -- is never bumped
 -- and ages out of the window normally. MAC columns are canonical bare 12-hex, matching fp_value.
+--
+-- devices.last_seen (the denormalized max-sighting column, context-derivations.md §3.4) is bumped
+-- in the same statement so the two can never drift: this and UpsertFingerprintsAsync are the only
+-- two places fingerprint last_seen moves.
 WITH observed AS (
     SELECT
         mac
@@ -26,12 +30,27 @@ WITH observed AS (
     GROUP BY
         mac
     )
-UPDATE device_fingerprints df
-SET
-    last_seen = observed.seen
+  , bumped AS (
+    UPDATE device_fingerprints df
+    SET
+        last_seen = observed.seen
+    FROM
+        observed
+    WHERE
+          df.fp_type = 'mac'
+      AND df.fp_value = observed.mac
+      AND observed.seen > df.last_seen RETURNING df.device_id, df.last_seen
+    )
+  , device_bump AS (
+    UPDATE devices d
+    SET
+        last_seen = GREATEST(d.last_seen, b.seen)
+    FROM
+        (SELECT device_id, max(last_seen) AS seen FROM bumped GROUP BY device_id) b
+    WHERE
+        d.device_id = b.device_id
+    )
+SELECT
+    device_id::text AS device
 FROM
-    observed
-WHERE
-      df.fp_type = 'mac'
-  AND df.fp_value = observed.mac
-  AND observed.seen > df.last_seen RETURNING df.device_id::text AS device;
+    bumped;

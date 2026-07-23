@@ -111,11 +111,13 @@ public sealed class FactIngestPipeline
     }
 
     /// <summary>
-    /// Reads the current value of the engine's Device-scoped hydratable input paths
-    /// (<see cref="AnalysisEngine.HydratableInputPaths" />) for every device present in the batch,
-    /// so <see cref="AnalysisEngine.Analyze(IReadOnlyList{Fact}, IReadOnlyList{Fact})" /> can derive
-    /// against full current state. Returns empty when the engine has no hydratable paths or the batch
-    /// touches no device (e.g. a service-only batch).
+    /// Reads the current value of the engine's hydratable input paths (Device- and
+    /// Discovered-scoped — <see cref="AnalysisEngine.HydratableInputPaths" />) for every device
+    /// present in the batch, so <see cref="AnalysisEngine.Analyze(IReadOnlyList{Fact}, IReadOnlyList{Fact})" />
+    /// can derive against full current state. Discovered-scoped rows hydrate under the observer
+    /// device's key with the station re-keyed from entity_key, so absence-guarded gap-fill
+    /// derivations see already-observed values a delta-tracked batch omitted. Returns empty when
+    /// the engine has no hydratable paths or the batch touches no device (e.g. a service-only batch).
     /// </summary>
     private async Task<IReadOnlyList<Fact>> HydrateInputsAsync(IReadOnlyList<Fact> keyed, CancellationToken ct)
     {

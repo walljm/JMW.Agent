@@ -27,12 +27,23 @@ public static partial class ProjectionBackfill
     /// watermark. Per-projection isolation: one projection's failure neither blocks the others nor
     /// marks it done, so it retries on the next call.
     /// </summary>
+    /// <summary>
+    /// The non-ProjectionDef backfill unit for the derivation-input current-value store
+    /// (context-derivations.md §6.5): re-routes the current facts of every hydratable input
+    /// path so devices that predate DerivationInputProjection have their inputs present before
+    /// the first hydration read. Watermarked under this name, not the table name —
+    /// materialization_facts also serves the identity signals, which were backfilled by
+    /// migration 0085 itself.
+    /// </summary>
+    public const string DerivationInputsWatermark = "materialization_facts:derivation_inputs";
+
     public static async Task RunAsync(
         NpgsqlDataSource db,
         ProjectionRouter router,
         FactRepository facts,
         IReadOnlyList<ProjectionDef> defs,
         ILogger logger,
+        IReadOnlyList<(string WatermarkName, string[] Paths)>? extras = null,
         CancellationToken ct = default
     )
     {
@@ -55,37 +66,55 @@ public static partial class ProjectionBackfill
 
         foreach (ProjectionDef def in defs)
         {
-            if (done.Contains(def.TableName))
+            string[] paths = def.Columns
+                .Select(c => c.Attribute)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            await BackfillOneAsync(db, router, facts, def.TableName, paths, done, logger, ct);
+        }
+
+        foreach ((string watermarkName, string[] paths) in extras ?? [])
+        {
+            await BackfillOneAsync(db, router, facts, watermarkName, paths, done, logger, ct);
+        }
+    }
+
+    private static async Task BackfillOneAsync(
+        NpgsqlDataSource db,
+        ProjectionRouter router,
+        FactRepository facts,
+        string watermarkName,
+        string[] paths,
+        HashSet<string> done,
+        ILogger logger,
+        CancellationToken ct
+    )
+    {
+        if (done.Contains(watermarkName))
+        {
+            return;
+        }
+
+        try
+        {
+            IReadOnlyList<Fact> current = await facts.ReadCurrentFactsForPathsAsync(paths, ct);
+            for (int offset = 0; offset < current.Count; offset += ChunkSize)
             {
-                continue;
+                int len = Math.Min(ChunkSize, current.Count - offset);
+                await router.RouteAsync(current.Skip(offset).Take(len), ct);
             }
 
-            try
-            {
-                string[] paths = def.Columns
-                    .Select(c => c.Attribute)
-                    .Distinct(StringComparer.Ordinal)
-                    .ToArray();
-
-                IReadOnlyList<Fact> current = await facts.ReadCurrentFactsForPathsAsync(paths, ct);
-                for (int offset = 0; offset < current.Count; offset += ChunkSize)
-                {
-                    int len = Math.Min(ChunkSize, current.Count - offset);
-                    await router.RouteAsync(current.Skip(offset).Take(len), ct);
-                }
-
-                await MarkBackfilledAsync(db, def.TableName, ct);
-                Log.Backfilled(logger, def.TableName, current.Count);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                // Not marked done — retried on the next call/boot.
-                Log.BackfillFailed(logger, def.TableName, ex);
-            }
+            await MarkBackfilledAsync(db, watermarkName, ct);
+            Log.Backfilled(logger, watermarkName, current.Count);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Not marked done — retried on the next call/boot.
+            Log.BackfillFailed(logger, watermarkName, ex);
         }
     }
 

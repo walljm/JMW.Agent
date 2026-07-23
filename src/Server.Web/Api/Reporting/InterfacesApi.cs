@@ -10,10 +10,13 @@ public static class InterfacesApi
     public const int DefaultLimit = 100;
     public const int MaxLimit = 500;
 
+    // hostname sorts on proj_devices' resolved identity column (context-derivations.md §3.3) —
+    // pdv can DRIVE the plan through proj_devices_hostname_sort_idx, which a LEFT-JOINed
+    // proj_systems.hostname never could. speed stays on the driving interface table (0104 index).
     private static readonly Dictionary<string, string> SortExpressions =
         new(StringComparer.Ordinal)
         {
-            ["hostname"] = "coalesce(s.hostname, '')",
+            ["hostname"] = "coalesce(pdv.hostname, '')",
             ["name"] = "coalesce(i.name, '')",
             ["speed"] = "coalesce(i.speed_bps, -1)",
         };
@@ -66,7 +69,14 @@ public static class InterfacesApi
         bool descending = string.Equals(dir, "desc", StringComparison.OrdinalIgnoreCase);
         string cmp = descending ? "<" : ">";
         string direction = descending ? "DESC" : "ASC";
+        // Decomposed keyset cursor for the cross-table hostname sort — see ComponentsApi.
+        string prefixCmp = descending ? "<=" : ">=";
+        string cursorPrefix = string.Equals(sortKeyCol, SortExpressions["hostname"], StringComparison.Ordinal)
+            ? $"(({sortKeyCol}, pdv.device) {prefixCmp} ($2, $3)) AND "
+            : string.Empty;
 
+        // JOIN proj_devices is safe (never drops rows): every device has a proj_devices row
+        // from creation (DeviceRegistry.CreateDeviceAsync + the context engine's backfill).
         string sql = $"""
             SELECT
                 i.device, s.hostname, i.name, i.mac_address, i.obscured_mac,
@@ -86,11 +96,12 @@ public static class InterfacesApi
                 {sortKeyCol} AS sort_key,
                 COALESCE(s.friendly_name, s.hostname) AS friendly_name
             FROM proj_interfaces i
+                JOIN proj_devices pdv ON pdv.device = i.device
                 LEFT JOIN proj_systems s ON s.device = i.device
             WHERE ($1::text IS NULL OR COALESCE(s.hostname, '') ILIKE '%' || $1 || '%'
                     OR COALESCE(i.name, '') ILIKE '%' || $1 || '%'
                     OR COALESCE(i.ipv4, '') ILIKE '%' || $1 || '%')
-              AND ($2::text IS NULL OR (({sortKeyCol}, i.device, i.interface) {cmp} ($2, $3, $4)))
+              AND ($2::text IS NULL OR ({cursorPrefix}(({sortKeyCol}, i.device, i.interface) {cmp} ($2, $3, $4))))
             ORDER BY {sortKeyCol} {direction}, i.device {direction}, i.interface {direction}
             LIMIT $5
             """;
