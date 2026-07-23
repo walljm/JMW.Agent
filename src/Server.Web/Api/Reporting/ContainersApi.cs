@@ -1,4 +1,5 @@
 using JMW.Discovery.Server.Data;
+using JMW.Discovery.Server.Queries;
 
 using Npgsql;
 
@@ -9,24 +10,19 @@ public static class ContainersApi
     public const int DefaultLimit = 100;
     public const int MaxLimit = 500;
 
+    /// <summary>Must match the first [SortableBy] key on ReportingQueries.ListContainersAsync — the
+    /// generated command text falls back to that column for an unrecognized sort.</summary>
+    public const string DefaultSort = "device";
+
     /// <summary>
     /// Columns the container list may be sorted by. Only columns with a supporting index are
     /// exposed — see <c>proj_containers_state_idx</c>. One cursor shape —
-    /// (sort_key, device, container) — covers every sort.
+    /// (sort_key, device, container) — covers every sort. Sourced from the generated
+    /// [SortableBy] allowlist so the UI cannot drift from the validated SQL variants.
     /// </summary>
-    private static readonly Dictionary<string, string> SortExpressions =
-        new(StringComparer.Ordinal)
-        {
-            ["device"] = "c.device",
-            ["state"] = "coalesce(c.state, '')",
-        };
+    public static readonly IReadOnlySet<string> SortableColumns = ReportingQueries.ListContainersAsyncSortKeys;
 
-    public const string DefaultSort = "device";
-
-    public static readonly IReadOnlySet<string> SortableColumns =
-        SortExpressions.Keys.ToHashSet(StringComparer.Ordinal);
-
-    public static bool IsSortable(string? sort) => sort is not null && SortExpressions.ContainsKey(sort);
+    public static bool IsSortable(string? sort) => sort is not null && SortableColumns.Contains(sort);
 
     public static void Map(IEndpointRouteBuilder app)
     {
@@ -66,69 +62,49 @@ public static class ContainersApi
         string? dir = null
     )
     {
-        string sortKeyCol = sort is not null && SortExpressions.TryGetValue(sort, out string? expr)
-            ? expr
-            : SortExpressions[DefaultSort];
-        bool descending = string.Equals(dir, "desc", StringComparison.OrdinalIgnoreCase);
-        string cmp = descending ? "<" : ">";
-        string direction = descending ? "DESC" : "ASC";
-
-        string sql = $"""
-            SELECT
-                c.device, s.hostname, c.container, c.name, c.image, c.state, c.health, c.cpu_pct,
-                c.mem_usage_bytes, c.restart_count, c.compose_project, c.compose_service, c.restart_policy,
-                {sortKeyCol} AS sort_key,
-                COALESCE(s.friendly_name, s.hostname) AS friendly_name
-            FROM proj_containers c
-                LEFT JOIN proj_systems s ON s.device = c.device
-            WHERE ($1::text IS NULL OR c.state = $1)
-              AND ($2::text IS NULL OR c.image LIKE '%' || $2 || '%')
-              AND ($3::text IS NULL OR (({sortKeyCol}, c.device, c.container) {cmp} ($3, $4, $5)))
-            ORDER BY {sortKeyCol} {direction}, c.device {direction}, c.container {direction}
-            LIMIT $6
-            """;
-
-        await using NpgsqlConnection conn = await db.OpenConnectionAsync(ct);
-        await using NpgsqlCommand cmd = new(sql, conn);
-        cmd.Parameters.Add(Param.Text(state));
-        cmd.Parameters.Add(Param.Text(image));
-        cmd.Parameters.Add(Param.Text(afterSortKey));
-        cmd.Parameters.Add(Param.Text(afterDevice));
-        cmd.Parameters.Add(Param.Text(afterContainer));
-        cmd.Parameters.Add(Param.Integer(limit + 1));
-
         List<ContainerListItem> items = new();
-        // sort_key[i] is the SQL-computed sort expression for items[i] — used verbatim for the
+        // sortKeys[i] is the SQL-computed sort expression for items[i] — used verbatim for the
         // cursor so it always matches the keyset comparison (no C#-side re-derivation to drift).
         List<string> sortKeys = new();
         List<(string Device, string Container)> tiebreakers = new();
-        await using (NpgsqlDataReader reader = await cmd.ExecuteReaderAsync(ct))
+
+        await using NpgsqlConnection conn = await db.OpenConnectionAsync(ct);
+        await foreach ((string device, string? hostname, string container, string? name, string? rowImage,
+            string? rowState, string? health, double? cpuPct, long? memUsageBytes, long? restartCount,
+            string? composeProject, string? composeService, string? restartPolicy, string? sortKey,
+            string? friendlyName)
+            in conn.ListContainersAsync(
+                state,
+                image,
+                afterSortKey,
+                afterDevice,
+                afterContainer,
+                limit + 1,
+                sort,
+                dir,
+                ct
+            ))
         {
-            while (await reader.ReadAsync(ct))
-            {
-                string device = reader.GetString(0);
-                string container = reader.GetString(2);
-                items.Add(
-                    new ContainerListItem(
-                        Device: device,
-                        Hostname: GetStr(reader, 1),
-                        Container: container,
-                        Name: GetStr(reader, 3),
-                        Image: GetStr(reader, 4),
-                        State: GetStr(reader, 5),
-                        Health: GetStr(reader, 6),
-                        CpuPct: reader.IsDBNull(7) ? null : reader.GetDouble(7),
-                        MemUsageBytes: reader.IsDBNull(8) ? null : reader.GetInt64(8),
-                        RestartCount: reader.IsDBNull(9) ? null : reader.GetInt64(9),
-                        ComposeProject: GetStr(reader, 10),
-                        ComposeService: GetStr(reader, 11),
-                        RestartPolicy: GetStr(reader, 12),
-                        FriendlyName: GetStr(reader, 14)
-                    )
-                );
-                sortKeys.Add(GetStr(reader, 13) ?? string.Empty);
-                tiebreakers.Add((device, container));
-            }
+            items.Add(
+                new ContainerListItem(
+                    Device: device,
+                    Hostname: hostname,
+                    Container: container,
+                    Name: name,
+                    Image: rowImage,
+                    State: rowState,
+                    Health: health,
+                    CpuPct: cpuPct,
+                    MemUsageBytes: memUsageBytes,
+                    RestartCount: restartCount,
+                    ComposeProject: composeProject,
+                    ComposeService: composeService,
+                    RestartPolicy: restartPolicy,
+                    FriendlyName: friendlyName
+                )
+            );
+            sortKeys.Add(sortKey ?? string.Empty);
+            tiebreakers.Add((device, container));
         }
 
         string? nextCursor = null;
@@ -143,9 +119,6 @@ public static class ContainersApi
 
         return (items, nextCursor);
     }
-
-    private static string? GetStr(NpgsqlDataReader reader, int ordinal) =>
-        reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
 }
 
 public sealed record ContainerListItem(

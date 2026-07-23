@@ -148,6 +148,55 @@ public sealed partial class DatabaseCommandGenerator
             }
 
             _builder.AppendLine(" };");
+
+            //
+            // public static string {Method}CommandText(string? sort, string? dir) { ... }
+            //
+            // The exact command text the method executes for a sort/direction — the single home
+            // of the substituted variants (the command method calls this), also usable by
+            // EXPLAIN-based plan tests to assert on the exact production SQL. An unrecognized
+            // sort falls back to the first declared column; direction is descending only when
+            // dir equals "desc" (case-insensitive).
+            //
+
+            _builder.AppendLine($"{indent}    [{GeneratedCodeAttribute}]");
+            _builder.AppendLine($"{indent}    [global::System.Diagnostics.DebuggerNonUserCode]");
+            _builder.AppendLine($"{indent}    public static string {m.Name}CommandText(string? sort, string? dir)");
+            _builder.AppendLine($"{indent}    {{");
+
+            for (int i = 0; i < m.SortableColumns.Count; i++)
+            {
+                (string key, string sqlExpression) = m.SortableColumns[i];
+
+                foreach (bool descending in new[] { false, true })
+                {
+                    string direction = descending ? "desc" : "asc";
+
+                    _builder.AppendLine($"{indent}        const string __commandText_{i}_{direction} = \"\"\"");
+                    _builder.AppendLine($"-- {m.FullyQualifiedIdentifier} [sort={key} {direction}]");
+                    _builder.AppendLine(SubstituteSortTokens(m.CommandText.Value, sqlExpression, descending));
+                    _builder.AppendLine("\"\"\";");
+                }
+            }
+
+            _builder.AppendLine(
+                $"{indent}        bool __descending = string.Equals(dir, \"desc\", global::System.StringComparison.OrdinalIgnoreCase);"
+            );
+            _builder.AppendLine($"{indent}        return (sort, __descending) switch");
+            _builder.AppendLine($"{indent}        {{");
+
+            for (int i = 0; i < m.SortableColumns.Count; i++)
+            {
+                string keyLiteral = SymbolDisplay.FormatLiteral(m.SortableColumns[i].Key, quote: true);
+
+                _builder.AppendLine($"{indent}            ({keyLiteral}, false) => __commandText_{i}_asc,");
+                _builder.AppendLine($"{indent}            ({keyLiteral}, true) => __commandText_{i}_desc,");
+            }
+
+            _builder.AppendLine($"{indent}            (_, false) => __commandText_0_asc,");
+            _builder.AppendLine($"{indent}            (_, true) => __commandText_0_desc,");
+            _builder.AppendLine($"{indent}        }};");
+            _builder.AppendLine($"{indent}    }}");
         }
 
         private void GenerateMethod(DatabaseCommandMethod m, string indent)
@@ -225,10 +274,9 @@ public sealed partial class DatabaseCommandGenerator
             //
             //  """;
             //
-            // For a [SortableBy] method, one const per (column, direction) variant is produced by
-            // token substitution, and __commandText becomes a local selected from the 'sort'/'dir'
-            // parameters. An unrecognized sort falls back to the first declared column; direction
-            // is descending only when dir equals "desc" (case-insensitive).
+            // For a [SortableBy] method, the substituted (column, direction) variants live in the
+            // generated {Method}CommandText helper; __commandText becomes a local selected from
+            // the 'sort'/'dir' parameters.
             //
 
             if (m.SortableColumns.Count == 0)
@@ -240,38 +288,7 @@ public sealed partial class DatabaseCommandGenerator
             }
             else
             {
-                for (int i = 0; i < m.SortableColumns.Count; i++)
-                {
-                    (string key, string sqlExpression) = m.SortableColumns[i];
-
-                    foreach (bool descending in new[] { false, true })
-                    {
-                        string direction = descending ? "desc" : "asc";
-
-                        _builder.AppendLine($"{indent}    const string __commandText_{i}_{direction} = \"\"\"");
-                        _builder.AppendLine($"-- {m.FullyQualifiedIdentifier} [sort={key} {direction}]");
-                        _builder.AppendLine(SubstituteSortTokens(m.CommandText.Value, sqlExpression, descending));
-                        _builder.AppendLine("\"\"\";");
-                    }
-                }
-
-                _builder.AppendLine(
-                    $"{indent}    bool __descending = string.Equals(dir, \"desc\", global::System.StringComparison.OrdinalIgnoreCase);"
-                );
-                _builder.AppendLine($"{indent}    string __commandText = (sort, __descending) switch");
-                _builder.AppendLine($"{indent}    {{");
-
-                for (int i = 0; i < m.SortableColumns.Count; i++)
-                {
-                    string keyLiteral = SymbolDisplay.FormatLiteral(m.SortableColumns[i].Key, quote: true);
-
-                    _builder.AppendLine($"{indent}        ({keyLiteral}, false) => __commandText_{i}_asc,");
-                    _builder.AppendLine($"{indent}        ({keyLiteral}, true) => __commandText_{i}_desc,");
-                }
-
-                _builder.AppendLine($"{indent}        (_, false) => __commandText_0_asc,");
-                _builder.AppendLine($"{indent}        (_, true) => __commandText_0_desc,");
-                _builder.AppendLine($"{indent}    }};");
+                _builder.AppendLine($"{indent}    string __commandText = {m.Name}CommandText(sort, dir);");
             }
 
             #endregion

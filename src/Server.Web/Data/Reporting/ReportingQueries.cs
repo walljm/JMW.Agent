@@ -41,8 +41,32 @@ public static partial class ReportingQueries
         );
 
     // ── Reporting: Containers ───────────────────────────────────────────────────
-    // Hand-built in ContainersApi.QueryAsync — its ORDER BY / keyset cursor are chosen dynamically
-    // from a sortable-column allowlist, which a static [DatabaseCommand] can't express.
+
+    /// <summary>
+    /// Lists containers across the fleet, joined to the host's hostname, with optional
+    /// state/image filters and keyset pagination ordered by (sort key, device, container).
+    /// SortKey is the SQL-computed sort expression for the row, used verbatim for the
+    /// next-page cursor.
+    /// </summary>
+    [DatabaseCommand]
+    [SortableBy("device", "c.device")]
+    [SortableBy("state", "coalesce(c.state, '')")]
+    public static partial
+        IAsyncEnumerable<(string Device, string? Hostname, string Container, string? Name, string? Image,
+            string? State, string? Health, double? CpuPct, long? MemUsageBytes, long? RestartCount,
+            string? ComposeProject, string? ComposeService, string? RestartPolicy, string? SortKey,
+            string? FriendlyName)> ListContainersAsync(
+            this NpgsqlConnection connection,
+            string? state,
+            string? image,
+            string? afterSortKey,
+            string? afterDevice,
+            string? afterContainer,
+            int limit,
+            string? sort,
+            string? dir,
+            CancellationToken cancellationToken
+        );
 
     // ── Reporting: ARP / Network ────────────────────────────────────────────────
     // Hand-built in ArpApi.QueryAsync — its ORDER BY / keyset cursor are chosen dynamically
