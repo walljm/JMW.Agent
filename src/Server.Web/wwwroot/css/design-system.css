@@ -1520,7 +1520,7 @@ table.data th.col-select {
     position: sticky;
     left: 0;
     z-index: 1;
-    background: inherit;
+    background: var(--surface);
 }
 
 .table-wrap table.data thead th:first-child,
@@ -1543,7 +1543,7 @@ table.data th.col-select {
     position: sticky;
     left: 32px;
     z-index: 1;
-    background: inherit;
+    background: var(--surface);
 }
 
 .table-wrap table.data thead th.col-select + th,

@@ -62,6 +62,15 @@ public sealed class SshCollector : IDeviceCollector, IDisposable
         ConnectionInfo connInfo = new(target.Endpoint, port, username, authMethods);
         _client = new SshClient(connInfo);
 
+        string? hostKeyFingerprint = null;
+        _client.HostKeyReceived += (_, e) =>
+        {
+            // OpenSSH-canonical SHA-256 host-key fingerprint: "sha256:<base64>" (no padding),
+            // matching `ssh-keygen -lf` and SshBannerScanner's passive probe, so
+            // FingerprintNormalizer canonicalizes both into the same device fingerprint.
+            hostKeyFingerprint = $"sha256:{e.FingerPrintSHA256}";
+        };
+
         try
         {
             await _client.ConnectAsync(ct);
@@ -74,23 +83,12 @@ public sealed class SshCollector : IDeviceCollector, IDisposable
 
         List<Fingerprint> fingerprints = [];
 
-        string hostname = Run("hostname").Trim();
-        if (hostname.Length > 0)
-        {
-            fingerprints.Add(
-                new Fingerprint(
-                    FingerprintType.SshHostKey,
-                    $"{connInfo.CurrentKeyExchangeAlgorithm}:{_client.ConnectionInfo.ServerVersion}".ToLowerInvariant()
-                )
-            );
-            // NOTE: hostname is NOT a stable device identifier (user-configurable) — do not
-            // add it as MachineId. It is emitted as FactPaths.SystemHostname below instead.
-        }
+        // NOTE: hostname is NOT a stable device identifier (user-configurable) — do not
+        // add it as MachineId. It is emitted as FactPaths.SystemHostname below instead.
 
-        string sshHostKeyRaw = _client.ConnectionInfo.ServerVersion ?? "";
-        if (sshHostKeyRaw.Length > 0 && fingerprints.All(f => f.Type != FingerprintType.SshHostKey))
+        if (hostKeyFingerprint != null)
         {
-            fingerprints.Add(new Fingerprint(FingerprintType.SshHostKey, sshHostKeyRaw.ToLowerInvariant()));
+            fingerprints.Add(new Fingerprint(FingerprintType.SshHostKey, hostKeyFingerprint));
         }
 
         string machineId = Run(

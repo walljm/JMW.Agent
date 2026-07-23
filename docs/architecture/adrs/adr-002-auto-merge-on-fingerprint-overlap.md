@@ -29,6 +29,14 @@ Manual merge (REQ-053) and promotion (REQ-036) reuse this merge primitive.
 
 Single-operator, small-to-medium fleet (constraints #9) means the cost of a rare wrong merge is lower than the standing cost of fragmented device records and a manual reconciliation queue. Centralizing merge at ingest (server-side, ADR-001) makes it atomic with identity resolution. Full serialization via a single fixed advisory-lock key (rather than partial/fingerprint-scoped locking) is deliberately simple: at this fleet scale, serializing the whole resolve costs nothing in practice.
 
+## Amendment (2026-07-23): contemporaneous same-collection IP correlation
+
+Merge keys remain fingerprint-only for any *historical* or cross-cycle correlation — an IP address recorded at one point in time and matched against a device record from another is never safe on its own, because a DHCP lease can be reassigned to a different physical device in the gap between the two observations. This is true even when both observations came from agents on the same LAN (co-location scoping proves shared broadcast domain, not shared point in time), and it is why `GetKnownMacsForIpAsync` is used only for corroborated obscured-MAC *reconstruction*, never for merging two already-fingerprinted devices.
+
+Owner decision D2 narrows, rather than reverses, that stance: when an IP address is observed for two different device identities **within the same collection cycle** (the same agent's single `POST /api/v1/agent/facts` request, covering both the synchronous per-batch-element resolves and the trailing `DiscoveryMaterializer` pass that runs before the response is returned), there is no time gap in which a DHCP reassignment could have occurred — the IP was, provably, in use by one physical host at one instant, observed once. Correlating on it under those conditions is as safe as a fingerprint match and is approved as a general corroboration signal (any fingerprint type), not one limited to SSH.
+
+This is **not yet implemented**. It requires new plumbing beyond today's `FindMatchingDeviceIdsAsync`/`GetKnownMacsForIpAsync`, which have no concept of "observed in this same request": a per-request IP→DeviceId map built during `FactsEndpoint.HandleAsync`, a new merge trigger distinct from `AutoMergeAsync` (own audit action, e.g. `device.auto_merge_ip_same_cycle`), and a decision on how the map incorporates devices resolved by the trailing materializer pass. Tracked as follow-up work; the immediate motivating bug (a credentialed SSH probe never converging with a passive scan of the same host) turned out to be a separate defect — the credentialed collector was emitting a fabricated fingerprint instead of the real host-key hash — fixed independently in `SshCollector.cs`.
+
 ## Consequences
 
 - Supersedes `HandleSplitAsync`'s conservative branch; that method now performs the merge.

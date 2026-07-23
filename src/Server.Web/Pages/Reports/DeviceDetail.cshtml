@@ -153,6 +153,48 @@
                     }
                 </div>
 
+                @{
+                    RenderedFactView? osDetails = Model.FactViews.Error is null
+                        ? Model.FactViews.Data.FirstOrDefault(v => v.Title == "OS Details")
+                        : null;
+                }
+                @if (osDetails is not null && osDetails.Rows.Count > 0)
+                {
+                    <div style="margin-top:var(--space-5)">
+                        <div class="tabpanel-heading">OS Details</div>
+                        <div class="detail-table-scroll">
+                            <table class="data" aria-label="OS Details" data-client-grid>
+                                <thead>
+                                <tr>
+                                    @foreach (string header in osDetails.Headers)
+                                    {
+                                        <th data-col-key="@header">@header</th>
+                                    }
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @foreach (IReadOnlyList<FactCell> row in osDetails.Rows)
+                                {
+                                    <tr>
+                                        @foreach (FactCell cell in row)
+                                        {
+                                            @if (cell.SortValue is not null)
+                                            {
+                                                <td data-sort="@cell.SortValue">@(cell.Display ?? "—")</td>
+                                            }
+                                            else
+                                            {
+                                                <td>@(cell.Display ?? "—")</td>
+                                            }
+                                        }
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                }
+
                 <div style="margin-top:var(--space-5)">
                     <div class="tabpanel-heading">Collection Health</div>
                     @{
