@@ -12,6 +12,9 @@
     static string Fmt(long n) => n >= 1_000_000 ? (n / 1_000_000.0).ToString("0.#") + "M"
         : n >= 1_000 ? (n / 1_000.0).ToString("0.#") + "K"
         : n.ToString();
+
+    static bool IsExpiringSoon(DateTime? notAfter) =>
+        notAfter is not null && notAfter.Value <= DateTime.UtcNow.AddDays(30);
 }
 <main class="main">
     <div class="page-head">
@@ -22,39 +25,168 @@
     @if (Model.SummaryLoadError is null)
     {
         <div class="card-grid">
-            <div class="card">
+            <a class="card" href="/terrain/dns">
                 <div class="label">DNS Servers</div>
                 <div class="value">@s.DnsServerCount</div>
-            </div>
-            <div class="card">
+            </a>
+            <a class="card" href="/terrain/dns">
                 <div class="label">Total Queries</div>
                 <div class="value" title="@exactQueries">@Fmt(s.TotalQueries)</div>
-            </div>
-            <div class="card">
+            </a>
+            <a class="card" href="/terrain/dns">
                 <div class="label">Blocked</div>
                 <div class="value" title="@exactBlocked">@Fmt(s.TotalBlocked)</div>
                 @if (s.TotalQueries > 0)
                 {
                     <div class="meta">@((s.TotalBlocked * 100.0 / s.TotalQueries).ToString("0.#"))% of all queries</div>
                 }
-            </div>
-            <div class="card">
+            </a>
+            <a class="card" href="/terrain/dhcp">
                 <div class="label">DHCP Scopes</div>
                 <div class="value">@s.ActiveScopeCount</div>
                 <div class="meta">active</div>
-            </div>
-            <div class="card">
+            </a>
+            <a class="card" href="/terrain/dhcp">
                 <div class="label">Local Leases</div>
                 <div class="value">@s.LocalLeaseCount</div>
-            </div>
-            <div class="card @(s.CaExpiringCount > 0 ? "warn" : "")">
+            </a>
+            <a class="card @(s.CaExpiringCount > 0 ? "warn" : "")" href="/terrain/ca">
                 <div class="label">CAs Observed</div>
                 <div class="value">@s.CaCount</div>
                 @if (s.CaExpiringCount > 0)
                 {
                     <div class="meta">@s.CaExpiringCount expiring within 30 days</div>
                 }
+            </a>
+        </div>
+
+        <div style="margin-top:var(--space-6)">
+            <div class="tabpanel-heading">
+                DNS Activity
+                <a href="/terrain/dns" style="float:right;font-size:var(--fs-sm);font-weight:var(--fw-normal)">View all →</a>
             </div>
+            @if (Model.DnsPreview.Count == 0)
+            {
+                <div class="empty">No DNS services observed.</div>
+            }
+            else
+            {
+                <div class="detail-table-scroll">
+                    <table class="data" aria-label="DNS services preview">
+                        <thead>
+                        <tr>
+                            <th>Service</th>
+                            <th>Total Queries</th>
+                            <th>Blocked %</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (JMW.Discovery.Server.Pages.Reports.TerrainDnsService svc in Model.DnsPreview)
+                        {
+                            <tr>
+                                <td><a href="/services/@svc.Service" class="mono">@svc.Service</a></td>
+                                <td>@(svc.TotalQueries?.ToString("N0") ?? "—")</td>
+                                <td>@(svc.BlockedPct.HasValue ? svc.BlockedPct.Value.ToString("0.#") + "%" : "—")</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+
+        <div style="margin-top:var(--space-6)">
+            <div class="tabpanel-heading">
+                DHCP Scopes
+                <a href="/terrain/dhcp" style="float:right;font-size:var(--fs-sm);font-weight:var(--fw-normal)">View all →</a>
+            </div>
+            @if (Model.DhcpPreview.Count == 0)
+            {
+                <div class="empty">No DHCP scopes observed.</div>
+            }
+            else
+            {
+                <div class="detail-table-scroll">
+                    <table class="data" aria-label="DHCP scopes preview">
+                        <thead>
+                        <tr>
+                            <th>Scope</th>
+                            <th>Enabled</th>
+                            <th>Range</th>
+                            <th>Gateway</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (JMW.Discovery.Server.Pages.Reports.TerrainDhcpScope scope in Model.DhcpPreview)
+                        {
+                            <tr>
+                                <td class="mono">@scope.Scope</td>
+                                <td>@(scope.Enabled.HasValue ? scope.Enabled.Value ? "yes" : "no" : "—")</td>
+                                <td class="mono">@(string.IsNullOrEmpty(scope.StartAddress) ? "—" : scope.StartAddress + " – " + (scope.EndAddress ?? "?"))</td>
+                                <td class="mono">@(scope.Gateway ?? "—")</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+
+        <div style="margin-top:var(--space-6)">
+            <div class="tabpanel-heading">
+                Certificate Authorities
+                <a href="/terrain/ca" style="float:right;font-size:var(--fs-sm);font-weight:var(--fw-normal)">View all →</a>
+            </div>
+            @if (Model.CaPreview.Count == 0)
+            {
+                <div class="empty">No certificate authorities observed.</div>
+            }
+            else
+            {
+                <div class="detail-table-scroll">
+                    <table class="data" aria-label="Certificate authorities preview">
+                        <thead>
+                        <tr>
+                            <th>Subject / Issuer</th>
+                            <th>Not After</th>
+                            <th>Seen On</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (JMW.Discovery.Server.Pages.Reports.TerrainCaItem ca in Model.CaPreview)
+                        {
+                            <tr>
+                                <td>@(ca.SubjectDn ?? "—")</td>
+                                <td>
+                                    @if (IsExpiringSoon(ca.NotAfter))
+                                    {
+                                        <span class="status warn" title="Expires @ca.NotAfter!.Value.ToString("yyyy-MM-dd")">@ca.NotAfter!.Value.ToString("yyyy-MM-dd")</span>
+                                    }
+                                    else
+                                    {
+                                        @(ca.NotAfter?.ToString("yyyy-MM-dd") ?? "—")
+                                    }
+                                </td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(ca.ServiceRef))
+                                    {
+                                        <a href="/services/@ca.ServiceRef">@ca.ServiceRef</a>
+                                    }
+                                    else if (ca.SeenOnCount is { } count)
+                                    {
+                                        @($"{count} device{(count == 1 ? "" : "s")}")
+                                    }
+                                    else
+                                    {
+                                        @:—
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
         </div>
     }
 </main>
