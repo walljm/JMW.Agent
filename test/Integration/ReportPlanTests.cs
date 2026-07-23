@@ -111,7 +111,7 @@ public sealed class ReportPlanTests : IAsyncLifetime
     [InlineData("vendor", "proj_devices_vendor_sort_idx")]
     public async Task DeviceList_IdentitySorts_WalkTheirExpressionIndex(string sort, string index)
     {
-        string plan = await FirstPagePlanAsync(DeviceListApi.BuildSql(sort, dir: null));
+        string plan = await FirstPagePlanAsync(ReportingQueries.ListDeviceReportAsyncCommandText(sort, dir: null));
 
         // The identity sort must be served by an ordered index walk over proj_devices, not a
         // full sort of the joined set. (A top-level Sort node over the whole join is exactly

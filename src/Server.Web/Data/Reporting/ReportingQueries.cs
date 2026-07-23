@@ -7,9 +7,42 @@ namespace JMW.Discovery.Server.Queries;
 public static partial class ReportingQueries
 {
     // ── Reporting: Hosts ────────────────────────────────────────────────────────
-    // The Devices list is hand-built in DeviceListApi.QueryAsync because its ORDER BY / keyset
-    // cursor are chosen dynamically from a sortable-column allowlist, which a static
-    // [DatabaseCommand] cannot express (ORDER BY is not parameterizable).
+
+    /// <summary>
+    /// The Devices report list: one row per visible device with resolved identity columns
+    /// (context-derivation finals on proj_devices, the driving table), display joins, and
+    /// discovery sources. Optional status/source/os/vendor/search filters; keyset pagination
+    /// ordered by (sort key, device) — the identity sorts walk the 0106 expression indexes.
+    /// SortKey is the SQL-computed sort expression for the row, used verbatim for the
+    /// next-page cursor.
+    /// </summary>
+    [DatabaseCommand]
+    [SortableBy("ip", "ip_sort_key(pdv.ip)")]
+    [SortableBy("hostname", "coalesce(pdv.hostname, '')")]
+    [SortableBy("friendly_name", "coalesce(pdv.friendly_name, '')")]
+    [SortableBy("mac", "coalesce(pdv.mac, '')")]
+    [SortableBy("vendor", "coalesce(pdv.vendor, '')")]
+    [SortableBy("os", "coalesce(s.os_family, '') || ' ' || coalesce(s.os_distro, '')")]
+    [SortableBy("status", "d.management_status")]
+    [SortableBy("last_seen", "coalesce(to_char(d.last_seen at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US'), '')")]
+    public static partial
+        IAsyncEnumerable<(Guid? DeviceId, string? Hostname, string? FriendlyName, string? Ip, string? Mac,
+            string? ObscuredMac, string? Vendor, string? Oui, string? OuiCountry, string? OsFamily, string? OsDistro,
+            string? ManagementStatus, string? Sources, DateTimeOffset? LastSeen, string? SortKey)>
+        ListDeviceReportAsync(
+            this NpgsqlConnection connection,
+            string? status,
+            string? source,
+            string? os,
+            string? vendor,
+            string? search,
+            string? afterSortKey,
+            string? afterDeviceId,
+            int limit,
+            string? sort,
+            string? dir,
+            CancellationToken cancellationToken
+        );
 
     // ── Reporting: Open Ports ───────────────────────────────────────────────────
 
